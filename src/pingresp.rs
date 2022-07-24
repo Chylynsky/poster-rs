@@ -1,9 +1,16 @@
-use crate::utils::TryFromBytes;
+use crate::{
+    base_types::Byte,
+    utils::{ByteReader, PacketID, TryFromBytes},
+};
 
-pub struct Pingresp {}
+pub(crate) struct Pingresp {}
+
+impl Pingresp {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
+}
 
 #[derive(Default)]
-pub struct PingrespPacketBuilder {}
+pub(crate) struct PingrespPacketBuilder {}
 
 impl PingrespPacketBuilder {
     fn build(self) -> Option<Pingresp> {
@@ -11,20 +18,18 @@ impl PingrespPacketBuilder {
     }
 }
 
-impl Pingresp {
-    pub const PACKET_ID: isize = 13;
+impl PacketID for Pingresp {
+    const PACKET_ID: u8 = 13;
 }
 
 impl TryFromBytes for Pingresp {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let packet_builder = PingrespPacketBuilder::default();
-
-        let mut iter = bytes.iter().copied();
-
-        let _fixed_hdr = iter.next()?;
+        let builder = PingrespPacketBuilder::default();
+        let mut reader = ByteReader::from(bytes);
+        let _fixed_hdr = reader.try_read::<Byte>()?;
         debug_assert!(_fixed_hdr >> 4 == Self::PACKET_ID as u8);
 
-        packet_builder.build()
+        builder.build()
     }
 }
 

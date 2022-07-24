@@ -1,42 +1,39 @@
 use crate::{
     base_types::*,
     utils::{
-        ByteWriter, SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator, TryToByteBuffer,
+        ByteWriter, PropertyID, SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator,
+        TryToByteBuffer,
     },
 };
-use std::{convert::From, iter::Iterator, mem};
+use std::{convert::From, iter::Iterator, mem, str::Utf8Error};
 
-pub(crate) trait PropertyID {
-    const PROPERTY_ID: u8;
-}
-
-const PAYLOAD_FORMAT_INDICATOR: u8 = 0x01;
-const MESSAGE_EXPIRY_INTERVAL: u8 = 0x02;
-const CONTENT_TYPE: u8 = 0x03;
-const RESPONSE_TOPIC: u8 = 0x08;
-const CORRELATION_DATA: u8 = 0x09;
-const SUBSCRIPTION_IDENTIFIER: u8 = 0x0b;
-const SESSION_EXPIRY_INTERVAL: u8 = 0x11;
-const ASSIGNED_CLIENT_IDENTIFIER: u8 = 0x12;
-const SERVER_KEEP_ALIVE: u8 = 0x13;
-const AUTHENTICATION_METHOD: u8 = 0x15;
-const AUTHENTICATION_DATA: u8 = 0x16;
-const REQUEST_PROBLEM_INFORMATION: u8 = 0x17;
-const WILL_DELAY_INTERVAL: u8 = 0x18;
-const REQUEST_RESPONSE_INFORMATION: u8 = 0x19;
-const RESPONSE_INFORMATION: u8 = 0x1a;
-const SERVER_REFERENCE: u8 = 0x1c;
-const REASON_STRING: u8 = 0x1f;
-const RECEIVE_MAXIMUM: u8 = 0x21;
-const TOPIC_ALIAS_MAXIMUM: u8 = 0x22;
-const TOPIC_ALIAS: u8 = 0x23;
-const MAXIMUM_QOS: u8 = 0x24;
-const RETAIN_AVAILABLE: u8 = 0x25;
-const USER_PROPERTY: u8 = 0x26;
-const MAXIMUM_PACKET_SIZE: u8 = 0x27;
-const WILDCARD_SUBSCRIPTION_AVAILABLE: u8 = 0x28;
-const SUBSCRIPTION_IDENTIFIER_AVAILABLE: u8 = 0x29;
-const SHARED_SUBSCRIPTION_AVAILABLE: u8 = 0x2a;
+// const PAYLOAD_FORMAT_INDICATOR: u8 = 0x01;
+// const MESSAGE_EXPIRY_INTERVAL: u8 = 0x02;
+// const CONTENT_TYPE: u8 = 0x03;
+// const RESPONSE_TOPIC: u8 = 0x08;
+// const CORRELATION_DATA: u8 = 0x09;
+// const SUBSCRIPTION_IDENTIFIER: u8 = 0x0b;
+// const SESSION_EXPIRY_INTERVAL: u8 = 0x11;
+// const ASSIGNED_CLIENT_IDENTIFIER: u8 = 0x12;
+// const SERVER_KEEP_ALIVE: u8 = 0x13;
+// const AUTHENTICATION_METHOD: u8 = 0x15;
+// const AUTHENTICATION_DATA: u8 = 0x16;
+// const REQUEST_PROBLEM_INFORMATION: u8 = 0x17;
+// const WILL_DELAY_INTERVAL: u8 = 0x18;
+// const REQUEST_RESPONSE_INFORMATION: u8 = 0x19;
+// const RESPONSE_INFORMATION: u8 = 0x1a;
+// const SERVER_REFERENCE: u8 = 0x1c;
+// const REASON_STRING: u8 = 0x1f;
+// const RECEIVE_MAXIMUM: u8 = 0x21;
+// const TOPIC_ALIAS_MAXIMUM: u8 = 0x22;
+// const TOPIC_ALIAS: u8 = 0x23;
+// const MAXIMUM_QOS: u8 = 0x24;
+// const RETAIN_AVAILABLE: u8 = 0x25;
+// const USER_PROPERTY: u8 = 0x26;
+// const MAXIMUM_PACKET_SIZE: u8 = 0x27;
+// const WILDCARD_SUBSCRIPTION_AVAILABLE: u8 = 0x28;
+// const SUBSCRIPTION_IDENTIFIER_AVAILABLE: u8 = 0x29;
+// const SHARED_SUBSCRIPTION_AVAILABLE: u8 = 0x2a;
 
 fn to_byte_buffer_unchecked<'a, PropertyT, UnderlyingT>(
     _: &PropertyT,
@@ -55,732 +52,125 @@ where
     buf
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PayloadFormatIndicator(pub(crate) Boolean);
+macro_rules! declare_property {
+    ($property_name:ident, $property_type:ty, $property_id:literal) => {
+        #[derive(Clone, Debug, PartialEq)]
+        pub(crate) struct $property_name(pub(crate) $property_type);
 
-impl PropertyID for PayloadFormatIndicator {
-    const PROPERTY_ID: u8 = PAYLOAD_FORMAT_INDICATOR;
-}
-
-impl SizedProperty for PayloadFormatIndicator {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for PayloadFormatIndicator {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for PayloadFormatIndicator {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MessageExpiryInterval(pub(crate) FourByteInteger);
-
-impl PropertyID for MessageExpiryInterval {
-    const PROPERTY_ID: u8 = MESSAGE_EXPIRY_INTERVAL;
-}
-
-impl SizedProperty for MessageExpiryInterval {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for MessageExpiryInterval {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for MessageExpiryInterval {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ContentType(pub(crate) UTF8String);
-
-impl PropertyID for ContentType {
-    const PROPERTY_ID: u8 = CONTENT_TYPE;
-}
-
-impl SizedProperty for ContentType {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ContentType {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for ContentType {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ResponseTopic(pub(crate) UTF8String);
-
-impl PropertyID for ResponseTopic {
-    const PROPERTY_ID: u8 = RESPONSE_TOPIC;
-}
-
-impl SizedProperty for ResponseTopic {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ResponseTopic {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for ResponseTopic {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CorrelationData(pub(crate) Binary);
-
-impl PropertyID for CorrelationData {
-    const PROPERTY_ID: u8 = CORRELATION_DATA;
-}
-
-impl SizedProperty for CorrelationData {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for CorrelationData {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for CorrelationData {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct SubscriptionIdentifier(pub(crate) VarSizeInt);
-
-impl PropertyID for SubscriptionIdentifier {
-    const PROPERTY_ID: u8 = SUBSCRIPTION_IDENTIFIER;
-}
-
-impl SizedProperty for SubscriptionIdentifier {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for SubscriptionIdentifier {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for SubscriptionIdentifier {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct SessionExpiryInterval(pub(crate) FourByteInteger);
-
-impl PropertyID for SessionExpiryInterval {
-    const PROPERTY_ID: u8 = SESSION_EXPIRY_INTERVAL;
-}
-
-impl SizedProperty for SessionExpiryInterval {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for SessionExpiryInterval {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for SessionExpiryInterval {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct AssignedClientIdentifier(pub(crate) UTF8String);
-
-impl PropertyID for AssignedClientIdentifier {
-    const PROPERTY_ID: u8 = ASSIGNED_CLIENT_IDENTIFIER;
-}
-
-impl SizedProperty for AssignedClientIdentifier {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for AssignedClientIdentifier {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for AssignedClientIdentifier {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ServerKeepAlive(pub(crate) TwoByteInteger);
-
-impl PropertyID for ServerKeepAlive {
-    const PROPERTY_ID: u8 = SERVER_KEEP_ALIVE;
-}
-
-impl SizedProperty for ServerKeepAlive {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ServerKeepAlive {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for ServerKeepAlive {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct AuthenticationMethod(pub(crate) UTF8String);
-
-impl PropertyID for AuthenticationMethod {
-    const PROPERTY_ID: u8 = AUTHENTICATION_METHOD;
-}
-
-impl SizedProperty for AuthenticationMethod {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for AuthenticationMethod {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for AuthenticationMethod {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct AuthenticationData(pub(crate) Binary);
-
-impl PropertyID for AuthenticationData {
-    const PROPERTY_ID: u8 = AUTHENTICATION_DATA;
-}
-
-impl SizedProperty for AuthenticationData {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for AuthenticationData {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for AuthenticationData {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RequestProblemInformation(pub(crate) Byte);
-
-impl PropertyID for RequestProblemInformation {
-    const PROPERTY_ID: u8 = REQUEST_PROBLEM_INFORMATION;
-}
-
-impl SizedProperty for RequestProblemInformation {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for RequestProblemInformation {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for RequestProblemInformation {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct WillDelayInterval(pub(crate) FourByteInteger);
-
-impl PropertyID for WillDelayInterval {
-    const PROPERTY_ID: u8 = WILL_DELAY_INTERVAL;
-}
-
-impl SizedProperty for WillDelayInterval {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for WillDelayInterval {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for WillDelayInterval {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RequestResponseInformation(pub(crate) Byte);
-
-impl PropertyID for RequestResponseInformation {
-    const PROPERTY_ID: u8 = REQUEST_RESPONSE_INFORMATION;
-}
-
-impl SizedProperty for RequestResponseInformation {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for RequestResponseInformation {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for RequestResponseInformation {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ResponseInformation(pub(crate) UTF8String);
-
-impl PropertyID for ResponseInformation {
-    const PROPERTY_ID: u8 = RESPONSE_INFORMATION;
-}
-
-impl SizedProperty for ResponseInformation {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ResponseInformation {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for ResponseInformation {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ServerReference(pub(crate) UTF8String);
-
-impl PropertyID for ServerReference {
-    const PROPERTY_ID: u8 = SERVER_REFERENCE;
-}
-
-impl SizedProperty for ServerReference {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ServerReference {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for ServerReference {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ReasonString(pub(crate) UTF8String);
-
-impl PropertyID for ReasonString {
-    const PROPERTY_ID: u8 = REASON_STRING;
-}
-
-impl SizedProperty for ReasonString {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ReasonString {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for ReasonString {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ReceiveMaximum(pub(crate) TwoByteInteger);
-
-impl PropertyID for ReceiveMaximum {
-    const PROPERTY_ID: u8 = RECEIVE_MAXIMUM;
-}
-
-impl SizedProperty for ReceiveMaximum {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for ReceiveMaximum {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+        impl PropertyID for $property_name {
+            const PROPERTY_ID: u8 = $property_id;
+        }
 
-impl TryToByteBuffer for ReceiveMaximum {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TopicAliasMaximum(pub(crate) TwoByteInteger);
-
-impl PropertyID for TopicAliasMaximum {
-    const PROPERTY_ID: u8 = TOPIC_ALIAS_MAXIMUM;
-}
-
-impl SizedProperty for TopicAliasMaximum {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for TopicAliasMaximum {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for TopicAliasMaximum {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TopicAlias(pub(crate) TwoByteInteger);
-
-impl PropertyID for TopicAlias {
-    const PROPERTY_ID: u8 = TOPIC_ALIAS;
-}
-
-impl SizedProperty for TopicAlias {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for TopicAlias {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for TopicAlias {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MaximumQoS(pub(crate) QoS);
-
-impl PropertyID for MaximumQoS {
-    const PROPERTY_ID: u8 = MAXIMUM_QOS;
-}
-
-impl SizedProperty for MaximumQoS {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for MaximumQoS {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+        impl SizedProperty for $property_name {
+            fn property_len(&self) -> usize {
+                mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
+            }
+        }
 
-impl TryToByteBuffer for MaximumQoS {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RetainAvailable(pub(crate) Boolean);
-
-impl PropertyID for RetainAvailable {
-    const PROPERTY_ID: u8 = RETAIN_AVAILABLE;
-}
-
-impl SizedProperty for RetainAvailable {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for RetainAvailable {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
-
-impl TryToByteBuffer for RetainAvailable {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct UserProperty(pub(crate) UTF8StringPair);
+        impl ToByteBuffer for $property_name {
+            fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+                let result = &mut buf[0..self.property_len()];
+                to_byte_buffer_unchecked(self, &self.0, result)
+            }
+        }
 
-impl PropertyID for UserProperty {
-    const PROPERTY_ID: u8 = USER_PROPERTY;
-}
-
-impl SizedProperty for UserProperty {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
-    }
+        impl TryToByteBuffer for $property_name {
+            fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+                let result = buf.get_mut(0..self.property_len())?;
+                Some(to_byte_buffer_unchecked(self, &self.0, result))
+            }
+        }
+    };
 }
 
-impl ToByteBuffer for UserProperty {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+declare_property!(PayloadFormatIndicator, Boolean, 1);
+declare_property!(MessageExpiryInterval, FourByteInteger, 2);
+declare_property!(ContentType, UTF8String, 3);
+declare_property!(ResponseTopic, UTF8String, 8);
+declare_property!(CorrelationData, Binary, 9);
+declare_property!(SubscriptionIdentifier, VarSizeInt, 11);
+declare_property!(SessionExpiryInterval, FourByteInteger, 17);
 
-impl TryToByteBuffer for UserProperty {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
+impl Default for SessionExpiryInterval {
+    fn default() -> Self {
+        Self(0)
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MaximumPacketSize(pub(crate) FourByteInteger);
-
-impl PropertyID for MaximumPacketSize {
-    const PROPERTY_ID: u8 = MAXIMUM_PACKET_SIZE;
-}
+declare_property!(AssignedClientIdentifier, UTF8String, 18);
+declare_property!(ServerKeepAlive, TwoByteInteger, 19);
+declare_property!(AuthenticationMethod, UTF8String, 21);
+declare_property!(AuthenticationData, Binary, 22);
+declare_property!(RequestProblemInformation, Byte, 23);
+declare_property!(WillDelayInterval, FourByteInteger, 24);
+declare_property!(RequestResponseInformation, Byte, 25);
+declare_property!(ResponseInformation, UTF8String, 26);
+declare_property!(ServerReference, UTF8String, 28);
+declare_property!(ReasonString, UTF8String, 31);
+declare_property!(ReceiveMaximum, TwoByteInteger, 33);
 
-impl SizedProperty for MaximumPacketSize {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
+impl Default for ReceiveMaximum {
+    fn default() -> Self {
+        Self(65535)
     }
 }
 
-impl ToByteBuffer for MaximumPacketSize {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+declare_property!(TopicAliasMaximum, TwoByteInteger, 34);
 
-impl TryToByteBuffer for MaximumPacketSize {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
+impl Default for TopicAliasMaximum {
+    fn default() -> Self {
+        Self(0)
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct WildcardSubscriptionAvailable(pub(crate) Boolean);
+declare_property!(TopicAlias, TwoByteInteger, 35);
+declare_property!(MaximumQoS, QoS, 36);
 
-impl PropertyID for WildcardSubscriptionAvailable {
-    const PROPERTY_ID: u8 = WILDCARD_SUBSCRIPTION_AVAILABLE;
-}
-
-impl SizedProperty for WildcardSubscriptionAvailable {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
+impl Default for MaximumQoS {
+    fn default() -> Self {
+        Self(QoS::ExactlyOnce)
     }
 }
 
-impl ToByteBuffer for WildcardSubscriptionAvailable {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+declare_property!(RetainAvailable, Boolean, 37);
 
-impl TryToByteBuffer for WildcardSubscriptionAvailable {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
+impl Default for RetainAvailable {
+    fn default() -> Self {
+        Self(true)
     }
 }
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct SubscriptionIdentifierAvailable(pub(crate) Boolean);
 
-impl PropertyID for SubscriptionIdentifierAvailable {
-    const PROPERTY_ID: u8 = SUBSCRIPTION_IDENTIFIER_AVAILABLE;
-}
+declare_property!(UserProperty, UTF8StringPair, 38);
+declare_property!(MaximumPacketSize, FourByteInteger, 39);
 
-impl SizedProperty for SubscriptionIdentifierAvailable {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
+impl Default for MaximumPacketSize {
+    fn default() -> Self {
+        // TODO: Not yet sure if that makes sense
+        Self(FourByteInteger::MAX)
     }
 }
 
-impl ToByteBuffer for SubscriptionIdentifierAvailable {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+declare_property!(WildcardSubscriptionAvailable, Boolean, 40);
 
-impl TryToByteBuffer for SubscriptionIdentifierAvailable {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
+impl Default for WildcardSubscriptionAvailable {
+    fn default() -> Self {
+        Self(true)
     }
 }
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct SharedSubscriptionAvailable(pub(crate) Boolean);
 
-impl PropertyID for SharedSubscriptionAvailable {
-    const PROPERTY_ID: u8 = SHARED_SUBSCRIPTION_AVAILABLE;
-}
+declare_property!(SubscriptionIdentifierAvailable, Boolean, 41);
 
-impl SizedProperty for SharedSubscriptionAvailable {
-    fn property_len(&self) -> usize {
-        mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
+impl Default for SubscriptionIdentifierAvailable {
+    fn default() -> Self {
+        Self(true)
     }
 }
 
-impl ToByteBuffer for SharedSubscriptionAvailable {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        to_byte_buffer_unchecked(self, &self.0, result)
-    }
-}
+declare_property!(SharedSubscriptionAvailable, Boolean, 42);
 
-impl TryToByteBuffer for SharedSubscriptionAvailable {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.property_len())?;
-        Some(to_byte_buffer_unchecked(self, &self.0, result))
+impl Default for SharedSubscriptionAvailable {
+    fn default() -> Self {
+        Self(true)
     }
 }
 
@@ -838,7 +228,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
         self.buf = remaining;
 
         return match u8::from(id_var) {
-            PAYLOAD_FORMAT_INDICATOR => {
+            PayloadFormatIndicator::PROPERTY_ID => {
                 let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -848,7 +238,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     property,
                 )))
             }
-            REQUEST_RESPONSE_INFORMATION => {
+            RequestResponseInformation::PROPERTY_ID => {
                 let property = Byte::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -858,7 +248,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     RequestResponseInformation(property),
                 ))
             }
-            WILDCARD_SUBSCRIPTION_AVAILABLE => {
+            WildcardSubscriptionAvailable::PROPERTY_ID => {
                 let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -868,7 +258,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     WildcardSubscriptionAvailable(property),
                 ))
             }
-            SUBSCRIPTION_IDENTIFIER_AVAILABLE => {
+            SubscriptionIdentifierAvailable::PROPERTY_ID => {
                 let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -878,7 +268,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     SubscriptionIdentifierAvailable(property),
                 ))
             }
-            SHARED_SUBSCRIPTION_AVAILABLE => {
+            SharedSubscriptionAvailable::PROPERTY_ID => {
                 let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -888,7 +278,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     SharedSubscriptionAvailable(property),
                 ))
             }
-            MAXIMUM_QOS => {
+            MaximumQoS::PROPERTY_ID => {
                 let property = QoS::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -896,7 +286,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::MaximumQoS(MaximumQoS(property)))
             }
-            RETAIN_AVAILABLE => {
+            RetainAvailable::PROPERTY_ID => {
                 let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -904,7 +294,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::RetainAvailable(RetainAvailable(property)))
             }
-            REQUEST_PROBLEM_INFORMATION => {
+            RequestProblemInformation::PROPERTY_ID => {
                 let property = Byte::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -914,7 +304,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     RequestProblemInformation(property),
                 ))
             }
-            SERVER_KEEP_ALIVE => {
+            ServerKeepAlive::PROPERTY_ID => {
                 let property = TwoByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -922,7 +312,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ServerKeepAlive(ServerKeepAlive(property)))
             }
-            RECEIVE_MAXIMUM => {
+            ReceiveMaximum::PROPERTY_ID => {
                 let property = TwoByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -930,7 +320,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ReceiveMaximum(ReceiveMaximum(property)))
             }
-            TOPIC_ALIAS_MAXIMUM => {
+            TopicAliasMaximum::PROPERTY_ID => {
                 let property = TwoByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -938,7 +328,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::TopicAliasMaximum(TopicAliasMaximum(property)))
             }
-            TOPIC_ALIAS => {
+            TopicAlias::PROPERTY_ID => {
                 let property = TwoByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -946,7 +336,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::TopicAlias(TopicAlias(property)))
             }
-            MESSAGE_EXPIRY_INTERVAL => {
+            MessageExpiryInterval::PROPERTY_ID => {
                 let property = FourByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -956,7 +346,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     property,
                 )))
             }
-            SESSION_EXPIRY_INTERVAL => {
+            SessionExpiryInterval::PROPERTY_ID => {
                 let property = FourByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -966,7 +356,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     property,
                 )))
             }
-            WILL_DELAY_INTERVAL => {
+            WillDelayInterval::PROPERTY_ID => {
                 let property = FourByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -974,7 +364,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::WillDelayInterval(WillDelayInterval(property)))
             }
-            MAXIMUM_PACKET_SIZE => {
+            MaximumPacketSize::PROPERTY_ID => {
                 let property = FourByteInteger::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -982,7 +372,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::MaximumPacketSize(MaximumPacketSize(property)))
             }
-            SUBSCRIPTION_IDENTIFIER => {
+            SubscriptionIdentifier::PROPERTY_ID => {
                 let property = VarSizeInt::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -992,7 +382,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     property,
                 )))
             }
-            CORRELATION_DATA => {
+            CorrelationData::PROPERTY_ID => {
                 let property = Binary::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1000,7 +390,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::CorrelationData(CorrelationData(property)))
             }
-            CONTENT_TYPE => {
+            ContentType::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1008,7 +398,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ContentType(ContentType(property)))
             }
-            RESPONSE_TOPIC => {
+            ResponseTopic::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1016,7 +406,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ResponseTopic(ResponseTopic(property)))
             }
-            ASSIGNED_CLIENT_IDENTIFIER => {
+            AssignedClientIdentifier::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1026,7 +416,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     AssignedClientIdentifier(property),
                 ))
             }
-            AUTHENTICATION_METHOD => {
+            AuthenticationMethod::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1036,7 +426,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                     property,
                 )))
             }
-            AUTHENTICATION_DATA => {
+            AuthenticationData::PROPERTY_ID => {
                 let property = Binary::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1044,7 +434,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::AuthenticationData(AuthenticationData(property)))
             }
-            RESPONSE_INFORMATION => {
+            ResponseInformation::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1052,7 +442,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ResponseInformation(ResponseInformation(property)))
             }
-            SERVER_REFERENCE => {
+            ServerReference::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1060,7 +450,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ServerReference(ServerReference(property)))
             }
-            REASON_STRING => {
+            ReasonString::PROPERTY_ID => {
                 let property = UTF8String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1068,7 +458,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
                 Some(Property::ReasonString(ReasonString(property)))
             }
-            USER_PROPERTY => {
+            UserProperty::PROPERTY_ID => {
                 let property = UTF8StringPair::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
@@ -1340,8 +730,19 @@ mod test {
         fn utf8_string_pair() {
             const EXPECTED_KEY: &str = "key";
             const EXPECTED_VAL: &str = "val";
-            const ID: u8 = USER_PROPERTY;
-            const INPUT: [u8; 11] = [ID, 0, 3, b'k', b'e', b'y', 0, 3, b'v', b'a', b'l'];
+            const INPUT: [u8; 11] = [
+                UserProperty::PROPERTY_ID,
+                0,
+                3,
+                b'k',
+                b'e',
+                b'y',
+                0,
+                3,
+                b'v',
+                b'a',
+                b'l',
+            ];
             let mut iter = PropertyIterator::from(&INPUT[..]);
             let property = iter.next().unwrap();
 
@@ -1504,7 +905,7 @@ mod test {
             const INPUT_KEY: &str = "key";
             const INPUT_VAL: &str = "val";
             const EXPECTED_BUF: [u8; 11] = [
-                USER_PROPERTY,
+                UserProperty::PROPERTY_ID,
                 0,
                 3,
                 b'k',

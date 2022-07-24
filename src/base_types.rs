@@ -42,6 +42,7 @@ impl VarSizeInt {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn to_byte_buffer_unchecked<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
         let result = &mut buf[0..self.len()];
 
@@ -64,6 +65,12 @@ impl VarSizeInt {
         }
 
         result
+    }
+}
+
+impl Default for VarSizeInt {
+    fn default() -> Self {
+        Self(VarSizeIntState::SingleByte(0))
     }
 }
 
@@ -279,7 +286,7 @@ impl SizedProperty for Byte {
 
 impl TryFromBytes for Byte {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        bytes.iter().copied().next()
+        bytes.get(0).copied()
     }
 }
 
@@ -292,11 +299,7 @@ impl ToByteBuffer for Byte {
 
 impl TryToByteBuffer for Byte {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        buf[0] = *self;
+        *buf.get_mut(0)? = *self;
         Some(&buf[0..1])
     }
 }
@@ -320,6 +323,12 @@ impl QoS {
     }
 }
 
+impl Default for QoS {
+    fn default() -> Self {
+        QoS::AtMostOnce
+    }
+}
+
 impl SizedProperty for QoS {
     fn property_len(&self) -> usize {
         mem::size_of::<Byte>()
@@ -328,25 +337,20 @@ impl SizedProperty for QoS {
 
 impl TryFromBytes for QoS {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::try_from(bytes.iter().copied().next()?)
+        Self::try_from(*bytes.get(0)?)
     }
 }
 
 impl ToByteBuffer for QoS {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        buf[0] = *self as u8;
+        buf[0] = *self as Byte;
         &buf[0..1]
     }
 }
 
 impl TryToByteBuffer for QoS {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        buf[0] = *self as u8;
-        Some(&buf[0..1])
+        (*self as Byte).try_to_byte_buffer(buf)
     }
 }
 
@@ -370,19 +374,13 @@ impl TryFromBytes for Boolean {
 
 impl ToByteBuffer for Boolean {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        buf[0] = *self as u8;
-        &buf[0..1]
+        (*self as Byte).to_byte_buffer(buf)
     }
 }
 
 impl TryToByteBuffer for Boolean {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        buf[0] = *self as u8;
-        Some(&buf[0..1])
+        (*self as Byte).try_to_byte_buffer(buf)
     }
 }
 
@@ -414,11 +412,7 @@ impl ToByteBuffer for TwoByteInteger {
 
 impl TryToByteBuffer for TwoByteInteger {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..self.property_len()];
+        let result = buf.get_mut(0..self.property_len())?;
         result.copy_from_slice(&self.to_be_bytes());
         Some(result)
     }
@@ -442,11 +436,7 @@ impl ToByteBuffer for FourByteInteger {
 
 impl TryToByteBuffer for FourByteInteger {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..self.property_len()];
+        let result = buf.get_mut(0..self.property_len())?;
         result.copy_from_slice(&self.to_be_bytes());
         Some(result)
     }
@@ -483,11 +473,7 @@ impl TryFromBytes for Binary {
             .map(|&value| value as usize)
             .reduce(|result, tmp| result << 8 | tmp)?;
 
-        if size > remaining.len() {
-            return None;
-        }
-
-        Some(Vec::from(&remaining[0..size]))
+        Some(Vec::from(remaining.get(0..size)?))
     }
 }
 
@@ -501,11 +487,7 @@ impl ToByteBuffer for Binary {
 
 impl TryToByteBuffer for Binary {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..self.property_len()];
+        let result = buf.get_mut(0..self.property_len())?;
         result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self].concat());
         Some(result)
     }
@@ -532,11 +514,7 @@ impl TryFromBytes for UTF8String {
             .map(|&value| value as usize)
             .reduce(|result, tmp| result << 8 | tmp)?;
 
-        if size > remaining.len() {
-            return None;
-        }
-
-        UTF8String::from_utf8(Vec::from(&remaining[0..size])).ok()
+        UTF8String::from_utf8(Vec::from(remaining.get(0..size)?)).ok()
     }
 }
 
@@ -550,11 +528,7 @@ impl ToByteBuffer for UTF8String {
 
 impl TryToByteBuffer for UTF8String {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..self.property_len()];
+        let result = buf.get_mut(0..self.property_len())?;
         result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self.as_bytes()].concat());
         Some(result)
     }
@@ -578,11 +552,7 @@ impl<'a> ToByteBuffer for UTF8StringRef<'a> {
 
 impl<'a> TryToByteBuffer for UTF8StringRef<'a> {
     fn try_to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> Option<&'b [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..self.property_len()];
+        let result = buf.get_mut(0..self.property_len())?;
         result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self.as_bytes()].concat());
         Some(result)
     }
@@ -656,11 +626,7 @@ impl ToByteBuffer for UTF8StringPair {
 
 impl TryToByteBuffer for UTF8StringPair {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        if self.property_len() > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..self.property_len()];
+        let result = buf.get_mut(0..self.property_len())?;
         let (key, val) = &self;
 
         result.copy_from_slice(

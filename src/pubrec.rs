@@ -1,12 +1,16 @@
 use crate::{
+    ack::{Ack, AckPacketBuilder},
     base_types::*,
     properties::*,
-    utils::{SizedProperty, TryFromBytes, TryFromIterator},
+    utils::{
+        ByteReader, ByteWriter, PacketID, PropertyID, SizedPacket, SizedProperty, ToByteBuffer,
+        TryFromBytes, TryFromIterator, TryToByteBuffer,
+    },
 };
 use std::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum PubrecReason {
+pub(crate) enum PubrecReason {
     Success = 0x00,
     NoMatchingSubscribers = 0x10,
     UnspecifiedError = 0x80,
@@ -35,163 +39,60 @@ impl PubrecReason {
     }
 }
 
-pub struct Pubrec {
-    packet_identifier: TwoByteInteger,
-    reason: PubrecReason,
-
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
-}
-
-#[derive(Default)]
-pub struct PubrecPacketBuilder {
-    packet_identifier: Option<TwoByteInteger>,
-    reason: Option<PubrecReason>,
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
-}
-
-impl PubrecPacketBuilder {
-    fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
-        self.packet_identifier = Some(val);
-        self
-    }
-
-    fn reason(&mut self, val: PubrecReason) -> &mut Self {
-        self.reason = Some(val);
-        self
-    }
-
-    fn reason_string(&mut self, val: ReasonString) -> &mut Self {
-        self.reason_string = Some(val);
-        self
-    }
-
-    fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
-        self
-    }
-
-    fn build(self) -> Option<Pubrec> {
-        Some(Pubrec {
-            packet_identifier: self.packet_identifier?,
-            reason: self.reason?,
-            reason_string: self.reason_string,
-            user_property: self.user_property,
-        })
+impl Default for PubrecReason {
+    fn default() -> Self {
+        Self::Success
     }
 }
 
-impl Pubrec {
-    pub const PACKET_ID: isize = 5;
+impl SizedProperty for PubrecReason {
+    fn property_len(&self) -> usize {
+        (*self as Byte).property_len()
+    }
 }
 
-impl TryFromBytes for Pubrec {
+impl TryFromBytes for PubrecReason {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut packet_builder = PubrecPacketBuilder::default();
-
-        let mut iter = bytes.iter().copied();
-        let fixed_hdr = iter.next()?;
-
-        debug_assert!(fixed_hdr >> 4 == Self::PACKET_ID as u8);
-        let remaining_len = VarSizeInt::try_from_iter(iter)?;
-        if mem::size_of_val(&fixed_hdr) + remaining_len.len() > bytes.len() {
-            return None;
-        }
-
-        let (_, var_hdr) = bytes.split_at(mem::size_of_val(&fixed_hdr) + remaining_len.len());
-        if remaining_len.value() as usize > var_hdr.len() {
-            return None;
-        }
-
-        let (var_hdr, _) = var_hdr.split_at(remaining_len.into());
-
-        let packet_id = TwoByteInteger::try_from_bytes(var_hdr)?;
-        let (_, var_hdr) = var_hdr.split_at(packet_id.property_len());
-        packet_builder.packet_identifier(packet_id);
-
-        iter = var_hdr.iter().copied();
-
-        let reason = PubrecReason::try_from(iter.next()?)?;
-        let (_, var_hdr) = var_hdr.split_at(1);
-        packet_builder.reason(reason);
-
-        let property_len = VarSizeInt::try_from_iter(iter)?;
-        if property_len.len() > var_hdr.len() {
-            return None;
-        }
-
-        let (_, remaining) = var_hdr.split_at(property_len.len());
-        if property_len.value() as usize > remaining.len() {
-            return None;
-        }
-
-        let (properties, _) = remaining.split_at(property_len.into());
-
-        for property in PropertyIterator::from(properties) {
-            match property {
-                Property::ReasonString(val) => {
-                    packet_builder.reason_string(val);
-                }
-                Property::UserProperty(val) => {
-                    packet_builder.user_property(val);
-                }
-                _ => {
-                    return None;
-                }
-            }
-        }
-
-        packet_builder.build()
+        Self::try_from(Byte::try_from_bytes(bytes)?)
     }
 }
+
+impl ToByteBuffer for PubrecReason {
+    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        (*self as Byte).to_byte_buffer(buf)
+    }
+}
+
+pub(crate) type Pubrec = Ack<PubrecReason>;
+
+impl PacketID for Pubrec {
+    const PACKET_ID: u8 = 5;
+}
+
+pub(crate) type PubrecPacketBuilder = AckPacketBuilder<PubrecReason>;
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::ack::test::*;
 
     #[test]
     fn from_bytes() {
-        const FIXED_HDR: u8 = ((Pubrec::PACKET_ID as u8) << 4) as u8;
-        const PACKET: [u8; 27] = [
-            FIXED_HDR,
-            25,   // Remaining length
-            0x45, // Packet ID MSB
-            0x73, // Packet ID LSB
-            (PubrecReason::Success as u8),
-            21, // Property length
-            (ReasonString::PROPERTY_ID),
-            0, // Reason string size
-            7,
-            b'S',
-            b'u',
-            b'c',
-            b'c',
-            b'e',
-            b's',
-            b's',
-            (UserProperty::PROPERTY_ID),
-            0, // User property key size
-            3,
-            b'k',
-            b'e',
-            b'y',
-            0, // User property value size
-            3,
-            b'v',
-            b'a',
-            b'l',
-        ];
+        from_bytes_impl::<PubrecReason>();
+    }
 
-        let packet = Pubrec::try_from_bytes(&PACKET).unwrap();
+    #[test]
+    fn from_bytes_short() {
+        from_bytes_short_impl::<PubrecReason>();
+    }
 
-        assert_eq!(packet.packet_identifier, 0x4573);
-        assert_eq!(packet.reason, PubrecReason::Success);
-        assert_eq!(packet.reason_string.unwrap().0, "Success");
-        assert_eq!(packet.user_property.len(), 1);
-        assert_eq!(
-            packet.user_property[0],
-            UserProperty((String::from("key"), String::from("val")))
-        );
+    #[test]
+    fn to_bytes() {
+        to_bytes_impl::<PubrecReason>();
+    }
+
+    #[test]
+    fn to_bytes_short() {
+        to_bytes_short_impl::<PubrecReason>();
     }
 }
