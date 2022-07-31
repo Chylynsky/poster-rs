@@ -1,9 +1,9 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
     utils::{
-        ByteReader, ByteWriter, PacketID, PropertyID, SizedPacket, SizedProperty, ToByteBuffer,
-        TryFromBytes, TryFromIterator, TryToByteBuffer,
+        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
+        TryToByteBuffer,
     },
 };
 use std::mem;
@@ -162,7 +162,7 @@ impl TryFromBytes for Auth {
             }
         }
 
-        return builder.build();
+        builder.build()
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::{
-    base_types::VarSizeInt,
-    packets::RxPacket,
-    utils::{ByteReader, TryFromBytes, TryFromIterator},
+    codec::packets::RxPacket,
+    core::base_types::VarSizeInt,
+    core::utils::{ByteReader, TryFromBytes},
 };
 use std::{
     pin::Pin,
@@ -58,7 +58,7 @@ where
                 }
                 PacketStreamState::ReadRemainingData(remaining_len) => {
                     if buf.len() >= *remaining_len {
-                        let result = RxPacket::try_from_bytes(&buf);
+                        let result = RxPacket::try_from_bytes(buf);
                         Pin::new(&mut *stream).consume(*remaining_len); // Consume the packet
                         *state = PacketStreamState::ReadRemainingLength;
                         return Poll::Ready(result);

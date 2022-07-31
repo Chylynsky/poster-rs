@@ -1,9 +1,9 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
     utils::{
-        ByteReader, ByteWriter, PacketID, PropertyID, SizedPacket, SizedProperty, ToByteBuffer,
-        TryFromBytes, TryFromIterator, TryToByteBuffer,
+        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
+        TryToByteBuffer,
     },
 };
 use std::mem;
@@ -375,6 +375,7 @@ impl DisconnectPacketBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::core::utils::PropertyID;
 
     const PACKET: [u8; 25] = [
         ((Disconnect::PACKET_ID as u8) << 4) as u8,

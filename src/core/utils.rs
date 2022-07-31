@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+
 
 pub(crate) trait SizedProperty {
     fn property_len(&self) -> usize;
@@ -127,14 +127,17 @@ impl<'a> ByteWriter<'a> {
     {
         let buf = &mut self.buf[self.offset..];
         let written_bytes = val.try_to_byte_buffer(buf)?.len();
-        Some(self.advance_by(written_bytes))
+        self.advance_by(written_bytes);
+        Some(())
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     mod byte_writer {
-        use crate::utils::ByteWriter;
+        use super::*;
 
         #[test]
         fn write() {
@@ -186,7 +189,7 @@ mod test {
     }
 
     mod byte_reader {
-        use crate::utils::ByteReader;
+        use super::*;
 
         #[test]
         fn try_read() {

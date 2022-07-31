@@ -1,20 +1,11 @@
 use crate::{
-    auth::Auth,
-    connack::Connack,
-    connect::Connect,
-    disconnect::Disconnect,
-    pingreq::Pingreq,
-    pingresp::Pingresp,
-    puback::Puback,
-    pubcomp::Pubcomp,
-    publish::Publish,
-    pubrec::Pubrec,
-    pubrel::Pubrel,
-    suback::Suback,
-    subscribe::Subscribe,
-    unsuback::Unsuback,
-    unsubscribe::Unsubscribe,
-    utils::{PacketID, TryFromBytes, TryToByteBuffer},
+    codec::{
+        auth::Auth, connack::Connack, connect::Connect, disconnect::Disconnect, pingreq::Pingreq,
+        pingresp::Pingresp, puback::Puback, pubcomp::Pubcomp, publish::Publish, pubrec::Pubrec,
+        pubrel::Pubrel, suback::Suback, subscribe::Subscribe, unsuback::Unsuback,
+        unsubscribe::Unsubscribe,
+    },
+    core::utils::{PacketID, TryFromBytes, TryToByteBuffer},
 };
 
 pub(crate) enum RxPacket {

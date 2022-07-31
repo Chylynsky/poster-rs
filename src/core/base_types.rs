@@ -1,4 +1,6 @@
-use crate::utils::{SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator, TryToByteBuffer};
+use crate::core::utils::{
+    SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator, TryToByteBuffer,
+};
 use std::{
     convert::From,
     iter::Iterator,

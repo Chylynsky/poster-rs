@@ -1,9 +1,9 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
     utils::{
-        ByteReader, ByteWriter, PacketID, PropertyID, SizedPacket, SizedProperty, ToByteBuffer,
-        TryFromBytes, TryFromIterator, TryToByteBuffer,
+        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
+        TryToByteBuffer,
     },
 };
 use std::{cmp::PartialEq, mem};
@@ -71,7 +71,7 @@ where
 {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
         let mut builder = AckPacketBuilder::<ReasonT>::default();
-        let mut reader = ByteReader::from(&bytes);
+        let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
         if fixed_hdr != Self::FIXED_HDR {
@@ -202,8 +202,10 @@ where
     }
 }
 
+#[cfg(test)]
 pub(crate) mod test {
     use super::*;
+    use crate::core::utils::PropertyID;
     use std::{cmp::PartialEq, fmt::Debug};
 
     pub(crate) fn from_bytes_impl<ReasonT>()

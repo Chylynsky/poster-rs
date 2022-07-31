@@ -1,11 +1,11 @@
 use crate::{
-    base_types::*,
-    utils::{
+    core::base_types::*,
+    core::utils::{
         ByteWriter, PropertyID, SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator,
         TryToByteBuffer,
     },
 };
-use std::{convert::From, iter::Iterator, mem, str::Utf8Error};
+use std::{convert::From, iter::Iterator, mem};
 
 // const PAYLOAD_FORMAT_INDICATOR: u8 = 0x01;
 // const MESSAGE_EXPIRY_INTERVAL: u8 = 0x02;
@@ -91,6 +91,7 @@ declare_property!(CorrelationData, Binary, 9);
 declare_property!(SubscriptionIdentifier, VarSizeInt, 11);
 declare_property!(SessionExpiryInterval, FourByteInteger, 17);
 
+#[allow(clippy::derivable_impls)]
 impl Default for SessionExpiryInterval {
     fn default() -> Self {
         Self(0)
@@ -117,6 +118,7 @@ impl Default for ReceiveMaximum {
 
 declare_property!(TopicAliasMaximum, TwoByteInteger, 34);
 
+#[allow(clippy::derivable_impls)]
 impl Default for TopicAliasMaximum {
     fn default() -> Self {
         Self(0)

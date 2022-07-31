@@ -1,12 +1,11 @@
-use std::mem;
-
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
     utils::{
-        ByteWriter, PacketID, PropertyID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer,
+        ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer,
     },
 };
+use std::mem;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RetainHandling {

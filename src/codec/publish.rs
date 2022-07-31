@@ -1,9 +1,8 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
     utils::{
-        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, TryFromBytes,
-        TryFromIterator, TryToByteBuffer,
+        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, TryFromBytes, TryToByteBuffer,
     },
 };
 use std::mem;

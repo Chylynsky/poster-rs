@@ -1,9 +1,7 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
-    utils::{
-        ByteWriter, PacketID, PropertyID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer,
-    },
+    utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
 };
 use std::mem;
 
@@ -394,6 +392,7 @@ pub(crate) struct ConnectPacketBuilder {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::core::utils::PropertyID;
 
     #[test]
     fn to_bytes() {

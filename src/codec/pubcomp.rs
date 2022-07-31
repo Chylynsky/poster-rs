@@ -1,10 +1,10 @@
 use crate::{
-    ack::{Ack, AckPacketBuilder},
-    base_types::*,
-    properties::*,
-    utils::{
-        ByteReader, PacketID, PropertyID, SizedProperty, ToByteBuffer, TryFromBytes,
-        TryFromIterator,
+    codec::ack::{Ack, AckPacketBuilder},
+    core::{
+        base_types::*,
+        utils::{
+            PacketID, SizedProperty, ToByteBuffer, TryFromBytes,
+        },
     },
 };
 use std::mem;
@@ -60,7 +60,7 @@ pub(crate) type PubcompPacketBuilder = AckPacketBuilder<PubcompReason>;
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ack::test::*;
+    use crate::codec::ack::test::*;
 
     #[test]
     fn from_bytes() {

@@ -1,4 +1,4 @@
-use crate::{
+use crate::core::{
     base_types::{Byte, TwoByteInteger, UTF8String, VarSizeInt},
     properties::UserProperty,
     utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
@@ -135,10 +135,7 @@ impl UnsubscribePacketBuilder {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        unsubscribe::{Unsubscribe, UnsubscribePacketBuilder},
-        utils::TryToByteBuffer,
-    };
+    use super::*;
 
     #[test]
     fn to_bytes() {

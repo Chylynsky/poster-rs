@@ -1,57 +1,67 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
-    utils::{ByteReader, PacketID, PropertyID, SizedProperty, TryFromBytes, TryFromIterator},
+    utils::{ByteReader, PacketID, TryFromBytes},
 };
 use std::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum UnsubackReason {
-    Success = 0x00,
-    NoSubscriptionExisted = 0x11,
+pub(crate) enum SubackReason {
+    GranteedQoS0 = 0x00,
+    GranteedQoS1 = 0x01,
+    GranteedQoS2 = 0x02,
     UnspecifiedError = 0x80,
     ImplementationSpecificError = 0x83,
     NotAuthorized = 0x87,
     TopicFilterInvalid = 0x8f,
     PacketIdentifierInUse = 0x91,
+    QuotaExceeded = 0x97,
+    SharedSubscriptionsNotSupported = 0x9e,
+    SubscriptionIdentifiersNotSupported = 0xa1,
+    WildcardSubscriptionsNotSupported = 0xa2,
 }
 
-impl UnsubackReason {
+impl SubackReason {
     pub(crate) fn try_from(val: u8) -> Option<Self> {
         match val {
-            0x00 => Some(UnsubackReason::Success),
-            0x11 => Some(UnsubackReason::NoSubscriptionExisted),
-            0x80 => Some(UnsubackReason::UnspecifiedError),
-            0x83 => Some(UnsubackReason::ImplementationSpecificError),
-            0x87 => Some(UnsubackReason::NotAuthorized),
-            0x8f => Some(UnsubackReason::TopicFilterInvalid),
-            0x91 => Some(UnsubackReason::PacketIdentifierInUse),
+            0x00 => Some(SubackReason::GranteedQoS0),
+            0x01 => Some(SubackReason::GranteedQoS1),
+            0x02 => Some(SubackReason::GranteedQoS2),
+            0x80 => Some(SubackReason::UnspecifiedError),
+            0x83 => Some(SubackReason::ImplementationSpecificError),
+            0x87 => Some(SubackReason::NotAuthorized),
+            0x8f => Some(SubackReason::TopicFilterInvalid),
+            0x91 => Some(SubackReason::PacketIdentifierInUse),
+            0x97 => Some(SubackReason::QuotaExceeded),
+            0x9e => Some(SubackReason::SharedSubscriptionsNotSupported),
+            0xa1 => Some(SubackReason::SubscriptionIdentifiersNotSupported),
+            0xa2 => Some(SubackReason::WildcardSubscriptionsNotSupported),
             _ => None,
         }
     }
 }
 
-pub(crate) struct Unsuback {
+pub(crate) struct Suback {
     packet_identifier: TwoByteInteger,
 
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
 
-    payload: Vec<UnsubackReason>,
+    payload: Vec<SubackReason>,
 }
 
-impl Unsuback {
+impl Suback {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 }
 
-impl PacketID for Unsuback {
-    const PACKET_ID: u8 = 11;
+impl PacketID for Suback {
+    const PACKET_ID: u8 = 9;
 }
 
-impl TryFromBytes for Unsuback {
+impl TryFromBytes for Suback {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = UnsubackPacketBuilder::default();
-        let mut reader = ByteReader::from(&bytes);
+        let mut builder = SubackPacketBuilder::default();
+        let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
         if fixed_hdr != Self::FIXED_HDR {
@@ -92,8 +102,9 @@ impl TryFromBytes for Unsuback {
         builder.payload(
             payload
                 .iter()
-                .map(|&val| UnsubackReason::try_from(val))
-                .collect::<Option<Vec<UnsubackReason>>>()?,
+                .copied()
+                .map(SubackReason::try_from)
+                .collect::<Option<Vec<SubackReason>>>()?,
         );
         builder.build()
 
@@ -147,9 +158,9 @@ impl TryFromBytes for Unsuback {
         //     }
         // }
 
-        // let payload: Option<Vec<UnsubackReason>> = payload
+        // let payload: Option<Vec<SubackReason>> = payload
         //     .iter()
-        //     .map(|&val| UnsubackReason::try_from(val))
+        //     .map(|&val| SubackReason::try_from(val))
         //     .collect();
         // builder.payload(payload?);
 
@@ -158,14 +169,14 @@ impl TryFromBytes for Unsuback {
 }
 
 #[derive(Default)]
-pub(crate) struct UnsubackPacketBuilder {
+pub(crate) struct SubackPacketBuilder {
     packet_identifier: Option<TwoByteInteger>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
-    payload: Vec<UnsubackReason>,
+    payload: Vec<SubackReason>,
 }
 
-impl UnsubackPacketBuilder {
+impl SubackPacketBuilder {
     pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
         self.packet_identifier = Some(val);
         self
@@ -181,13 +192,13 @@ impl UnsubackPacketBuilder {
         self
     }
 
-    pub(crate) fn payload(&mut self, val: Vec<UnsubackReason>) -> &mut Self {
+    pub(crate) fn payload(&mut self, val: Vec<SubackReason>) -> &mut Self {
         self.payload = val;
         self
     }
 
-    pub(crate) fn build(self) -> Option<Unsuback> {
-        Some(Unsuback {
+    pub(crate) fn build(self) -> Option<Suback> {
+        Some(Suback {
             packet_identifier: self.packet_identifier?,
             reason_string: self.reason_string,
             user_property: self.user_property,
@@ -199,10 +210,11 @@ impl UnsubackPacketBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::core::utils::PropertyID;
 
     #[test]
     fn from_bytes() {
-        const FIXED_HDR: u8 = ((Unsuback::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = ((Suback::PACKET_ID as u8) << 4) as u8;
         const PACKET: [u8; 24] = [
             FIXED_HDR,
             22,   // Remaining length
@@ -227,10 +239,10 @@ mod test {
             b'v',
             b'a',
             b'l',
-            (UnsubackReason::Success as u8),
+            (SubackReason::GranteedQoS2 as u8),
         ];
 
-        let packet = Unsuback::try_from_bytes(&PACKET).unwrap();
+        let packet = Suback::try_from_bytes(&PACKET).unwrap();
 
         assert_eq!(packet.packet_identifier, 0x4573);
         assert_eq!(packet.reason_string.unwrap().0, "test");
@@ -240,6 +252,6 @@ mod test {
             UserProperty((String::from("key"), String::from("val")))
         );
         assert_eq!(packet.payload.len(), 1);
-        assert_eq!(packet.payload[0], UnsubackReason::Success)
+        assert_eq!(packet.payload[0], SubackReason::GranteedQoS2)
     }
 }

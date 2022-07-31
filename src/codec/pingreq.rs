@@ -1,4 +1,4 @@
-use crate::{
+use crate::core::{
     base_types::Byte,
     utils::{ByteWriter, PacketID, SizedPacket, TryToByteBuffer},
 };

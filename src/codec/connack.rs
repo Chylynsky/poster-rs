@@ -1,7 +1,7 @@
-use crate::{
+use crate::core::{
     base_types::*,
     properties::*,
-    utils::{ByteReader, PacketID, SizedProperty, TryFromBytes, TryFromIterator},
+    utils::{ByteReader, PacketID, SizedProperty, TryFromBytes},
 };
 use std::mem;
 
