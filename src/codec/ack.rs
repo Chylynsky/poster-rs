@@ -104,10 +104,10 @@ where
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::ReasonString(val) => {
-                    builder.reason_string(val);
+                    builder.reason_string(val.0);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val);
+                    builder.user_property(val.0);
                 }
                 _ => {
                     return None;
@@ -182,13 +182,13 @@ where
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: ReasonString) -> &mut Self {
-        self.reason_string = Some(val);
+    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+        self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 
@@ -312,8 +312,8 @@ pub(crate) mod test {
         let mut builder = AckPacketBuilder::<ReasonT>::default();
         builder.packet_identifier(0x4573);
         builder.reason(ReasonT::default());
-        builder.reason_string(ReasonString(String::from("Success")));
-        builder.user_property(UserProperty((String::from("key"), String::from("val"))));
+        builder.reason_string(String::from("Success"));
+        builder.user_property((String::from("key"), String::from("val")));
 
         let packet = builder.build().unwrap();
         let mut buf = vec![0; expected_packet.len()];

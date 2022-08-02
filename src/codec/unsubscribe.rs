@@ -1,6 +1,6 @@
 use crate::core::{
-    base_types::{Byte, TwoByteInteger, UTF8String, VarSizeInt},
-    properties::UserProperty,
+    base_types::*,
+    properties::*,
     utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
 };
 
@@ -106,8 +106,8 @@ impl UnsubscribePacketBuilder {
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 

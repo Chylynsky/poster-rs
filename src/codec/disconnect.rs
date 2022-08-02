@@ -191,10 +191,8 @@ impl PacketID for Disconnect {
 
 impl SizedPacket for Disconnect {
     fn packet_len(&self) -> usize {
-        const FIXED_HDR_LEN: usize = mem::size_of::<Byte>();
         let remaining_len = self.remaining_len();
-
-        FIXED_HDR_LEN + remaining_len.len() + remaining_len.value() as usize
+        mem::size_of::<Byte>() + remaining_len.len() + remaining_len.value() as usize
     }
 }
 

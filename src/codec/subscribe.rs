@@ -1,9 +1,7 @@
 use crate::core::{
     base_types::*,
     properties::*,
-    utils::{
-        ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer,
-    },
+    utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
 };
 use std::mem;
 
@@ -167,14 +165,14 @@ impl SubscribePacketBuilder {
 
     pub(crate) fn subscription_identifiier(
         &mut self,
-        subscription_identifiier: SubscriptionIdentifier,
+        subscription_identifiier: VarSizeInt,
     ) -> &mut Self {
-        self.subscription_identifiier = Some(subscription_identifiier);
+        self.subscription_identifiier = Some(SubscriptionIdentifier(subscription_identifiier));
         self
     }
 
-    pub(crate) fn user_property(&mut self, user_property: UserProperty) -> &mut Self {
-        self.user_property.push(user_property);
+    pub(crate) fn user_property(&mut self, user_property: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(user_property));
         self
     }
 

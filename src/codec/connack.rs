@@ -81,7 +81,7 @@ impl TryFromBytes for ConnectReason {
 
 pub(crate) struct Connack {
     // Connack variable header
-    session_present: bool,
+    session_present: Boolean,
     reason: ConnectReason,
 
     // Connack properties
@@ -147,55 +147,55 @@ impl TryFromBytes for Connack {
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::WildcardSubscriptionAvailable(val) => {
-                    builder.wildcard_subscription_available(val);
+                    builder.wildcard_subscription_available(val.0);
                 }
                 Property::SubscriptionIdentifierAvailable(val) => {
-                    builder.subscription_identifier_available(val);
+                    builder.subscription_identifier_available(val.0);
                 }
                 Property::SharedSubscriptionAvailable(val) => {
-                    builder.shared_subscription_available(val);
+                    builder.shared_subscription_available(val.0);
                 }
                 Property::MaximumQoS(val) => {
-                    builder.maximum_qos(val);
+                    builder.maximum_qos(val.0);
                 }
                 Property::RetainAvailable(val) => {
-                    builder.retain_available(val);
+                    builder.retain_available(val.0);
                 }
                 Property::ServerKeepAlive(val) => {
-                    builder.server_keep_alive(val);
+                    builder.server_keep_alive(val.0);
                 }
                 Property::ReceiveMaximum(val) => {
-                    builder.receive_maximum(val);
+                    builder.receive_maximum(val.0);
                 }
                 Property::TopicAliasMaximum(val) => {
-                    builder.topic_alias_maximum(val);
+                    builder.topic_alias_maximum(val.0);
                 }
                 Property::SessionExpiryInterval(val) => {
-                    builder.session_expiry_interval(val);
+                    builder.session_expiry_interval(val.0);
                 }
                 Property::MaximumPacketSize(val) => {
-                    builder.maximum_packet_size(val);
+                    builder.maximum_packet_size(val.0);
                 }
                 Property::AuthenticationData(val) => {
-                    builder.authentication_data(val);
+                    builder.authentication_data(val.0);
                 }
                 Property::AssignedClientIdentifier(val) => {
-                    builder.assigned_client_identifier(val);
+                    builder.assigned_client_identifier(val.0);
                 }
                 Property::ReasonString(val) => {
-                    builder.reason_string(val);
+                    builder.reason_string(val.0);
                 }
                 Property::ResponseInformation(val) => {
-                    builder.response_information(val);
+                    builder.response_information(val.0);
                 }
                 Property::ServerReference(val) => {
-                    builder.server_reference(val);
+                    builder.server_reference(val.0);
                 }
                 Property::AuthenticationMethod(val) => {
-                    builder.authentication_method(val);
+                    builder.authentication_method(val.0);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val);
+                    builder.user_property(val.0);
                 }
                 _ => {
                     return None;
@@ -239,7 +239,7 @@ pub(crate) struct ConnackPacketBuilder {
 }
 
 impl ConnackPacketBuilder {
-    pub(crate) fn session_present(&mut self, val: bool) -> &mut Self {
+    pub(crate) fn session_present(&mut self, val: Boolean) -> &mut Self {
         self.session_present = Some(val);
         self
     }
@@ -249,99 +249,87 @@ impl ConnackPacketBuilder {
         self
     }
 
-    pub(crate) fn wildcard_subscription_available(
-        &mut self,
-        val: WildcardSubscriptionAvailable,
-    ) -> &mut Self {
-        self.wildcard_subscription_available = Some(val);
+    pub(crate) fn wildcard_subscription_available(&mut self, val: Boolean) -> &mut Self {
+        self.wildcard_subscription_available = Some(WildcardSubscriptionAvailable(val));
         self
     }
 
-    pub(crate) fn subscription_identifier_available(
-        &mut self,
-        val: SubscriptionIdentifierAvailable,
-    ) -> &mut Self {
-        self.subscription_identifier_available = Some(val);
+    pub(crate) fn subscription_identifier_available(&mut self, val: Boolean) -> &mut Self {
+        self.subscription_identifier_available = Some(SubscriptionIdentifierAvailable(val));
         self
     }
 
-    pub(crate) fn shared_subscription_available(
-        &mut self,
-        val: SharedSubscriptionAvailable,
-    ) -> &mut Self {
-        self.shared_subscription_available = Some(val);
+    pub(crate) fn shared_subscription_available(&mut self, val: Boolean) -> &mut Self {
+        self.shared_subscription_available = Some(SharedSubscriptionAvailable(val));
         self
     }
 
-    pub(crate) fn maximum_qos(&mut self, val: MaximumQoS) -> &mut Self {
-        self.maximum_qos = Some(val);
+    pub(crate) fn maximum_qos(&mut self, val: QoS) -> &mut Self {
+        self.maximum_qos = Some(MaximumQoS(val));
         self
     }
 
-    pub(crate) fn retain_available(&mut self, val: RetainAvailable) -> &mut Self {
-        self.retain_available = Some(val);
+    pub(crate) fn retain_available(&mut self, val: Boolean) -> &mut Self {
+        self.retain_available = Some(RetainAvailable(val));
         self
     }
 
-    pub(crate) fn server_keep_alive(&mut self, val: ServerKeepAlive) -> &mut Self {
-        self.server_keep_alive = Some(val);
+    pub(crate) fn server_keep_alive(&mut self, val: TwoByteInteger) -> &mut Self {
+        self.server_keep_alive = Some(ServerKeepAlive(val));
         self
     }
 
-    pub(crate) fn receive_maximum(&mut self, val: ReceiveMaximum) -> &mut Self {
-        self.receive_maximum = Some(val);
+    pub(crate) fn receive_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
+        self.receive_maximum = Some(ReceiveMaximum(val));
         self
     }
 
-    pub(crate) fn topic_alias_maximum(&mut self, val: TopicAliasMaximum) -> &mut Self {
-        self.topic_alias_maximum = Some(val);
+    pub(crate) fn topic_alias_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
+        self.topic_alias_maximum = Some(TopicAliasMaximum(val));
         self
     }
 
-    pub(crate) fn session_expiry_interval(&mut self, val: SessionExpiryInterval) -> &mut Self {
-        self.session_expiry_interval = Some(val);
+    pub(crate) fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+        self.session_expiry_interval = Some(SessionExpiryInterval(val));
         self
     }
 
-    pub(crate) fn maximum_packet_size(&mut self, val: MaximumPacketSize) -> &mut Self {
-        self.maximum_packet_size = Some(val);
+    pub(crate) fn maximum_packet_size(&mut self, val: FourByteInteger) -> &mut Self {
+        self.maximum_packet_size = Some(MaximumPacketSize(val));
         self
     }
 
-    pub(crate) fn authentication_data(&mut self, val: AuthenticationData) -> &mut Self {
-        self.authentication_data = Some(val);
+    pub(crate) fn authentication_data(&mut self, val: Binary) -> &mut Self {
+        self.authentication_data = Some(AuthenticationData(val));
         self
     }
 
-    pub(crate) fn assigned_client_identifier(
-        &mut self,
-        val: AssignedClientIdentifier,
-    ) -> &mut Self {
-        self.assigned_client_identifier = Some(val);
+    pub(crate) fn assigned_client_identifier(&mut self, val: UTF8String) -> &mut Self {
+        self.assigned_client_identifier = Some(AssignedClientIdentifier(val));
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: ReasonString) -> &mut Self {
-        self.reason_string = Some(val);
+    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+        self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn response_information(&mut self, val: ResponseInformation) -> &mut Self {
-        self.response_information = Some(val);
+    pub(crate) fn response_information(&mut self, val: UTF8String) -> &mut Self {
+        self.response_information = Some(ResponseInformation(val));
         self
     }
-    pub(crate) fn server_reference(&mut self, val: ServerReference) -> &mut Self {
-        self.server_reference = Some(val);
-        self
-    }
-
-    pub(crate) fn authentication_method(&mut self, val: AuthenticationMethod) -> &mut Self {
-        self.authentication_method = Some(val);
+    pub(crate) fn server_reference(&mut self, val: UTF8String) -> &mut Self {
+        self.server_reference = Some(ServerReference(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
+        self.authentication_method = Some(AuthenticationMethod(val));
+        self
+    }
+
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 

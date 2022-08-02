@@ -145,16 +145,16 @@ impl TryFromBytes for Auth {
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::AuthenticationMethod(val) => {
-                    builder.authentication_method(val);
+                    builder.authentication_method(val.0);
                 }
                 Property::AuthenticationData(val) => {
-                    builder.authentication_data(val);
+                    builder.authentication_data(val.0);
                 }
                 Property::ReasonString(val) => {
-                    builder.reason_string(val);
+                    builder.reason_string(val.0);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val);
+                    builder.user_property(val.0);
                 }
                 _ => {
                     return None;
@@ -212,23 +212,23 @@ impl AuthPacketBuilder {
         self
     }
 
-    pub(crate) fn authentication_data(&mut self, val: AuthenticationData) -> &mut Self {
-        self.authentication_data = Some(val);
+    pub(crate) fn authentication_data(&mut self, val: Binary) -> &mut Self {
+        self.authentication_data = Some(AuthenticationData(val));
         self
     }
 
-    pub(crate) fn authentication_method(&mut self, val: AuthenticationMethod) -> &mut Self {
-        self.authentication_method = Some(val);
+    pub(crate) fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
+        self.authentication_method = Some(AuthenticationMethod(val));
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: ReasonString) -> &mut Self {
-        self.reason_string = Some(val);
+    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+        self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 

@@ -88,10 +88,10 @@ impl TryFromBytes for Suback {
         for property in PropertyIterator::from(properties) {
             match property {
                 Property::ReasonString(val) => {
-                    builder.reason_string(val);
+                    builder.reason_string(val.0);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val);
+                    builder.user_property(val.0);
                 }
                 _ => {
                     return None;
@@ -107,64 +107,6 @@ impl TryFromBytes for Suback {
                 .collect::<Option<Vec<SubackReason>>>()?,
         );
         builder.build()
-
-        //
-
-        // let mut iter = bytes.iter().copied();
-        // let fixed_hdr = iter.next()?;
-
-        // debug_assert!(fixed_hdr >> 4 == Self::PACKET_ID as u8);
-        // let remaining_len = VarSizeInt::try_from_iter(iter)?;
-        // if mem::size_of_val(&fixed_hdr) + remaining_len.len() > bytes.len() {
-        //     return None;
-        // }
-
-        // let (_, var_hdr) = bytes.split_at(mem::size_of_val(&fixed_hdr) + remaining_len.len());
-        // if remaining_len.value() as usize > var_hdr.len() {
-        //     return None;
-        // }
-
-        // let (var_hdr, _) = var_hdr.split_at(remaining_len.into());
-
-        // let packet_id = TwoByteInteger::try_from_bytes(var_hdr)?;
-        // let (_, var_hdr) = var_hdr.split_at(packet_id.property_len());
-        // builder.packet_identifier(packet_id);
-
-        // iter = var_hdr.iter().copied();
-
-        // let property_len = VarSizeInt::try_from_iter(iter)?;
-        // if property_len.len() > var_hdr.len() {
-        //     return None;
-        // }
-
-        // let (_, remaining) = var_hdr.split_at(property_len.len());
-        // if property_len.value() as usize > remaining.len() {
-        //     return None;
-        // }
-
-        // let (properties, payload) = remaining.split_at(property_len.into());
-
-        // for property in PropertyIterator::from(properties) {
-        //     match property {
-        //         Property::ReasonString(val) => {
-        //             builder.reason_string(val);
-        //         }
-        //         Property::UserProperty(val) => {
-        //             builder.user_property(val);
-        //         }
-        //         _ => {
-        //             return None;
-        //         }
-        //     }
-        // }
-
-        // let payload: Option<Vec<SubackReason>> = payload
-        //     .iter()
-        //     .map(|&val| SubackReason::try_from(val))
-        //     .collect();
-        // builder.payload(payload?);
-
-        // builder.build()
     }
 }
 
@@ -182,13 +124,13 @@ impl SubackPacketBuilder {
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: ReasonString) -> &mut Self {
-        self.reason_string = Some(val);
+    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+        self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 

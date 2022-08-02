@@ -7,34 +7,6 @@ use crate::{
 };
 use std::{convert::From, iter::Iterator, mem};
 
-// const PAYLOAD_FORMAT_INDICATOR: u8 = 0x01;
-// const MESSAGE_EXPIRY_INTERVAL: u8 = 0x02;
-// const CONTENT_TYPE: u8 = 0x03;
-// const RESPONSE_TOPIC: u8 = 0x08;
-// const CORRELATION_DATA: u8 = 0x09;
-// const SUBSCRIPTION_IDENTIFIER: u8 = 0x0b;
-// const SESSION_EXPIRY_INTERVAL: u8 = 0x11;
-// const ASSIGNED_CLIENT_IDENTIFIER: u8 = 0x12;
-// const SERVER_KEEP_ALIVE: u8 = 0x13;
-// const AUTHENTICATION_METHOD: u8 = 0x15;
-// const AUTHENTICATION_DATA: u8 = 0x16;
-// const REQUEST_PROBLEM_INFORMATION: u8 = 0x17;
-// const WILL_DELAY_INTERVAL: u8 = 0x18;
-// const REQUEST_RESPONSE_INFORMATION: u8 = 0x19;
-// const RESPONSE_INFORMATION: u8 = 0x1a;
-// const SERVER_REFERENCE: u8 = 0x1c;
-// const REASON_STRING: u8 = 0x1f;
-// const RECEIVE_MAXIMUM: u8 = 0x21;
-// const TOPIC_ALIAS_MAXIMUM: u8 = 0x22;
-// const TOPIC_ALIAS: u8 = 0x23;
-// const MAXIMUM_QOS: u8 = 0x24;
-// const RETAIN_AVAILABLE: u8 = 0x25;
-// const USER_PROPERTY: u8 = 0x26;
-// const MAXIMUM_PACKET_SIZE: u8 = 0x27;
-// const WILDCARD_SUBSCRIPTION_AVAILABLE: u8 = 0x28;
-// const SUBSCRIPTION_IDENTIFIER_AVAILABLE: u8 = 0x29;
-// const SHARED_SUBSCRIPTION_AVAILABLE: u8 = 0x2a;
-
 fn to_byte_buffer_unchecked<'a, PropertyT, UnderlyingT>(
     _: &PropertyT,
     underlying: &UnderlyingT,

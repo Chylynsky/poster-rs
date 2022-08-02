@@ -3,12 +3,11 @@ use crate::{
     core::base_types::VarSizeInt,
     core::utils::{ByteReader, TryFromBytes},
 };
+use futures::{AsyncBufRead, Stream};
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::io::AsyncBufRead;
-use tokio_stream::Stream;
 
 enum PacketStreamState {
     ReadRemainingLength,
@@ -42,8 +41,8 @@ where
     type Item = RxPacket;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let (state, stream) = self.split_borrows_mut();
-        if let Poll::Ready(Ok(buf)) = Pin::new(&mut *stream).poll_fill_buf(cx) {
+        let (state, mut stream) = self.split_borrows_mut();
+        if let Poll::Ready(Ok(buf)) = Pin::new(&mut stream).poll_fill_buf(cx) {
             if buf.is_empty() {
                 return Poll::Ready(None); // EOF
             }
@@ -59,7 +58,7 @@ where
                 PacketStreamState::ReadRemainingData(remaining_len) => {
                     if buf.len() >= *remaining_len {
                         let result = RxPacket::try_from_bytes(buf);
-                        Pin::new(&mut *stream).consume(*remaining_len); // Consume the packet
+                        Pin::new(&mut stream).consume(*remaining_len); // Consume the packet
                         *state = PacketStreamState::ReadRemainingLength;
                         return Poll::Ready(result);
                     }
