@@ -10,9 +10,9 @@ impl Pingresp {
 }
 
 #[derive(Default)]
-pub(crate) struct PingrespPacketBuilder {}
+pub(crate) struct PingrespBuilder {}
 
-impl PingrespPacketBuilder {
+impl PingrespBuilder {
     fn build(self) -> Option<Pingresp> {
         Some(Pingresp {})
     }
@@ -24,7 +24,7 @@ impl PacketID for Pingresp {
 
 impl TryFromBytes for Pingresp {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let builder = PingrespPacketBuilder::default();
+        let builder = PingrespBuilder::default();
         let mut reader = ByteReader::from(bytes);
         let _fixed_hdr = reader.try_read::<Byte>()?;
         debug_assert!(_fixed_hdr >> 4 == Self::PACKET_ID as u8);

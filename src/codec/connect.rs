@@ -541,6 +541,7 @@ pub(crate) struct Connect {
 }
 
 impl Connect {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
     const PROTOCOL_NAME: &'static str = "MQTT";
     const PROTOCOL_VERSION: u8 = 5;
 
@@ -570,10 +571,8 @@ impl PacketID for Connect {
 
 impl SizedPacket for Connect {
     fn packet_len(&self) -> usize {
-        const FIXED_HDR_LEN: usize = mem::size_of::<Byte>();
         let remaining_len = self.remaining_len();
-
-        FIXED_HDR_LEN + remaining_len.len() + remaining_len.value() as usize
+        mem::size_of_val(&Self::FIXED_HDR) + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
@@ -581,15 +580,14 @@ impl TryToByteBuffer for Connect {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
         let packet_len = self.packet_len();
 
-        if packet_len > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..packet_len];
+        let result = buf.get_mut(0..packet_len)?;
         let mut writer = ByteWriter::from(result);
 
-        writer.write(&(Self::PACKET_ID << 4));
-        writer.write(&self.remaining_len());
+        writer.write(&Self::FIXED_HDR);
+
+        let remaining_len = self.remaining_len();
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
+
         writer.write(&Self::PROTOCOL_NAME);
         writer.write(&Self::PROTOCOL_VERSION);
         writer.write(&self.payload.to_flags());

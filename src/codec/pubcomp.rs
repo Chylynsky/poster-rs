@@ -1,10 +1,8 @@
 use crate::{
-    codec::ack::{Ack, AckPacketBuilder},
+    codec::ack::{Ack, AckBuilder},
     core::{
         base_types::*,
-        utils::{
-            PacketID, SizedProperty, ToByteBuffer, TryFromBytes,
-        },
+        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
     },
 };
 use std::mem;
@@ -55,7 +53,7 @@ impl PacketID for Pubcomp {
     const PACKET_ID: u8 = 7;
 }
 
-pub(crate) type PubcompPacketBuilder = AckPacketBuilder<PubcompReason>;
+pub(crate) type PubcompBuilder = AckBuilder<PubcompReason>;
 
 #[cfg(test)]
 mod test {

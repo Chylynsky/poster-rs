@@ -73,15 +73,16 @@ impl SizedPacket for Unsubscribe {
 impl TryToByteBuffer for Unsubscribe {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
         let packet_len = self.packet_len();
-        if packet_len > buf.len() {
-            return None;
-        }
 
-        let result = &mut buf[0..packet_len];
+        let result = buf.get_mut(0..packet_len)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&Self::FIXED_HDR);
-        writer.write(&self.remaining_len());
+
+        let remaining_len = self.remaining_len();
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
+        writer.write(&remaining_len);
+
         writer.write(&self.packet_identifier);
         writer.write(&self.properties);
 
@@ -94,13 +95,13 @@ impl TryToByteBuffer for Unsubscribe {
 }
 
 #[derive(Default)]
-pub(crate) struct UnsubscribePacketBuilder {
+pub(crate) struct UnsubscribeBuilder {
     packet_identifier: Option<TwoByteInteger>,
     user_property: Vec<UserProperty>,
     payload: Vec<UTF8String>,
 }
 
-impl UnsubscribePacketBuilder {
+impl UnsubscribeBuilder {
     pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
         self.packet_identifier = Some(val);
         self
@@ -157,7 +158,7 @@ mod test {
             b'd',
         ];
 
-        let mut builder = UnsubscribePacketBuilder::default();
+        let mut builder = UnsubscribeBuilder::default();
         builder.packet_identifier(13);
         builder.payload(String::from("a/b"));
         builder.payload(String::from("c/d"));

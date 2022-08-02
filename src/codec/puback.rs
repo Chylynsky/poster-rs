@@ -1,11 +1,8 @@
 use crate::{
-    codec::ack::{Ack, AckPacketBuilder},
+    codec::ack::{Ack, AckBuilder},
     core::{
         base_types::*,
-        utils::{
-            PacketID, SizedProperty, ToByteBuffer,
-            TryFromBytes,
-        },
+        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
     },
 };
 use std::mem;
@@ -70,7 +67,7 @@ impl PacketID for Puback {
     const PACKET_ID: u8 = 4;
 }
 
-pub(crate) type PubackPacketBuilder = AckPacketBuilder<PubackReason>;
+pub(crate) type PubackBuilder = AckBuilder<PubackReason>;
 
 #[cfg(test)]
 mod test {

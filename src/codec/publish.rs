@@ -110,7 +110,7 @@ impl SizedPacket for Publish {
 
 impl TryFromBytes for Publish {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = PublishPacketBuilder::default();
+        let mut builder = PublishBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -179,106 +179,22 @@ impl TryFromBytes for Publish {
 
         builder.payload(reader.try_read::<Binary>()?);
         builder.build()
-
-        //
-
-        // let mut iter = bytes.iter().copied();
-        // let fixed_hdr = iter.next()?;
-
-        // debug_assert!(fixed_hdr >> 4 == Self::PACKET_ID as u8);
-        // let qos = QoS::try_from(((fixed_hdr >> 1) & 0x03) as u8)?;
-        // builder
-        //     .dup(fixed_hdr & (1 << 3) != 0)
-        //     .retain(fixed_hdr & 1 != 0)
-        //     .qos(qos);
-
-        // let remaining_len = VarSizeInt::try_from_iter(iter)?;
-        // if mem::size_of_val(&fixed_hdr) + remaining_len.len() > bytes.len() {
-        //     return None;
-        // }
-
-        // let (_, remaining) = bytes.split_at(mem::size_of_val(&fixed_hdr) + remaining_len.len());
-        // if remaining_len.value() as usize > remaining.len() {
-        //     return None;
-        // }
-
-        // let (remaining, _) = remaining.split_at(remaining_len.value() as usize);
-
-        // // Topic name must be the first field in variable header
-        // let topic_name = UTF8String::try_from_bytes(remaining)?;
-        // let (_, mut remaining) = remaining.split_at(topic_name.property_len());
-        // builder.topic_name(topic_name);
-
-        // // Packet identifier inly available if QoS > 0
-        // if qos == QoS::AtLeastOnce || qos == QoS::ExactlyOnce {
-        //     let packet_id = VarSizeInt::try_from_iter(remaining.iter().copied())?;
-        //     remaining = &remaining[packet_id.len()..remaining.len()];
-        //     builder.packet_identifier(packet_id);
-        // }
-
-        // // Read property length
-        // let property_len = VarSizeInt::try_from_iter(remaining.iter().copied())?;
-        // if property_len.len() > remaining.len() {
-        //     return None;
-        // }
-
-        // let (_, remaining) = remaining.split_at(property_len.len());
-        // if property_len.value() as usize > remaining.len() {
-        //     return None;
-        // }
-
-        // let (properties, payload) = remaining.split_at(property_len.value() as usize);
-
-        // for property in PropertyIterator::from(properties) {
-        //     match property {
-        //         Property::PayloadFormatIndicator(val) => {
-        //             builder.payload_format_indicator(val);
-        //         }
-        //         Property::TopicAlias(val) => {
-        //             builder.topic_alias(val);
-        //         }
-        //         Property::MessageExpiryInterval(val) => {
-        //             builder.message_expiry_interval(val);
-        //         }
-        //         Property::SubscriptionIdentifier(val) => {
-        //             builder.subscription_identifier(val);
-        //         }
-        //         Property::CorrelationData(val) => {
-        //             builder.correlation_data(val);
-        //         }
-        //         Property::ResponseTopic(val) => {
-        //             builder.response_topic(val);
-        //         }
-        //         Property::ContentType(val) => {
-        //             builder.content_type(val);
-        //         }
-        //         Property::UserProperty(val) => {
-        //             builder.user_property(val);
-        //         }
-        //         _ => {
-        //             return None;
-        //         }
-        //     }
-        // }
-
-        // builder.payload(Binary::try_from_bytes(payload)?);
-
-        // builder.build()
     }
 }
 
 impl TryToByteBuffer for Publish {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
         let packet_len = self.packet_len();
-        if packet_len > buf.len() {
-            return None;
-        }
 
-        let result = &mut buf[0..packet_len];
+        let result = buf.get_mut(0..packet_len)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&self.fixed_hdr());
-        writer.write(&self.remaining_len());
+
+        let remaining_len = self.remaining_len();
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
+        writer.write(&remaining_len);
+
         writer.write(&self.topic_name);
 
         if let Some(val) = self.packet_identifier.as_ref() {
@@ -326,7 +242,7 @@ impl TryToByteBuffer for Publish {
 }
 
 #[derive(Default)]
-pub(crate) struct PublishPacketBuilder {
+pub(crate) struct PublishBuilder {
     dup: bool,
     retain: bool,
     qos: QoS,
@@ -346,7 +262,7 @@ pub(crate) struct PublishPacketBuilder {
     payload: Option<Binary>,
 }
 
-impl PublishPacketBuilder {
+impl PublishBuilder {
     pub(crate) fn dup(&mut self, val: bool) -> &mut Self {
         self.dup = val;
         self
@@ -482,7 +398,7 @@ mod test {
 
     #[test]
     fn to_bytes() {
-        let mut builder = PublishPacketBuilder::default();
+        let mut builder = PublishBuilder::default();
         builder.dup(true);
         builder.qos(QoS::AtLeastOnce);
         builder.retain(true);

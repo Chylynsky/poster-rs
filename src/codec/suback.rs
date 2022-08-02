@@ -60,7 +60,7 @@ impl PacketID for Suback {
 
 impl TryFromBytes for Suback {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = SubackPacketBuilder::default();
+        let mut builder = SubackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -111,14 +111,14 @@ impl TryFromBytes for Suback {
 }
 
 #[derive(Default)]
-pub(crate) struct SubackPacketBuilder {
+pub(crate) struct SubackBuilder {
     packet_identifier: Option<TwoByteInteger>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
     payload: Vec<SubackReason>,
 }
 
-impl SubackPacketBuilder {
+impl SubackBuilder {
     pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
         self.packet_identifier = Some(val);
         self

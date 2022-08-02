@@ -113,7 +113,7 @@ impl SizedPacket for Auth {
 
 impl TryFromBytes for Auth {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = AuthPacketBuilder::default();
+        let mut builder = AuthBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -178,6 +178,9 @@ impl TryToByteBuffer for Auth {
             return Some(result);
         }
 
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
+        writer.write(&remaining_len);
+
         writer.write(&self.reason);
         writer.write(self.authentication_method.as_ref()?);
 
@@ -198,7 +201,7 @@ impl TryToByteBuffer for Auth {
 }
 
 #[derive(Default)]
-pub(crate) struct AuthPacketBuilder {
+pub(crate) struct AuthBuilder {
     reason: Option<AuthReason>,
     authentication_method: Option<AuthenticationMethod>,
     authentication_data: Option<AuthenticationData>,
@@ -206,7 +209,7 @@ pub(crate) struct AuthPacketBuilder {
     user_property: Vec<UserProperty>,
 }
 
-impl AuthPacketBuilder {
+impl AuthBuilder {
     pub(crate) fn reason(&mut self, val: AuthReason) -> &mut Self {
         self.reason = Some(val);
         self

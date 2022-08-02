@@ -118,7 +118,7 @@ impl TryFromBytes for Connack {
     where
         Self: Sized,
     {
-        let mut builder = ConnackPacketBuilder::default();
+        let mut builder = ConnackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -208,7 +208,7 @@ impl TryFromBytes for Connack {
 }
 
 #[derive(Default)]
-pub(crate) struct ConnackPacketBuilder {
+pub(crate) struct ConnackBuilder {
     // Connack variable header
     session_present: Option<bool>,
     reason: Option<ConnectReason>,
@@ -238,7 +238,7 @@ pub(crate) struct ConnackPacketBuilder {
     user_property: Vec<UserProperty>,
 }
 
-impl ConnackPacketBuilder {
+impl ConnackBuilder {
     pub(crate) fn session_present(&mut self, val: Boolean) -> &mut Self {
         self.session_present = Some(val);
         self

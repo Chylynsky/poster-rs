@@ -128,15 +128,15 @@ impl TryToByteBuffer for Subscribe {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
         let packet_len = self.packet_len();
 
-        if packet_len > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..packet_len];
+        let result = buf.get_mut(0..packet_len)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&Self::FIXED_HDR);
-        writer.write(&self.remaining_len());
+
+        let remaining_len = self.remaining_len();
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
+        writer.write(&remaining_len);
+
         writer.write(&self.packet_identifier);
         writer.write(&self.properties);
 
@@ -150,14 +150,14 @@ impl TryToByteBuffer for Subscribe {
 }
 
 #[derive(Default)]
-pub(crate) struct SubscribePacketBuilder {
+pub(crate) struct SubscribeBuilder {
     packet_identifier: Option<TwoByteInteger>,
     subscription_identifiier: Option<SubscriptionIdentifier>,
     user_property: Vec<UserProperty>,
     payload: Vec<(UTF8String, SubscriptionOptions)>,
 }
 
-impl SubscribePacketBuilder {
+impl SubscribeBuilder {
     pub(crate) fn packet_identifier(&mut self, packet_identifier: TwoByteInteger) -> &mut Self {
         self.packet_identifier = Some(packet_identifier);
         self
@@ -214,7 +214,7 @@ mod test {
             b'b',
             0b10,
         ];
-        let mut builder = SubscribePacketBuilder::default();
+        let mut builder = SubscribeBuilder::default();
         builder.packet_identifier(32);
         builder.payload((
             String::from("a/b"),

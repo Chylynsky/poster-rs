@@ -50,7 +50,7 @@ impl PacketID for Unsuback {
 
 impl TryFromBytes for Unsuback {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = UnsubackPacketBuilder::default();
+        let mut builder = UnsubackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -100,14 +100,14 @@ impl TryFromBytes for Unsuback {
 }
 
 #[derive(Default)]
-pub(crate) struct UnsubackPacketBuilder {
+pub(crate) struct UnsubackBuilder {
     packet_identifier: Option<TwoByteInteger>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
     payload: Vec<UnsubackReason>,
 }
 
-impl UnsubackPacketBuilder {
+impl UnsubackBuilder {
     pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
         self.packet_identifier = Some(val);
         self

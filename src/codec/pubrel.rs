@@ -1,14 +1,10 @@
 use crate::{
-    codec::ack::{Ack, AckPacketBuilder},
+    codec::ack::{Ack, AckBuilder},
     core::{
         base_types::*,
-        utils::{
-            PacketID, SizedProperty, ToByteBuffer,
-            TryFromBytes,
-        },
+        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
     },
 };
-
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum PubrelReason {
@@ -56,7 +52,7 @@ impl PacketID for Pubrel {
     const PACKET_ID: u8 = 6;
 }
 
-pub(crate) type PubrelPacketBuilder = AckPacketBuilder<PubrelReason>;
+pub(crate) type PubrelBuilder = AckBuilder<PubrelReason>;
 
 #[cfg(test)]
 mod test {

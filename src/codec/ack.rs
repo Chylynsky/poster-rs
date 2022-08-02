@@ -70,7 +70,7 @@ where
     ReasonT: Default + PartialEq + TryFromBytes + SizedProperty,
 {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = AckPacketBuilder::<ReasonT>::default();
+        let mut builder = AckBuilder::<ReasonT>::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -131,9 +131,7 @@ where
         writer.write(&Self::FIXED_HDR);
 
         let remaining_len = self.remaining_len();
-        if remaining_len.value() as usize > writer.remaining() {
-            return None;
-        }
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
 
         writer.write(&remaining_len);
         writer.write(&self.packet_identifier);
@@ -158,7 +156,7 @@ where
 }
 
 #[derive(Default)]
-pub(crate) struct AckPacketBuilder<ReasonT>
+pub(crate) struct AckBuilder<ReasonT>
 where
     ReasonT: Default,
 {
@@ -168,7 +166,7 @@ where
     user_property: Vec<UserProperty>,
 }
 
-impl<ReasonT> AckPacketBuilder<ReasonT>
+impl<ReasonT> AckBuilder<ReasonT>
 where
     ReasonT: Default,
 {
@@ -309,7 +307,7 @@ pub(crate) mod test {
             b'l',
         ];
 
-        let mut builder = AckPacketBuilder::<ReasonT>::default();
+        let mut builder = AckBuilder::<ReasonT>::default();
         builder.packet_identifier(0x4573);
         builder.reason(ReasonT::default());
         builder.reason_string(String::from("Success"));
@@ -335,7 +333,7 @@ pub(crate) mod test {
             0x73, // Packet ID LSB
         ];
 
-        let mut builder = AckPacketBuilder::<ReasonT>::default();
+        let mut builder = AckBuilder::<ReasonT>::default();
         builder.packet_identifier(0x4573);
 
         let packet = builder.build().unwrap();

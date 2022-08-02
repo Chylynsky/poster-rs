@@ -198,7 +198,7 @@ impl SizedPacket for Disconnect {
 
 impl TryFromBytes for Disconnect {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut builder = DisconnectPacketBuilder::default();
+        let mut builder = DisconnectBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<Byte>()?;
@@ -242,61 +242,6 @@ impl TryFromBytes for Disconnect {
         }
 
         builder.build()
-
-        //
-
-        // let mut iter = bytes.iter().copied();
-        // let fixed_hdr = iter.next()?;
-
-        // debug_assert!(fixed_hdr >> 4 == Self::PACKET_ID as u8);
-        // let remaining_len = VarSizeInt::try_from_iter(iter)?;
-        // if mem::size_of_val(&fixed_hdr) + remaining_len.len() > bytes.len() {
-        //     return None;
-        // }
-
-        // let (_, var_hdr) = bytes.split_at(mem::size_of_val(&fixed_hdr) + remaining_len.len());
-        // if remaining_len.value() as usize > var_hdr.len() {
-        //     return None;
-        // }
-
-        // let (var_hdr, _) = var_hdr.split_at(remaining_len.into());
-
-        // iter = var_hdr.iter().copied();
-        // builder.reason(DisconnectReason::try_from(iter.next()?)?);
-
-        // let property_len = VarSizeInt::try_from_iter(iter)?;
-        // if 1 + property_len.len() > var_hdr.len() {
-        //     return None;
-        // }
-
-        // let (_, remaining) = var_hdr.split_at(1 + property_len.len());
-        // if property_len.value() as usize > remaining.len() {
-        //     return None;
-        // }
-
-        // let (properties, _) = remaining.split_at(property_len.into());
-
-        // for property in PropertyIterator::from(properties) {
-        //     match property {
-        //         Property::SessionExpiryInterval(val) => {
-        //             builder.session_expiry_interval(val);
-        //         }
-        //         Property::ReasonString(val) => {
-        //             builder.reason_string(val);
-        //         }
-        //         Property::ServerReference(val) => {
-        //             builder.server_reference(val);
-        //         }
-        //         Property::UserProperty(val) => {
-        //             builder.user_property(val);
-        //         }
-        //         _ => {
-        //             return None;
-        //         }
-        //     }
-        // }
-
-        // builder.build()
     }
 }
 
@@ -304,15 +249,15 @@ impl TryToByteBuffer for Disconnect {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
         let packet_len = self.packet_len();
 
-        if packet_len > buf.len() {
-            return None;
-        }
-
-        let result = &mut buf[0..packet_len];
+        let result = buf.get_mut(0..packet_len)?;
         let mut writer = ByteWriter::from(result);
 
-        writer.write(&(Self::PACKET_ID << 4));
-        writer.write(&self.remaining_len());
+        writer.write(&Self::FIXED_HDR);
+
+        let remaining_len = self.remaining_len();
+        debug_assert!(remaining_len.value() as usize <= writer.remaining());
+        writer.write(&remaining_len);
+
         writer.write(&self.reason);
         writer.write(&self.properties);
 
@@ -321,7 +266,7 @@ impl TryToByteBuffer for Disconnect {
 }
 
 #[derive(Default)]
-pub(crate) struct DisconnectPacketBuilder {
+pub(crate) struct DisconnectBuilder {
     reason: Option<DisconnectReason>,
     session_expiry_interval: Option<SessionExpiryInterval>,
     reason_string: Option<ReasonString>,
@@ -329,7 +274,7 @@ pub(crate) struct DisconnectPacketBuilder {
     user_property: Vec<UserProperty>,
 }
 
-impl DisconnectPacketBuilder {
+impl DisconnectBuilder {
     pub(crate) fn reason(&mut self, val: DisconnectReason) -> &mut Self {
         self.reason = Some(val);
         self
@@ -418,7 +363,7 @@ mod test {
 
     #[test]
     fn to_bytes() {
-        let mut builder = DisconnectPacketBuilder::default();
+        let mut builder = DisconnectBuilder::default();
 
         builder.reason(DisconnectReason::Success);
         builder.reason_string(ReasonString(String::from("Success")));
