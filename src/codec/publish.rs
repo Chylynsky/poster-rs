@@ -13,7 +13,7 @@ pub(crate) struct Publish {
     qos: QoS,
 
     topic_name: UTF8String,
-    packet_identifier: Option<VarSizeInt>,
+    packet_identifier: Option<NonZero<TwoByteInteger>>,
 
     payload_format_indicator: Option<PayloadFormatIndicator>,
     topic_alias: Option<TopicAlias>,
@@ -136,7 +136,7 @@ impl TryFromBytes for Publish {
 
         // Packet identifier inly available if QoS > 0
         if qos == QoS::AtLeastOnce || qos == QoS::ExactlyOnce {
-            let packet_id = reader.try_read::<VarSizeInt>()?;
+            let packet_id = reader.try_read::<NonZero<TwoByteInteger>>()?;
             builder.packet_identifier(packet_id);
         }
 
@@ -148,28 +148,28 @@ impl TryFromBytes for Publish {
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::PayloadFormatIndicator(val) => {
-                    builder.payload_format_indicator(val);
+                    builder.payload_format_indicator(val.0);
                 }
                 Property::TopicAlias(val) => {
-                    builder.topic_alias(val);
+                    builder.topic_alias(val.0);
                 }
                 Property::MessageExpiryInterval(val) => {
-                    builder.message_expiry_interval(val);
+                    builder.message_expiry_interval(val.0);
                 }
                 Property::SubscriptionIdentifier(val) => {
-                    builder.subscription_identifier(val);
+                    builder.subscription_identifier(val.0);
                 }
                 Property::CorrelationData(val) => {
-                    builder.correlation_data(val);
+                    builder.correlation_data(val.0);
                 }
                 Property::ResponseTopic(val) => {
-                    builder.response_topic(val);
+                    builder.response_topic(val.0);
                 }
                 Property::ContentType(val) => {
-                    builder.content_type(val);
+                    builder.content_type(val.0);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val);
+                    builder.user_property(val.0);
                 }
                 _ => {
                     return None;
@@ -243,12 +243,12 @@ impl TryToByteBuffer for Publish {
 
 #[derive(Default)]
 pub(crate) struct PublishBuilder {
-    dup: bool,
-    retain: bool,
+    dup: Boolean,
+    retain: Boolean,
     qos: QoS,
 
     topic_name: Option<UTF8String>,
-    packet_identifier: Option<VarSizeInt>,
+    packet_identifier: Option<NonZero<TwoByteInteger>>,
 
     payload_format_indicator: Option<PayloadFormatIndicator>,
     topic_alias: Option<TopicAlias>,
@@ -283,48 +283,48 @@ impl PublishBuilder {
         self
     }
 
-    pub(crate) fn packet_identifier(&mut self, val: VarSizeInt) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
 
-    pub(crate) fn payload_format_indicator(&mut self, val: PayloadFormatIndicator) -> &mut Self {
-        self.payload_format_indicator = Some(val);
+    pub(crate) fn payload_format_indicator(&mut self, val: Boolean) -> &mut Self {
+        self.payload_format_indicator = Some(PayloadFormatIndicator(val));
         self
     }
 
-    pub(crate) fn topic_alias(&mut self, val: TopicAlias) -> &mut Self {
-        self.topic_alias = Some(val);
+    pub(crate) fn topic_alias(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+        self.topic_alias = Some(TopicAlias(val));
         self
     }
 
-    pub(crate) fn message_expiry_interval(&mut self, val: MessageExpiryInterval) -> &mut Self {
-        self.message_expiry_interval = Some(val);
+    pub(crate) fn message_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+        self.message_expiry_interval = Some(MessageExpiryInterval(val));
         self
     }
 
-    pub(crate) fn subscription_identifier(&mut self, val: SubscriptionIdentifier) -> &mut Self {
-        self.subscription_identifier = Some(val);
+    pub(crate) fn subscription_identifier(&mut self, val: NonZero<VarSizeInt>) -> &mut Self {
+        self.subscription_identifier = Some(SubscriptionIdentifier(val));
         self
     }
 
-    pub(crate) fn correlation_data(&mut self, val: CorrelationData) -> &mut Self {
-        self.correlation_data = Some(val);
+    pub(crate) fn correlation_data(&mut self, val: Binary) -> &mut Self {
+        self.correlation_data = Some(CorrelationData(val));
         self
     }
 
-    pub(crate) fn response_topic(&mut self, val: ResponseTopic) -> &mut Self {
-        self.response_topic = Some(val);
+    pub(crate) fn response_topic(&mut self, val: UTF8String) -> &mut Self {
+        self.response_topic = Some(ResponseTopic(val));
         self
     }
 
-    pub(crate) fn content_type(&mut self, val: ContentType) -> &mut Self {
-        self.content_type = Some(val);
+    pub(crate) fn content_type(&mut self, val: UTF8String) -> &mut Self {
+        self.content_type = Some(ContentType(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 
@@ -376,33 +376,33 @@ mod test {
     use super::*;
 
     const FIXED_HDR: u8 = (((Publish::PACKET_ID as u8) << 4) | 0x0b) as u8; // DUP: 1, QoS: 1, RETAIN: 1
-    const PACKET: [u8; 16] = [
-        FIXED_HDR, 14, // Remaining length
+    const PACKET: [u8; 17] = [
+        FIXED_HDR, 15, // Remaining length
         0,  // Topic length
-        4, b't', b'e', b's', b't', 13, // Packet ID
+        4, b't', b'e', b's', b't', 0, 13, // Packet ID
         0,  // Property length
         // Payload
         0, 4, b't', b'e', b's', b't',
     ];
 
     #[test]
-    fn from_bytes() {
+    fn from_bytes_0() {
         let packet = Publish::try_from_bytes(&PACKET).unwrap();
 
         assert!(packet.dup);
         assert!(packet.retain);
         assert_eq!(packet.qos, QoS::AtLeastOnce);
-        assert_eq!(packet.packet_identifier.unwrap().value(), 13);
+        assert_eq!(packet.packet_identifier.unwrap(), 13.into());
         assert_eq!(std::str::from_utf8(&packet.payload).unwrap(), "test");
     }
 
     #[test]
-    fn to_bytes() {
+    fn to_bytes_0() {
         let mut builder = PublishBuilder::default();
         builder.dup(true);
         builder.qos(QoS::AtLeastOnce);
         builder.retain(true);
-        builder.packet_identifier(VarSizeInt::from(13u8));
+        builder.packet_identifier(NonZero::from(13));
         builder.topic_name(String::from("test"));
         builder.payload(Vec::from([b't', b'e', b's', b't']));
 

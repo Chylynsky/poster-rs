@@ -47,13 +47,13 @@ impl ToByteBuffer for SubscriptionOptions {
 }
 
 pub(crate) struct SubscribeProperties {
-    subscription_identifiier: Option<SubscriptionIdentifier>,
+    subscription_identifier: Option<SubscriptionIdentifier>,
     user_property: Vec<UserProperty>,
 }
 
 impl SizedProperty for SubscribeProperties {
     fn property_len(&self) -> usize {
-        self.subscription_identifiier
+        self.subscription_identifier
             .as_ref()
             .map(|val| val.property_len())
             .unwrap_or(0)
@@ -77,7 +77,7 @@ impl ToByteBuffer for SubscribeProperties {
 
         writer.write(&property_len);
 
-        if let Some(val) = self.subscription_identifiier.as_ref() {
+        if let Some(val) = self.subscription_identifier.as_ref() {
             writer.write(val);
         }
 
@@ -152,7 +152,7 @@ impl TryToByteBuffer for Subscribe {
 #[derive(Default)]
 pub(crate) struct SubscribeBuilder {
     packet_identifier: Option<TwoByteInteger>,
-    subscription_identifiier: Option<SubscriptionIdentifier>,
+    subscription_identifier: Option<SubscriptionIdentifier>,
     user_property: Vec<UserProperty>,
     payload: Vec<(UTF8String, SubscriptionOptions)>,
 }
@@ -163,11 +163,11 @@ impl SubscribeBuilder {
         self
     }
 
-    pub(crate) fn subscription_identifiier(
+    pub(crate) fn subscription_identifier(
         &mut self,
-        subscription_identifiier: VarSizeInt,
+        subscription_identifier: NonZero<VarSizeInt>,
     ) -> &mut Self {
-        self.subscription_identifiier = Some(SubscriptionIdentifier(subscription_identifiier));
+        self.subscription_identifier = Some(SubscriptionIdentifier(subscription_identifier));
         self
     }
 
@@ -182,8 +182,12 @@ impl SubscribeBuilder {
     }
 
     pub(crate) fn build(self) -> Option<Subscribe> {
+        if self.payload.is_empty() {
+            return None; // Subscribe packet with no payload is a Protocol Error
+        }
+
         let properties = SubscribeProperties {
-            subscription_identifiier: self.subscription_identifiier,
+            subscription_identifier: self.subscription_identifier,
             user_property: self.user_property,
         };
 
@@ -200,7 +204,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn to_bytes() {
+    fn to_bytes_0() {
         const EXPECTED: [u8; 11] = [
             Subscribe::FIXED_HDR,
             9,

@@ -260,7 +260,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn from_bytes_short() {
+    fn from_bytes_1() {
         const FIXED_HDR: u8 = ((Auth::PACKET_ID as u8) << 4) as u8;
         const PACKET: [u8; 2] = [
             FIXED_HDR, 0, // Remaining length
@@ -271,7 +271,7 @@ mod test {
     }
 
     #[test]
-    fn to_bytes_short() {
+    fn to_bytes_1() {
         const FIXED_HDR: u8 = ((Auth::PACKET_ID as u8) << 4) as u8;
         const EXPECTED: [u8; 2] = [
             FIXED_HDR, 0, // Remaining length

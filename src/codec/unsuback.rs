@@ -144,7 +144,7 @@ mod test {
     use crate::core::utils::PropertyID;
 
     #[test]
-    fn from_bytes() {
+    fn from_bytes_0() {
         const FIXED_HDR: u8 = ((Unsuback::PACKET_ID as u8) << 4) as u8;
         const PACKET: [u8; 24] = [
             FIXED_HDR,

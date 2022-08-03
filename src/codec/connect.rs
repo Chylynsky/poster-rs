@@ -224,7 +224,7 @@ pub(crate) struct ConnectMetadata {
 pub(crate) struct ConnectPayload {
     meta: ConnectMetadata,
 
-    client_identifier: Option<UTF8String>,
+    client_identifier: UTF8String,
     will_properties: Option<ConnectWillProperties>,
     will_topic: Option<UTF8String>,
     will_payload: Option<Binary>,
@@ -263,10 +263,7 @@ impl SizedProperty for ConnectPayload {
             })
             .unwrap_or(0);
 
-        self.client_identifier
-            .as_ref()
-            .map(|val| val.property_len())
-            .unwrap_or(0)
+        self.client_identifier.property_len()
             + will_properties_len
             + self
                 .will_topic
@@ -300,9 +297,7 @@ impl ToByteBuffer for ConnectPayload {
         let result = &mut buf[0..len];
         let mut writer = ByteWriter::from(result);
 
-        if let Some(val) = self.client_identifier.as_ref() {
-            writer.write(val)
-        }
+        writer.write(&self.client_identifier);
 
         if let Some(val) = self.will_properties.as_ref() {
             writer.write(val)
@@ -396,7 +391,7 @@ impl TryToByteBuffer for Connect {
 }
 
 #[derive(Default)]
-pub(crate) struct ConnectBuilder {
+pub struct ConnectBuilder {
     keep_alive: Option<TwoByteInteger>,
 
     session_expiry_interval: Option<SessionExpiryInterval>,
@@ -409,9 +404,9 @@ pub(crate) struct ConnectBuilder {
     authentication_data: Option<AuthenticationData>,
     user_property: Vec<UserProperty>,
 
-    will_qos: Option<QoS>,
-    will_retain: Option<Boolean>,
-    clean_start: Option<Boolean>,
+    will_qos: QoS,
+    will_retain: Boolean,
+    clean_start: Boolean,
     client_identifier: Option<UTF8String>,
 
     will_delay_interval: Option<WillDelayInterval>,
@@ -429,122 +424,122 @@ pub(crate) struct ConnectBuilder {
 }
 
 impl ConnectBuilder {
-    pub(crate) fn keep_alive(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub fn keep_alive(&mut self, val: TwoByteInteger) -> &mut Self {
         self.keep_alive = Some(val);
         self
     }
 
-    pub(crate) fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
         self.session_expiry_interval = Some(SessionExpiryInterval(val));
         self
     }
 
-    pub(crate) fn receive_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub fn receive_maximum(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
         self.receive_maximum = Some(ReceiveMaximum(val));
         self
     }
 
-    pub(crate) fn maximum_packet_size(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn maximum_packet_size(&mut self, val: NonZero<FourByteInteger>) -> &mut Self {
         self.maximum_packet_size = Some(MaximumPacketSize(val));
         self
     }
 
-    pub(crate) fn topic_alias_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub fn topic_alias_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
         self.topic_alias_maximum = Some(TopicAliasMaximum(val));
         self
     }
 
-    pub(crate) fn request_response_information(&mut self, val: Byte) -> &mut Self {
+    pub fn request_response_information(&mut self, val: Boolean) -> &mut Self {
         self.request_response_information = Some(RequestResponseInformation(val));
         self
     }
 
-    pub(crate) fn request_problem_information(&mut self, val: Byte) -> &mut Self {
+    pub fn request_problem_information(&mut self, val: Boolean) -> &mut Self {
         self.request_problem_information = Some(RequestProblemInformation(val));
         self
     }
 
-    pub(crate) fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
+    pub fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
         self.authentication_method = Some(AuthenticationMethod(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }
 
-    pub(crate) fn will_qos(&mut self, val: QoS) -> &mut Self {
-        self.will_qos = Some(val);
+    pub fn will_qos(&mut self, val: QoS) -> &mut Self {
+        self.will_qos = val;
         self
     }
 
-    pub(crate) fn will_retain(&mut self, val: Boolean) -> &mut Self {
-        self.will_retain = Some(val);
+    pub fn will_retain(&mut self, val: Boolean) -> &mut Self {
+        self.will_retain = val;
         self
     }
 
-    pub(crate) fn clean_start(&mut self, val: Boolean) -> &mut Self {
-        self.clean_start = Some(val);
+    pub fn clean_start(&mut self, val: Boolean) -> &mut Self {
+        self.clean_start = val;
         self
     }
 
-    pub(crate) fn client_identifier(&mut self, val: UTF8String) -> &mut Self {
+    pub fn client_identifier(&mut self, val: UTF8String) -> &mut Self {
         self.client_identifier = Some(val);
         self
     }
 
-    pub(crate) fn will_delay_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn will_delay_interval(&mut self, val: FourByteInteger) -> &mut Self {
         self.will_delay_interval = Some(WillDelayInterval(val));
         self
     }
 
-    pub(crate) fn will_payload_format_indicator(&mut self, val: Boolean) -> &mut Self {
+    pub fn will_payload_format_indicator(&mut self, val: Boolean) -> &mut Self {
         self.will_payload_format_indicator = Some(PayloadFormatIndicator(val));
         self
     }
 
-    pub(crate) fn will_message_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn will_message_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
         self.will_message_expiry_interval = Some(MessageExpiryInterval(val));
         self
     }
 
-    pub(crate) fn will_content_type(&mut self, val: UTF8String) -> &mut Self {
+    pub fn will_content_type(&mut self, val: UTF8String) -> &mut Self {
         self.will_content_type = Some(ContentType(val));
         self
     }
 
-    pub(crate) fn will_reponse_topic(&mut self, val: UTF8String) -> &mut Self {
+    pub fn will_reponse_topic(&mut self, val: UTF8String) -> &mut Self {
         self.will_reponse_topic = Some(ResponseTopic(val));
         self
     }
 
-    pub(crate) fn will_correlation_data(&mut self, val: Binary) -> &mut Self {
+    pub fn will_correlation_data(&mut self, val: Binary) -> &mut Self {
         self.will_correlation_data = Some(CorrelationData(val));
         self
     }
 
-    pub(crate) fn will_user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub fn will_user_property(&mut self, val: UTF8StringPair) -> &mut Self {
         self.will_user_property.push(UserProperty(val));
         self
     }
 
-    pub(crate) fn will_topic(&mut self, val: UTF8String) -> &mut Self {
+    pub fn will_topic(&mut self, val: UTF8String) -> &mut Self {
         self.will_topic = Some(val);
         self
     }
 
-    pub(crate) fn will_payload(&mut self, val: Binary) -> &mut Self {
+    pub fn will_payload(&mut self, val: Binary) -> &mut Self {
         self.will_payload = Some(val);
         self
     }
 
-    pub(crate) fn username(&mut self, val: UTF8String) -> &mut Self {
+    pub fn username(&mut self, val: UTF8String) -> &mut Self {
         self.username = Some(val);
         self
     }
 
-    pub(crate) fn password(&mut self, val: Binary) -> &mut Self {
+    pub fn password(&mut self, val: Binary) -> &mut Self {
         self.password = Some(val);
         self
     }
@@ -571,8 +566,12 @@ impl ConnectBuilder {
             });
         }
 
+        if self.authentication_method.is_none() && self.authentication_data.is_some() {
+            return None; // Cannot include authentication data when authentication method is absent.
+        }
+
         Some(Connect {
-            keep_alive: self.keep_alive?,
+            keep_alive: self.keep_alive.unwrap_or(0),
             properties: ConnectProperties {
                 session_expiry_interval: self.session_expiry_interval,
                 receive_maximum: self.receive_maximum,
@@ -586,11 +585,11 @@ impl ConnectBuilder {
             },
             payload: ConnectPayload {
                 meta: ConnectMetadata {
-                    will_qos: self.will_qos.unwrap_or_default(),
-                    will_retain: self.will_retain.unwrap_or_default(),
-                    clean_start: self.clean_start.unwrap_or_default(),
+                    will_qos: self.will_qos,
+                    will_retain: self.will_retain,
+                    clean_start: self.clean_start,
                 },
-                client_identifier: self.client_identifier,
+                client_identifier: self.client_identifier?,
                 will_properties,
                 will_topic: self.will_topic,
                 will_payload: self.will_payload,
@@ -604,13 +603,12 @@ impl ConnectBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::core::utils::PropertyID;
 
     #[test]
-    fn to_bytes() {
-        const EXPECTED: [u8; 16] = [
-            Connect::PACKET_ID << 4,
-            14, // Remaining length
+    fn to_bytes_0() {
+        const EXPECTED: [u8; 22] = [
+            Connect::FIXED_HDR,
+            20,
             0,
             4,
             b'M',
@@ -618,21 +616,26 @@ mod test {
             b'T',
             b'T',
             Connect::PROTOCOL_VERSION,
-            0, // Connect flags
             0,
-            10, // Keep alive
-            3,  // Property length
-            ReceiveMaximum::PROPERTY_ID,
             0,
-            128,
+            0,
+            0,
+            0,
+            7,
+            b't',
+            b'e',
+            b's',
+            b't',
+            b'1',
+            b'2',
+            b'3',
         ];
 
         let mut builder = ConnectBuilder::default();
-        builder.keep_alive(10);
-        builder.receive_maximum(128);
+        builder.client_identifier(String::from("test123"));
         let packet = builder.build().unwrap();
 
-        let mut buf = [0u8; 128];
+        let mut buf = [0u8; EXPECTED.len()];
         let result = packet.try_to_byte_buffer(&mut buf).unwrap();
 
         assert_eq!(result, EXPECTED);

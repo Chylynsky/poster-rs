@@ -9,7 +9,7 @@ use crate::core::{
 use std::{cmp::PartialEq, mem};
 
 pub(crate) struct Ack<ReasonT> {
-    pub(crate) packet_identifier: TwoByteInteger,
+    pub(crate) packet_identifier: NonZero<TwoByteInteger>,
     pub(crate) reason: ReasonT,
 
     pub(crate) reason_string: Option<ReasonString>,
@@ -85,7 +85,7 @@ where
             return None; // Invalid packet size
         }
 
-        let packet_id = reader.try_read::<TwoByteInteger>()?;
+        let packet_id = reader.try_read::<NonZero<TwoByteInteger>>()?;
         builder.packet_identifier(packet_id);
 
         // When remaining length is 2, the Reason is 0x00 and there are no properties.
@@ -160,7 +160,7 @@ pub(crate) struct AckBuilder<ReasonT>
 where
     ReasonT: Default,
 {
-    packet_identifier: Option<TwoByteInteger>,
+    packet_identifier: Option<NonZero<TwoByteInteger>>,
     reason: Option<ReasonT>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
@@ -170,7 +170,7 @@ impl<ReasonT> AckBuilder<ReasonT>
 where
     ReasonT: Default,
 {
-    pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
@@ -244,7 +244,7 @@ pub(crate) mod test {
 
         let packet = Ack::<ReasonT>::try_from_bytes(&input_packet).unwrap();
 
-        assert_eq!(packet.packet_identifier, 0x4573);
+        assert_eq!(packet.packet_identifier, NonZero::from(0x4573));
         assert_eq!(packet.reason, ReasonT::default());
         assert_eq!(packet.reason_string.unwrap().0, "Success");
         assert_eq!(packet.user_property.len(), 1);
@@ -268,7 +268,7 @@ pub(crate) mod test {
 
         let packet = Ack::<ReasonT>::try_from_bytes(&input_packet).unwrap();
 
-        assert_eq!(packet.packet_identifier, 0x4573);
+        assert_eq!(packet.packet_identifier, 0x4573.into());
     }
 
     pub(crate) fn to_bytes_impl<ReasonT>()
@@ -308,7 +308,7 @@ pub(crate) mod test {
         ];
 
         let mut builder = AckBuilder::<ReasonT>::default();
-        builder.packet_identifier(0x4573);
+        builder.packet_identifier(NonZero::from(0x4573));
         builder.reason(ReasonT::default());
         builder.reason_string(String::from("Success"));
         builder.user_property((String::from("key"), String::from("val")));
@@ -334,7 +334,7 @@ pub(crate) mod test {
         ];
 
         let mut builder = AckBuilder::<ReasonT>::default();
-        builder.packet_identifier(0x4573);
+        builder.packet_identifier(NonZero::from(0x4573));
 
         let packet = builder.build().unwrap();
         let mut buf = vec![0; expected_packet.len()];

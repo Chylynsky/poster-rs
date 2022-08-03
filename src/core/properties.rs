@@ -60,7 +60,7 @@ declare_property!(MessageExpiryInterval, FourByteInteger, 2);
 declare_property!(ContentType, UTF8String, 3);
 declare_property!(ResponseTopic, UTF8String, 8);
 declare_property!(CorrelationData, Binary, 9);
-declare_property!(SubscriptionIdentifier, VarSizeInt, 11);
+declare_property!(SubscriptionIdentifier, NonZero<VarSizeInt>, 11);
 declare_property!(SessionExpiryInterval, FourByteInteger, 17);
 
 #[allow(clippy::derivable_impls)]
@@ -74,17 +74,26 @@ declare_property!(AssignedClientIdentifier, UTF8String, 18);
 declare_property!(ServerKeepAlive, TwoByteInteger, 19);
 declare_property!(AuthenticationMethod, UTF8String, 21);
 declare_property!(AuthenticationData, Binary, 22);
-declare_property!(RequestProblemInformation, Byte, 23);
+declare_property!(RequestProblemInformation, Boolean, 23);
+
 declare_property!(WillDelayInterval, FourByteInteger, 24);
-declare_property!(RequestResponseInformation, Byte, 25);
+
+#[allow(clippy::derivable_impls)]
+impl Default for WillDelayInterval {
+    fn default() -> Self {
+        Self(0)
+    }
+}
+
+declare_property!(RequestResponseInformation, Boolean, 25);
 declare_property!(ResponseInformation, UTF8String, 26);
 declare_property!(ServerReference, UTF8String, 28);
 declare_property!(ReasonString, UTF8String, 31);
-declare_property!(ReceiveMaximum, TwoByteInteger, 33);
+declare_property!(ReceiveMaximum, NonZero<TwoByteInteger>, 33);
 
 impl Default for ReceiveMaximum {
     fn default() -> Self {
-        Self(65535)
+        Self(NonZero::from(65535))
     }
 }
 
@@ -97,7 +106,7 @@ impl Default for TopicAliasMaximum {
     }
 }
 
-declare_property!(TopicAlias, TwoByteInteger, 35);
+declare_property!(TopicAlias, NonZero<TwoByteInteger>, 35);
 declare_property!(MaximumQoS, QoS, 36);
 
 impl Default for MaximumQoS {
@@ -115,15 +124,7 @@ impl Default for RetainAvailable {
 }
 
 declare_property!(UserProperty, UTF8StringPair, 38);
-declare_property!(MaximumPacketSize, FourByteInteger, 39);
-
-impl Default for MaximumPacketSize {
-    fn default() -> Self {
-        // TODO: Not yet sure if that makes sense
-        Self(FourByteInteger::MAX)
-    }
-}
-
+declare_property!(MaximumPacketSize, NonZero<FourByteInteger>, 39);
 declare_property!(WildcardSubscriptionAvailable, Boolean, 40);
 
 impl Default for WildcardSubscriptionAvailable {
@@ -213,7 +214,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 )))
             }
             RequestResponseInformation::PROPERTY_ID => {
-                let property = Byte::try_from_bytes(self.buf)?;
+                let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -269,7 +270,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::RetainAvailable(RetainAvailable(property)))
             }
             RequestProblemInformation::PROPERTY_ID => {
-                let property = Byte::try_from_bytes(self.buf)?;
+                let property = Boolean::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -287,7 +288,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ServerKeepAlive(ServerKeepAlive(property)))
             }
             ReceiveMaximum::PROPERTY_ID => {
-                let property = TwoByteInteger::try_from_bytes(self.buf)?;
+                let property = NonZero::<TwoByteInteger>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -303,7 +304,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::TopicAliasMaximum(TopicAliasMaximum(property)))
             }
             TopicAlias::PROPERTY_ID => {
-                let property = TwoByteInteger::try_from_bytes(self.buf)?;
+                let property = NonZero::<TwoByteInteger>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -339,7 +340,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::WillDelayInterval(WillDelayInterval(property)))
             }
             MaximumPacketSize::PROPERTY_ID => {
-                let property = FourByteInteger::try_from_bytes(self.buf)?;
+                let property = NonZero::<FourByteInteger>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -347,7 +348,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::MaximumPacketSize(MaximumPacketSize(property)))
             }
             SubscriptionIdentifier::PROPERTY_ID => {
-                let property = VarSizeInt::try_from_bytes(self.buf)?;
+                let property = NonZero::<VarSizeInt>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -462,7 +463,9 @@ mod test {
                 ),
                 (
                     RequestResponseInformation::PROPERTY_ID,
-                    Property::RequestResponseInformation(RequestResponseInformation(EXPECTED_VAL)),
+                    Property::RequestResponseInformation(RequestResponseInformation(
+                        EXPECTED_VAL != 0,
+                    )),
                 ),
                 (
                     WildcardSubscriptionAvailable::PROPERTY_ID,
@@ -492,7 +495,9 @@ mod test {
                 ),
                 (
                     RequestProblemInformation::PROPERTY_ID,
-                    Property::RequestProblemInformation(RequestProblemInformation(EXPECTED_VAL)),
+                    Property::RequestProblemInformation(RequestProblemInformation(
+                        EXPECTED_VAL != 0,
+                    )),
                 ),
             ];
 
@@ -514,7 +519,7 @@ mod test {
                 ),
                 (
                     ReceiveMaximum::PROPERTY_ID,
-                    Property::ReceiveMaximum(ReceiveMaximum(EXPECTED_VAL)),
+                    Property::ReceiveMaximum(ReceiveMaximum(NonZero::from(EXPECTED_VAL))),
                 ),
                 (
                     TopicAliasMaximum::PROPERTY_ID,
@@ -522,7 +527,7 @@ mod test {
                 ),
                 (
                     TopicAlias::PROPERTY_ID,
-                    Property::TopicAlias(TopicAlias(EXPECTED_VAL)),
+                    Property::TopicAlias(TopicAlias(NonZero::from(EXPECTED_VAL))),
                 ),
             ];
 
@@ -551,7 +556,7 @@ mod test {
                 ),
                 (
                     MaximumPacketSize::PROPERTY_ID,
-                    Property::MaximumPacketSize(MaximumPacketSize(EXPECTED_VAL)),
+                    Property::MaximumPacketSize(MaximumPacketSize(NonZero::from(EXPECTED_VAL))),
                 ),
             ];
 
@@ -567,8 +572,8 @@ mod test {
             const EXPECTED_VAL: u8 = 64;
             let input = [(
                 SubscriptionIdentifier::PROPERTY_ID,
-                Property::SubscriptionIdentifier(SubscriptionIdentifier(VarSizeInt::from(
-                    EXPECTED_VAL,
+                Property::SubscriptionIdentifier(SubscriptionIdentifier(NonZero::from(
+                    VarSizeInt::from(EXPECTED_VAL),
                 ))),
             )];
 
@@ -786,7 +791,7 @@ mod test {
             const EXPECTED_VAL: u8 = 1;
 
             byte_test(PayloadFormatIndicator(EXPECTED_VAL != 0), EXPECTED_VAL);
-            byte_test(RequestResponseInformation(EXPECTED_VAL), EXPECTED_VAL);
+            byte_test(RequestResponseInformation(EXPECTED_VAL != 0), EXPECTED_VAL);
             byte_test(
                 WildcardSubscriptionAvailable(EXPECTED_VAL != 0),
                 EXPECTED_VAL,
@@ -801,7 +806,7 @@ mod test {
                 EXPECTED_VAL,
             );
             byte_test(RetainAvailable(EXPECTED_VAL != 0), EXPECTED_VAL);
-            byte_test(RequestProblemInformation(EXPECTED_VAL), EXPECTED_VAL);
+            byte_test(RequestProblemInformation(EXPECTED_VAL != 0), EXPECTED_VAL);
         }
 
         #[test]
@@ -809,9 +814,9 @@ mod test {
             const EXPECTED_VAL: u16 = 0x1234;
 
             two_byte_int_test(ServerKeepAlive(EXPECTED_VAL), EXPECTED_VAL);
-            two_byte_int_test(ReceiveMaximum(EXPECTED_VAL), EXPECTED_VAL);
+            two_byte_int_test(ReceiveMaximum(NonZero::from(EXPECTED_VAL)), EXPECTED_VAL);
             two_byte_int_test(TopicAliasMaximum(EXPECTED_VAL), EXPECTED_VAL);
-            two_byte_int_test(TopicAlias(EXPECTED_VAL), EXPECTED_VAL);
+            two_byte_int_test(TopicAlias(NonZero::from(EXPECTED_VAL)), EXPECTED_VAL);
         }
 
         #[test]
@@ -821,7 +826,7 @@ mod test {
             four_byte_int_test(MessageExpiryInterval(EXPECTED_VAL), EXPECTED_VAL);
             four_byte_int_test(SessionExpiryInterval(EXPECTED_VAL), EXPECTED_VAL);
             four_byte_int_test(WillDelayInterval(EXPECTED_VAL), EXPECTED_VAL);
-            four_byte_int_test(MaximumPacketSize(EXPECTED_VAL), EXPECTED_VAL);
+            four_byte_int_test(MaximumPacketSize(NonZero::from(EXPECTED_VAL)), EXPECTED_VAL);
         }
 
         #[test]
@@ -830,8 +835,8 @@ mod test {
             const EXPECTED_BUF: &[u8] = &[0xff, 0x7f];
 
             let mut buf = [0u8; 5];
-            let result =
-                SubscriptionIdentifier(VarSizeInt::from(INPUT_VAL)).try_to_byte_buffer(&mut buf);
+            let result = SubscriptionIdentifier(NonZero::from(VarSizeInt::from(INPUT_VAL)))
+                .try_to_byte_buffer(&mut buf);
             assert!(result.is_some());
             assert_eq!(
                 result.unwrap(),

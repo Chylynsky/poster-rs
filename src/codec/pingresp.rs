@@ -38,7 +38,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn from_bytes() {
+    fn from_bytes_0() {
         const FIXED_HDR: u8 = ((Pingresp::PACKET_ID as u8) << 4) as u8;
         const PACKET: [u8; 1] = [FIXED_HDR];
         let _ = Pingresp::try_from_bytes(&PACKET).unwrap();

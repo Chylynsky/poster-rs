@@ -308,14 +308,14 @@ impl TryToByteBuffer for Byte {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub(crate) enum QoS {
+pub enum QoS {
     AtMostOnce = 0,
     AtLeastOnce = 1,
     ExactlyOnce = 2,
 }
 
 impl QoS {
-    pub(crate) fn try_from(val: u8) -> Option<Self> {
+    pub fn try_from(val: u8) -> Option<Self> {
         match val {
             0 => Some(QoS::AtMostOnce),
             1 => Some(QoS::AtLeastOnce),
@@ -451,6 +451,200 @@ impl TryFromBytes for FourByteInteger {
             .take(mem::size_of::<u32>())
             .map(|&value| value as u32)
             .reduce(|result, tmp| result << 8 | tmp)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NonZero<T>(T)
+where
+    T: Copy;
+
+impl<T> NonZero<T>
+where
+    T: Copy + std::cmp::PartialEq<i32>,
+{
+    pub fn try_from(val: T) -> Option<Self> {
+        if val == 0 {
+            return None;
+        }
+
+        Some(Self(val))
+    }
+
+    pub fn value(&self) -> T {
+        self.0
+    }
+}
+
+impl From<u8> for NonZero<u8> {
+    fn from(val: u8) -> Self {
+        assert!(val != 0);
+        Self(val)
+    }
+}
+
+impl From<NonZero<u8>> for u8 {
+    fn from(val: NonZero<u8>) -> Self {
+        val.0
+    }
+}
+
+impl SizedProperty for NonZero<Byte> {
+    fn property_len(&self) -> usize {
+        self.0.property_len()
+    }
+}
+
+impl ToByteBuffer for NonZero<Byte> {
+    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        self.0.to_byte_buffer(buf)
+    }
+}
+
+impl TryToByteBuffer for NonZero<Byte> {
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+        self.0.try_to_byte_buffer(buf)
+    }
+}
+
+impl TryFromBytes for NonZero<Byte> {
+    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+        Byte::try_from_bytes(bytes).and_then(|val| {
+            if val == 0 {
+                return None;
+            }
+
+            return Some(NonZero(val));
+        })
+    }
+}
+
+impl From<u16> for NonZero<u16> {
+    fn from(val: u16) -> Self {
+        assert!(val != 0);
+        Self(val)
+    }
+}
+
+impl From<NonZero<u16>> for u16 {
+    fn from(val: NonZero<u16>) -> Self {
+        val.0
+    }
+}
+
+impl SizedProperty for NonZero<TwoByteInteger> {
+    fn property_len(&self) -> usize {
+        self.0.property_len()
+    }
+}
+
+impl ToByteBuffer for NonZero<TwoByteInteger> {
+    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        self.0.to_byte_buffer(buf)
+    }
+}
+
+impl TryToByteBuffer for NonZero<TwoByteInteger> {
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+        self.0.try_to_byte_buffer(buf)
+    }
+}
+
+impl TryFromBytes for NonZero<TwoByteInteger> {
+    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+        TwoByteInteger::try_from_bytes(bytes).and_then(|val| {
+            if val == 0 {
+                return None;
+            }
+
+            return Some(NonZero(val));
+        })
+    }
+}
+
+impl From<u32> for NonZero<u32> {
+    fn from(val: u32) -> Self {
+        assert!(val != 0);
+        Self(val)
+    }
+}
+
+impl From<NonZero<u32>> for u32 {
+    fn from(val: NonZero<u32>) -> Self {
+        val.0
+    }
+}
+
+impl SizedProperty for NonZero<FourByteInteger> {
+    fn property_len(&self) -> usize {
+        self.0.property_len()
+    }
+}
+
+impl ToByteBuffer for NonZero<FourByteInteger> {
+    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        self.0.to_byte_buffer(buf)
+    }
+}
+
+impl TryToByteBuffer for NonZero<FourByteInteger> {
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+        self.0.try_to_byte_buffer(buf)
+    }
+}
+
+impl TryFromBytes for NonZero<FourByteInteger> {
+    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+        FourByteInteger::try_from_bytes(bytes).and_then(|val| {
+            if val == 0 {
+                return None;
+            }
+
+            return Some(NonZero(val));
+        })
+    }
+}
+
+impl From<VarSizeInt> for NonZero<VarSizeInt> {
+    fn from(val: VarSizeInt) -> Self {
+        assert!(val.value() != 0);
+        Self(val)
+    }
+}
+
+impl From<NonZero<VarSizeInt>> for VarSizeInt {
+    fn from(val: NonZero<VarSizeInt>) -> Self {
+        val.0
+    }
+}
+
+impl SizedProperty for NonZero<VarSizeInt> {
+    fn property_len(&self) -> usize {
+        self.0.property_len()
+    }
+}
+
+impl ToByteBuffer for NonZero<VarSizeInt> {
+    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        self.0.to_byte_buffer(buf)
+    }
+}
+
+impl TryToByteBuffer for NonZero<VarSizeInt> {
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+        self.0.try_to_byte_buffer(buf)
+    }
+}
+
+impl TryFromBytes for NonZero<VarSizeInt> {
+    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+        VarSizeInt::try_from_bytes(bytes).and_then(|val| {
+            if val.value() == 0 {
+                return None;
+            }
+
+            return Some(NonZero(val));
+        })
     }
 }
 
@@ -838,6 +1032,21 @@ mod test {
             let mut buf = [0u8; 2];
             let result = input.try_to_byte_buffer(&mut buf);
             assert!(result.is_none());
+        }
+    }
+
+    mod non_zero {
+        use super::*;
+
+        #[test]
+        #[should_panic]
+        fn from_zero() {
+            let _ = NonZero::<u8>::from(0);
+        }
+
+        #[test]
+        fn from() {
+            let _ = NonZero::<u8>::from(1);
         }
     }
 }

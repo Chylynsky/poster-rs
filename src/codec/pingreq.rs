@@ -48,7 +48,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn to_bytes() {
+    fn to_bytes_0() {
         const EXPECTED: [u8; 2] = [Pingreq::PACKET_ID << 4, 0];
 
         let builder = PingreqBuilder::default();

@@ -61,22 +61,22 @@ mod test {
     use crate::codec::ack::test::*;
 
     #[test]
-    fn from_bytes() {
+    fn from_bytes_0() {
         from_bytes_impl::<PubcompReason>();
     }
 
     #[test]
-    fn from_bytes_short() {
+    fn from_bytes_1() {
         from_bytes_short_impl::<PubcompReason>();
     }
 
     #[test]
-    fn to_bytes() {
+    fn to_bytes_0() {
         to_bytes_impl::<PubcompReason>();
     }
 
     #[test]
-    fn to_bytes_short() {
+    fn to_bytes_1() {
         to_bytes_short_impl::<PubcompReason>();
     }
 }

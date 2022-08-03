@@ -1,5 +1,3 @@
-
-
 pub(crate) trait SizedProperty {
     fn property_len(&self) -> usize;
 }
@@ -29,17 +27,6 @@ pub(crate) trait ToByteBuffer {
 
 pub(crate) trait TryToByteBuffer {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]>;
-}
-
-pub(crate) trait ToBytes
-where
-    Self: SizedProperty + ToByteBuffer,
-{
-    fn try_to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.property_len());
-        self.to_byte_buffer(&mut buf);
-        buf
-    }
 }
 
 pub(crate) trait TryFromIterator<T>

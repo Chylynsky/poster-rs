@@ -119,7 +119,7 @@ impl UnsubscribeBuilder {
 
     pub(crate) fn build(self) -> Option<Unsubscribe> {
         if self.payload.is_empty() {
-            return None;
+            return None; // Unsubscribe packet with no payload is a Protocol Error
         }
 
         let properties = UnsubscribeProperties {
@@ -139,7 +139,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn to_bytes() {
+    fn to_bytes_0() {
         const EXPECTED: [u8; 15] = [
             Unsubscribe::FIXED_HDR,
             13, // Remaining length

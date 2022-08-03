@@ -103,7 +103,7 @@ impl ToByteBuffer for DisconnectReason {
 }
 
 struct DisconnectProperties {
-    session_expiry_interval: Option<SessionExpiryInterval>,
+    session_expiry_interval: SessionExpiryInterval,
     reason_string: Option<ReasonString>,
     server_reference: Option<ServerReference>,
     user_property: Vec<UserProperty>,
@@ -111,11 +111,15 @@ struct DisconnectProperties {
 
 impl SizedProperty for DisconnectProperties {
     fn property_len(&self) -> usize {
-        let session_expiry_interval_len = self
-            .session_expiry_interval
-            .as_ref()
-            .map(|val| val.property_len())
-            .unwrap_or(0);
+        let session_expiry_interval_len = Some(&self.session_expiry_interval)
+            .map(|val| {
+                if *val == SessionExpiryInterval::default() {
+                    return 0;
+                }
+
+                return val.property_len();
+            })
+            .unwrap();
 
         let reason_string_len = self
             .reason_string
@@ -149,8 +153,8 @@ impl ToByteBuffer for DisconnectProperties {
 
         writer.write(&property_len);
 
-        if let Some(val) = self.session_expiry_interval.as_ref() {
-            writer.write(val);
+        if self.session_expiry_interval != SessionExpiryInterval::default() {
+            writer.write(&self.session_expiry_interval);
         }
 
         if let Some(val) = self.reason_string.as_ref() {
@@ -223,17 +227,18 @@ impl TryFromBytes for Disconnect {
 
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
-                Property::SessionExpiryInterval(val) => {
-                    builder.session_expiry_interval(val);
+                Property::SessionExpiryInterval(_) => {
+                    // The Session Expiry Interval MUST NOT be sent on a DISCONNECT by the Server
+                    return None;
                 }
                 Property::ReasonString(val) => {
-                    builder.reason_string(val);
+                    builder.reason_string(val.0);
                 }
                 Property::ServerReference(val) => {
-                    builder.server_reference(val);
+                    builder.server_reference(val.0);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val);
+                    builder.user_property(val.0);
                 }
                 _ => {
                     return None;
@@ -268,7 +273,7 @@ impl TryToByteBuffer for Disconnect {
 #[derive(Default)]
 pub(crate) struct DisconnectBuilder {
     reason: Option<DisconnectReason>,
-    session_expiry_interval: Option<SessionExpiryInterval>,
+    session_expiry_interval: SessionExpiryInterval,
     reason_string: Option<ReasonString>,
     server_reference: Option<ServerReference>,
     user_property: Vec<UserProperty>,
@@ -280,23 +285,23 @@ impl DisconnectBuilder {
         self
     }
 
-    pub(crate) fn session_expiry_interval(&mut self, val: SessionExpiryInterval) -> &mut Self {
-        self.session_expiry_interval = Some(val);
+    pub(crate) fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+        self.session_expiry_interval = SessionExpiryInterval(val);
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: ReasonString) -> &mut Self {
-        self.reason_string = Some(val);
+    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+        self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn server_reference(&mut self, val: ServerReference) -> &mut Self {
-        self.server_reference = Some(val);
+    pub(crate) fn server_reference(&mut self, val: UTF8String) -> &mut Self {
+        self.server_reference = Some(ServerReference(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UserProperty) -> &mut Self {
-        self.user_property.push(val);
+    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+        self.user_property.push(UserProperty(val));
         self
     }
 
@@ -349,7 +354,7 @@ mod test {
     ];
 
     #[test]
-    fn from_bytes() {
+    fn from_bytes_0() {
         let packet = Disconnect::try_from_bytes(&PACKET).unwrap();
 
         assert_eq!(packet.reason, DisconnectReason::Success);
@@ -362,12 +367,12 @@ mod test {
     }
 
     #[test]
-    fn to_bytes() {
+    fn to_bytes_0() {
         let mut builder = DisconnectBuilder::default();
 
         builder.reason(DisconnectReason::Success);
-        builder.reason_string(ReasonString(String::from("Success")));
-        builder.user_property(UserProperty((String::from("key"), String::from("val"))));
+        builder.reason_string(String::from("Success"));
+        builder.user_property((String::from("key"), String::from("val")));
 
         let packet = builder.build().unwrap();
 

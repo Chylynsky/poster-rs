@@ -85,17 +85,17 @@ pub(crate) struct Connack {
     reason: ConnectReason,
 
     // Connack properties
-    wildcard_subscription_available: Option<WildcardSubscriptionAvailable>,
-    subscription_identifier_available: Option<SubscriptionIdentifierAvailable>,
-    shared_subscription_available: Option<SharedSubscriptionAvailable>,
-    maximum_qos: Option<MaximumQoS>,
-    retain_available: Option<RetainAvailable>,
+    wildcard_subscription_available: WildcardSubscriptionAvailable,
+    subscription_identifier_available: SubscriptionIdentifierAvailable,
+    shared_subscription_available: SharedSubscriptionAvailable,
+    maximum_qos: MaximumQoS,
+    retain_available: RetainAvailable,
 
     server_keep_alive: Option<ServerKeepAlive>,
-    receive_maximum: Option<ReceiveMaximum>,
-    topic_alias_maximum: Option<TopicAliasMaximum>,
+    receive_maximum: ReceiveMaximum,
+    topic_alias_maximum: TopicAliasMaximum,
 
-    session_expiry_interval: Option<SessionExpiryInterval>,
+    session_expiry_interval: SessionExpiryInterval,
     maximum_packet_size: Option<MaximumPacketSize>,
 
     authentication_data: Option<AuthenticationData>,
@@ -214,17 +214,17 @@ pub(crate) struct ConnackBuilder {
     reason: Option<ConnectReason>,
 
     // Connack properties
-    wildcard_subscription_available: Option<WildcardSubscriptionAvailable>,
-    subscription_identifier_available: Option<SubscriptionIdentifierAvailable>,
-    shared_subscription_available: Option<SharedSubscriptionAvailable>,
-    maximum_qos: Option<MaximumQoS>,
-    retain_available: Option<RetainAvailable>,
+    wildcard_subscription_available: WildcardSubscriptionAvailable,
+    subscription_identifier_available: SubscriptionIdentifierAvailable,
+    shared_subscription_available: SharedSubscriptionAvailable,
+    maximum_qos: MaximumQoS,
+    retain_available: RetainAvailable,
 
     server_keep_alive: Option<ServerKeepAlive>,
-    receive_maximum: Option<ReceiveMaximum>,
-    topic_alias_maximum: Option<TopicAliasMaximum>,
+    receive_maximum: ReceiveMaximum,
+    topic_alias_maximum: TopicAliasMaximum,
 
-    session_expiry_interval: Option<SessionExpiryInterval>,
+    session_expiry_interval: SessionExpiryInterval,
     maximum_packet_size: Option<MaximumPacketSize>,
 
     authentication_data: Option<AuthenticationData>,
@@ -250,27 +250,27 @@ impl ConnackBuilder {
     }
 
     pub(crate) fn wildcard_subscription_available(&mut self, val: Boolean) -> &mut Self {
-        self.wildcard_subscription_available = Some(WildcardSubscriptionAvailable(val));
+        self.wildcard_subscription_available = WildcardSubscriptionAvailable(val);
         self
     }
 
     pub(crate) fn subscription_identifier_available(&mut self, val: Boolean) -> &mut Self {
-        self.subscription_identifier_available = Some(SubscriptionIdentifierAvailable(val));
+        self.subscription_identifier_available = SubscriptionIdentifierAvailable(val);
         self
     }
 
     pub(crate) fn shared_subscription_available(&mut self, val: Boolean) -> &mut Self {
-        self.shared_subscription_available = Some(SharedSubscriptionAvailable(val));
+        self.shared_subscription_available = SharedSubscriptionAvailable(val);
         self
     }
 
     pub(crate) fn maximum_qos(&mut self, val: QoS) -> &mut Self {
-        self.maximum_qos = Some(MaximumQoS(val));
+        self.maximum_qos = MaximumQoS(val);
         self
     }
 
     pub(crate) fn retain_available(&mut self, val: Boolean) -> &mut Self {
-        self.retain_available = Some(RetainAvailable(val));
+        self.retain_available = RetainAvailable(val);
         self
     }
 
@@ -279,22 +279,22 @@ impl ConnackBuilder {
         self
     }
 
-    pub(crate) fn receive_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
-        self.receive_maximum = Some(ReceiveMaximum(val));
+    pub(crate) fn receive_maximum(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+        self.receive_maximum = ReceiveMaximum(val);
         self
     }
 
     pub(crate) fn topic_alias_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
-        self.topic_alias_maximum = Some(TopicAliasMaximum(val));
+        self.topic_alias_maximum = TopicAliasMaximum(val);
         self
     }
 
     pub(crate) fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
-        self.session_expiry_interval = Some(SessionExpiryInterval(val));
+        self.session_expiry_interval = SessionExpiryInterval(val);
         self
     }
 
-    pub(crate) fn maximum_packet_size(&mut self, val: FourByteInteger) -> &mut Self {
+    pub(crate) fn maximum_packet_size(&mut self, val: NonZero<FourByteInteger>) -> &mut Self {
         self.maximum_packet_size = Some(MaximumPacketSize(val));
         self
     }
@@ -337,22 +337,16 @@ impl ConnackBuilder {
         Some(Connack {
             session_present: self.session_present?,
             reason: self.reason?,
-            wildcard_subscription_available: Some(
-                self.wildcard_subscription_available.unwrap_or_default(),
-            ),
-            subscription_identifier_available: Some(
-                self.subscription_identifier_available.unwrap_or_default(),
-            ),
-            shared_subscription_available: Some(
-                self.shared_subscription_available.unwrap_or_default(),
-            ),
-            maximum_qos: Some(self.maximum_qos.unwrap_or_default()),
-            retain_available: Some(self.retain_available.unwrap_or_default()),
+            wildcard_subscription_available: self.wildcard_subscription_available,
+            subscription_identifier_available: self.subscription_identifier_available,
+            shared_subscription_available: self.shared_subscription_available,
+            maximum_qos: self.maximum_qos,
+            retain_available: self.retain_available,
             server_keep_alive: self.server_keep_alive,
-            receive_maximum: Some(self.receive_maximum.unwrap_or_default()),
-            topic_alias_maximum: Some(self.topic_alias_maximum.unwrap_or_default()),
+            receive_maximum: self.receive_maximum,
+            topic_alias_maximum: self.topic_alias_maximum,
             session_expiry_interval: self.session_expiry_interval,
-            maximum_packet_size: Some(self.maximum_packet_size.unwrap_or_default()),
+            maximum_packet_size: self.maximum_packet_size,
             authentication_data: self.authentication_data,
             assigned_client_identifier: self.assigned_client_identifier,
             reason_string: self.reason_string,
@@ -369,101 +363,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn from_bytes() {
-        const PACKET: [u8; 65] = [
-            0x20u8, // Fixed header
-            63,     // Remaining length
-            0x00,   // Connect Acknowledge Flags (No session present)
-            0x00,   // Reason (Success)
-            60,     // Property length
-            0x11,   // Session Expiry Interval
-            0x00, 0x00, 0x03, 0x84, // 900 seconds
-            0x21, // Receive maximum
-            0x4e, 0x20, // 20 000
-            0x24, // Maximum QoS
-            0x01, // 1
-            0x25, // Retain available
-            0x01, // Yes
-            0x27, // Maximum packet size
-            0x00, 0x00, 0x01, 0x00, // 256 bytes
-            0x12, // Assigned client identifier
-            0x00, // String length MSB
-            0x04, // String length LSB
-            b't', b'e', b's', b't', 0x22, // Topic alias maximum
-            0x00, 0x0a, // 10
-            0x1f, // Reason String
-            0x00, // String length MSB
-            0x07, // String length LSB
-            b's', b'u', b'c', b'c', b'e', b's', b's', 0x28, // Wildcard subscription available
-            0x01, // Yes
-            0x29, // Subscription identifiers available
-            0x01, // Yes
-            0x2a, // Shared subscription avaialble
-            0x01, // Yes
-            0x13, // Server keep alive
-            0x00, 0x64, // 100 seconds
-            0x1a, // Response information
-            0x00, // String length MSB
-            0x04, // String length LSB
-            b't', b'e', b's', b't', 0x1c, // Server reference
-            0x00, // String length MSB
-            0x04, // String length LSB
-            b't', b'e', b's', b't',
-        ];
-
-        // User property, authentication method and authentication data properties are not present.
-
-        let result = Connack::try_from_bytes(&PACKET).unwrap();
-
-        assert!(result.user_property.is_empty());
-        assert!(result.authentication_data.is_none());
-        assert!(result.authentication_method.is_none());
-
-        assert!(!result.session_present);
-        assert_eq!(result.reason, ConnectReason::Success);
-
-        assert_eq!(
-            result.session_expiry_interval,
-            Some(SessionExpiryInterval(900))
-        );
-        assert_eq!(result.receive_maximum, Some(ReceiveMaximum(20000)));
-        assert_eq!(result.maximum_qos, Some(MaximumQoS(QoS::AtLeastOnce)));
-        assert_eq!(result.retain_available, Some(RetainAvailable(true)));
-        assert_eq!(result.maximum_packet_size, Some(MaximumPacketSize(256)));
-        assert_eq!(
-            result.assigned_client_identifier,
-            Some(AssignedClientIdentifier(String::from("test")))
-        );
-        assert_eq!(result.topic_alias_maximum, Some(TopicAliasMaximum(10)));
-        assert_eq!(
-            result.reason_string,
-            Some(ReasonString(String::from("success")))
-        );
-        assert_eq!(
-            result.wildcard_subscription_available,
-            Some(WildcardSubscriptionAvailable(true))
-        );
-        assert_eq!(
-            result.subscription_identifier_available,
-            Some(SubscriptionIdentifierAvailable(true))
-        );
-        assert_eq!(
-            result.shared_subscription_available,
-            Some(SharedSubscriptionAvailable(true))
-        );
-        assert_eq!(result.server_keep_alive, Some(ServerKeepAlive(100)));
-        assert_eq!(
-            result.response_information,
-            Some(ResponseInformation(String::from("test")))
-        );
-        assert_eq!(
-            result.server_reference,
-            Some(ServerReference(String::from("test")))
-        );
-    }
-
-    #[test]
-    fn from_bytes_short() {
+    fn from_bytes_0() {
         const PACKET: [u8; 5] = [
             Connack::PACKET_ID << 4, // Fixed header
             3,                       // Remaining length
@@ -476,28 +376,186 @@ mod test {
 
         assert!(!result.session_present);
         assert_eq!(result.reason, ConnectReason::Success);
-
-        // Check default values
-
-        assert_eq!(result.receive_maximum, Some(ReceiveMaximum(65535)));
-        assert_eq!(result.topic_alias_maximum, Some(TopicAliasMaximum(0)));
-        assert_eq!(result.maximum_qos, Some(MaximumQoS(QoS::ExactlyOnce)));
-        assert_eq!(result.retain_available, Some(RetainAvailable(true)));
-        assert_eq!(
-            result.maximum_packet_size,
-            Some(MaximumPacketSize(u32::MAX))
-        );
+        assert_eq!(result.receive_maximum, ReceiveMaximum::default());
+        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum(0));
+        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
+        assert_eq!(result.retain_available, RetainAvailable(true));
+        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
+        assert!(result.maximum_packet_size.is_none());
         assert_eq!(
             result.wildcard_subscription_available,
-            Some(WildcardSubscriptionAvailable(true))
+            WildcardSubscriptionAvailable(true)
         );
         assert_eq!(
             result.subscription_identifier_available,
-            Some(SubscriptionIdentifierAvailable(true))
+            SubscriptionIdentifierAvailable(true)
         );
         assert_eq!(
             result.shared_subscription_available,
-            Some(SharedSubscriptionAvailable(true))
+            SharedSubscriptionAvailable(true)
+        );
+    }
+
+    #[test]
+    fn from_bytes_1() {
+        const PACKET: [u8; 14] = [
+            Connack::PACKET_ID << 4,
+            12,
+            0,
+            0,
+            9,
+            34,
+            0,
+            10,
+            19,
+            255,
+            255,
+            33,
+            0,
+            20,
+        ];
+
+        let result = Connack::try_from_bytes(&PACKET).unwrap();
+
+        assert!(!result.session_present);
+        assert!(result.maximum_packet_size.is_none());
+        assert_eq!(result.reason, ConnectReason::Success);
+        assert_eq!(result.receive_maximum, ReceiveMaximum(NonZero::from(20)));
+        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum(10));
+        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
+        assert_eq!(result.server_keep_alive, Some(ServerKeepAlive(0xffff)));
+        assert_eq!(result.retain_available, RetainAvailable(true));
+        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
+        assert_eq!(
+            result.wildcard_subscription_available,
+            WildcardSubscriptionAvailable(true)
+        );
+        assert_eq!(
+            result.subscription_identifier_available,
+            SubscriptionIdentifierAvailable(true)
+        );
+        assert_eq!(
+            result.shared_subscription_available,
+            SharedSubscriptionAvailable(true)
+        );
+    }
+
+    #[test]
+    fn from_bytes_2() {
+        const PACKET: [u8; 65] = [
+            Connack::PACKET_ID << 4, // Fixed header
+            63,                      // Remaining length
+            0x00,                    // Connect Acknowledge Flags (No session present)
+            0x00,                    // Reason (Success)
+            60,                      // Property length
+            0x11,                    // Session Expiry Interval
+            0x00,
+            0x00,
+            0x03,
+            0x84, // 900 seconds
+            0x21, // Receive maximum
+            0x4e,
+            0x20, // 20 000
+            0x24, // Maximum QoS
+            0x01, // 1
+            0x25, // Retain available
+            0x01, // Yes
+            0x27, // Maximum packet size
+            0x00,
+            0x00,
+            0x01,
+            0x00, // 256 bytes
+            0x12, // Assigned client identifier
+            0x00, // String length MSB
+            0x04, // String length LSB
+            b't',
+            b'e',
+            b's',
+            b't',
+            0x22, // Topic alias maximum
+            0x00,
+            0x0a, // 10
+            0x1f, // Reason String
+            0x00, // String length MSB
+            0x07, // String length LSB
+            b's',
+            b'u',
+            b'c',
+            b'c',
+            b'e',
+            b's',
+            b's',
+            0x28, // Wildcard subscription available
+            0x01, // Yes
+            0x29, // Subscription identifiers available
+            0x01, // Yes
+            0x2a, // Shared subscription avaialble
+            0x01, // Yes
+            0x13, // Server keep alive
+            0x00,
+            0x64, // 100 seconds
+            0x1a, // Response information
+            0x00, // String length MSB
+            0x04, // String length LSB
+            b't',
+            b'e',
+            b's',
+            b't',
+            0x1c, // Server reference
+            0x00, // String length MSB
+            0x04, // String length LSB
+            b't',
+            b'e',
+            b's',
+            b't',
+        ];
+
+        // User property, authentication method and authentication data properties are not present.
+
+        let result = Connack::try_from_bytes(&PACKET).unwrap();
+
+        assert!(result.user_property.is_empty());
+        assert!(result.authentication_data.is_none());
+        assert!(result.authentication_method.is_none());
+        assert!(!result.session_present);
+        assert_eq!(result.reason, ConnectReason::Success);
+        assert_eq!(result.session_expiry_interval, SessionExpiryInterval(900));
+        assert_eq!(result.receive_maximum, ReceiveMaximum(NonZero::from(20000)));
+        assert_eq!(result.maximum_qos, MaximumQoS(QoS::AtLeastOnce));
+        assert_eq!(result.retain_available, RetainAvailable(true));
+        assert_eq!(
+            result.maximum_packet_size,
+            Some(MaximumPacketSize(NonZero::from(256)))
+        );
+        assert_eq!(
+            result.assigned_client_identifier,
+            Some(AssignedClientIdentifier(String::from("test")))
+        );
+        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum(10));
+        assert_eq!(
+            result.reason_string,
+            Some(ReasonString(String::from("success")))
+        );
+        assert_eq!(
+            result.wildcard_subscription_available,
+            WildcardSubscriptionAvailable(true)
+        );
+        assert_eq!(
+            result.subscription_identifier_available,
+            SubscriptionIdentifierAvailable(true)
+        );
+        assert_eq!(
+            result.shared_subscription_available,
+            SharedSubscriptionAvailable(true)
+        );
+        assert_eq!(result.server_keep_alive, Some(ServerKeepAlive(100)));
+        assert_eq!(
+            result.response_information,
+            Some(ResponseInformation(String::from("test")))
+        );
+        assert_eq!(
+            result.server_reference,
+            Some(ServerReference(String::from("test")))
         );
     }
 }
