@@ -55,13 +55,13 @@ macro_rules! declare_property {
     };
 }
 
-declare_property!(PayloadFormatIndicator, Boolean, 1);
-declare_property!(MessageExpiryInterval, FourByteInteger, 2);
-declare_property!(ContentType, UTF8String, 3);
-declare_property!(ResponseTopic, UTF8String, 8);
+declare_property!(PayloadFormatIndicator, bool, 1);
+declare_property!(MessageExpiryInterval, u32, 2);
+declare_property!(ContentType, String, 3);
+declare_property!(ResponseTopic, String, 8);
 declare_property!(CorrelationData, Binary, 9);
 declare_property!(SubscriptionIdentifier, NonZero<VarSizeInt>, 11);
-declare_property!(SessionExpiryInterval, FourByteInteger, 17);
+declare_property!(SessionExpiryInterval, u32, 17);
 
 #[allow(clippy::derivable_impls)]
 impl Default for SessionExpiryInterval {
@@ -70,13 +70,13 @@ impl Default for SessionExpiryInterval {
     }
 }
 
-declare_property!(AssignedClientIdentifier, UTF8String, 18);
-declare_property!(ServerKeepAlive, TwoByteInteger, 19);
-declare_property!(AuthenticationMethod, UTF8String, 21);
+declare_property!(AssignedClientIdentifier, String, 18);
+declare_property!(ServerKeepAlive, u16, 19);
+declare_property!(AuthenticationMethod, String, 21);
 declare_property!(AuthenticationData, Binary, 22);
-declare_property!(RequestProblemInformation, Boolean, 23);
+declare_property!(RequestProblemInformation, bool, 23);
 
-declare_property!(WillDelayInterval, FourByteInteger, 24);
+declare_property!(WillDelayInterval, u32, 24);
 
 #[allow(clippy::derivable_impls)]
 impl Default for WillDelayInterval {
@@ -85,11 +85,11 @@ impl Default for WillDelayInterval {
     }
 }
 
-declare_property!(RequestResponseInformation, Boolean, 25);
-declare_property!(ResponseInformation, UTF8String, 26);
-declare_property!(ServerReference, UTF8String, 28);
-declare_property!(ReasonString, UTF8String, 31);
-declare_property!(ReceiveMaximum, NonZero<TwoByteInteger>, 33);
+declare_property!(RequestResponseInformation, bool, 25);
+declare_property!(ResponseInformation, String, 26);
+declare_property!(ServerReference, String, 28);
+declare_property!(ReasonString, String, 31);
+declare_property!(ReceiveMaximum, NonZero<u16>, 33);
 
 impl Default for ReceiveMaximum {
     fn default() -> Self {
@@ -97,7 +97,7 @@ impl Default for ReceiveMaximum {
     }
 }
 
-declare_property!(TopicAliasMaximum, TwoByteInteger, 34);
+declare_property!(TopicAliasMaximum, u16, 34);
 
 #[allow(clippy::derivable_impls)]
 impl Default for TopicAliasMaximum {
@@ -106,7 +106,7 @@ impl Default for TopicAliasMaximum {
     }
 }
 
-declare_property!(TopicAlias, NonZero<TwoByteInteger>, 35);
+declare_property!(TopicAlias, NonZero<u16>, 35);
 declare_property!(MaximumQoS, QoS, 36);
 
 impl Default for MaximumQoS {
@@ -115,7 +115,7 @@ impl Default for MaximumQoS {
     }
 }
 
-declare_property!(RetainAvailable, Boolean, 37);
+declare_property!(RetainAvailable, bool, 37);
 
 impl Default for RetainAvailable {
     fn default() -> Self {
@@ -123,9 +123,9 @@ impl Default for RetainAvailable {
     }
 }
 
-declare_property!(UserProperty, UTF8StringPair, 38);
-declare_property!(MaximumPacketSize, NonZero<FourByteInteger>, 39);
-declare_property!(WildcardSubscriptionAvailable, Boolean, 40);
+declare_property!(UserProperty, StringPair, 38);
+declare_property!(MaximumPacketSize, NonZero<u32>, 39);
+declare_property!(WildcardSubscriptionAvailable, bool, 40);
 
 impl Default for WildcardSubscriptionAvailable {
     fn default() -> Self {
@@ -133,7 +133,7 @@ impl Default for WildcardSubscriptionAvailable {
     }
 }
 
-declare_property!(SubscriptionIdentifierAvailable, Boolean, 41);
+declare_property!(SubscriptionIdentifierAvailable, bool, 41);
 
 impl Default for SubscriptionIdentifierAvailable {
     fn default() -> Self {
@@ -141,7 +141,7 @@ impl Default for SubscriptionIdentifierAvailable {
     }
 }
 
-declare_property!(SharedSubscriptionAvailable, Boolean, 42);
+declare_property!(SharedSubscriptionAvailable, bool, 42);
 
 impl Default for SharedSubscriptionAvailable {
     fn default() -> Self {
@@ -204,7 +204,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
 
         return match u8::from(id_var) {
             PayloadFormatIndicator::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -214,7 +214,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 )))
             }
             RequestResponseInformation::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -224,7 +224,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 ))
             }
             WildcardSubscriptionAvailable::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -234,7 +234,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 ))
             }
             SubscriptionIdentifierAvailable::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -244,7 +244,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 ))
             }
             SharedSubscriptionAvailable::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -262,7 +262,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::MaximumQoS(MaximumQoS(property)))
             }
             RetainAvailable::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -270,7 +270,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::RetainAvailable(RetainAvailable(property)))
             }
             RequestProblemInformation::PROPERTY_ID => {
-                let property = Boolean::try_from_bytes(self.buf)?;
+                let property = bool::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -280,7 +280,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 ))
             }
             ServerKeepAlive::PROPERTY_ID => {
-                let property = TwoByteInteger::try_from_bytes(self.buf)?;
+                let property = u16::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -288,7 +288,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ServerKeepAlive(ServerKeepAlive(property)))
             }
             ReceiveMaximum::PROPERTY_ID => {
-                let property = NonZero::<TwoByteInteger>::try_from_bytes(self.buf)?;
+                let property = NonZero::<u16>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -296,7 +296,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ReceiveMaximum(ReceiveMaximum(property)))
             }
             TopicAliasMaximum::PROPERTY_ID => {
-                let property = TwoByteInteger::try_from_bytes(self.buf)?;
+                let property = u16::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -304,7 +304,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::TopicAliasMaximum(TopicAliasMaximum(property)))
             }
             TopicAlias::PROPERTY_ID => {
-                let property = NonZero::<TwoByteInteger>::try_from_bytes(self.buf)?;
+                let property = NonZero::<u16>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -312,7 +312,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::TopicAlias(TopicAlias(property)))
             }
             MessageExpiryInterval::PROPERTY_ID => {
-                let property = FourByteInteger::try_from_bytes(self.buf)?;
+                let property = u32::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -322,7 +322,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 )))
             }
             SessionExpiryInterval::PROPERTY_ID => {
-                let property = FourByteInteger::try_from_bytes(self.buf)?;
+                let property = u32::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -332,7 +332,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 )))
             }
             WillDelayInterval::PROPERTY_ID => {
-                let property = FourByteInteger::try_from_bytes(self.buf)?;
+                let property = u32::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -340,7 +340,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::WillDelayInterval(WillDelayInterval(property)))
             }
             MaximumPacketSize::PROPERTY_ID => {
-                let property = NonZero::<FourByteInteger>::try_from_bytes(self.buf)?;
+                let property = NonZero::<u32>::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -366,7 +366,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::CorrelationData(CorrelationData(property)))
             }
             ContentType::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -374,7 +374,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ContentType(ContentType(property)))
             }
             ResponseTopic::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -382,7 +382,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ResponseTopic(ResponseTopic(property)))
             }
             AssignedClientIdentifier::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -392,7 +392,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 ))
             }
             AuthenticationMethod::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -410,7 +410,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::AuthenticationData(AuthenticationData(property)))
             }
             ResponseInformation::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -418,7 +418,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ResponseInformation(ResponseInformation(property)))
             }
             ServerReference::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -426,7 +426,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ServerReference(ServerReference(property)))
             }
             ReasonString::PROPERTY_ID => {
-                let property = UTF8String::try_from_bytes(self.buf)?;
+                let property = String::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -434,7 +434,7 @@ impl<'a> Iterator for PropertyIterator<'a> {
                 Some(Property::ReasonString(ReasonString(property)))
             }
             UserProperty::PROPERTY_ID => {
-                let property = UTF8StringPair::try_from_bytes(self.buf)?;
+                let property = StringPair::try_from_bytes(self.buf)?;
 
                 let (_, remaining) = self.buf.split_at(property.property_len());
                 self.buf = remaining;
@@ -740,7 +740,7 @@ mod test {
     mod to_bytes {
         use super::*;
 
-        fn byte_test<T>(property: T, expected: Byte)
+        fn byte_test<T>(property: T, expected: u8)
         where
             T: SizedProperty + PropertyID + TryToByteBuffer,
         {
@@ -750,7 +750,7 @@ mod test {
             assert_eq!(result.unwrap(), [T::PROPERTY_ID, expected]);
         }
 
-        fn two_byte_int_test<T>(property: T, expected: TwoByteInteger)
+        fn two_byte_int_test<T>(property: T, expected: u16)
         where
             T: SizedProperty + PropertyID + TryToByteBuffer,
         {
@@ -763,7 +763,7 @@ mod test {
             );
         }
 
-        fn four_byte_int_test<T>(property: T, expected: FourByteInteger)
+        fn four_byte_int_test<T>(property: T, expected: u32)
         where
             T: SizedProperty + PropertyID + TryToByteBuffer,
         {

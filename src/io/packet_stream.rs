@@ -14,13 +14,13 @@ enum PacketStreamState {
     ReadRemainingData(usize),
 }
 
-pub(crate) struct PacketStream<'a, StreamT> {
+pub(crate) struct PacketStream<StreamT> {
     state: PacketStreamState,
-    stream: &'a mut StreamT,
+    stream: StreamT,
 }
 
-impl<'a, StreamT> From<&'a mut StreamT> for PacketStream<'a, StreamT> {
-    fn from(stream: &'a mut StreamT) -> Self {
+impl<'a, StreamT> From<StreamT> for PacketStream<StreamT> {
+    fn from(stream: StreamT) -> Self {
         Self {
             state: PacketStreamState::ReadRemainingLength,
             stream,
@@ -28,13 +28,13 @@ impl<'a, StreamT> From<&'a mut StreamT> for PacketStream<'a, StreamT> {
     }
 }
 
-impl<'a, StreamT> PacketStream<'a, StreamT> {
+impl<'a, StreamT> PacketStream<StreamT> {
     fn split_borrows_mut(&mut self) -> (&mut PacketStreamState, &mut StreamT) {
         (&mut self.state, &mut self.stream)
     }
 }
 
-impl<'a, StreamT> Stream for PacketStream<'a, StreamT>
+impl<StreamT> Stream for PacketStream<StreamT>
 where
     StreamT: AsyncBufRead + Unpin,
 {
@@ -66,7 +66,7 @@ where
             }
         }
 
-        cx.waker().clone().wake();
+        cx.waker().wake_by_ref();
         Poll::Pending
     }
 }

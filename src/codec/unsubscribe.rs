@@ -36,13 +36,13 @@ impl ToByteBuffer for UnsubscribeProperties {
 }
 
 pub(crate) struct Unsubscribe {
-    packet_identifier: TwoByteInteger,
+    packet_identifier: u16,
     properties: UnsubscribeProperties,
-    payload: Vec<UTF8String>,
+    payload: Vec<String>,
 }
 
 impl Unsubscribe {
-    const FIXED_HDR: Byte = (Self::PACKET_ID << 4) | 0b0010;
+    const FIXED_HDR: u8 = (Self::PACKET_ID << 4) | 0b0010;
 
     fn remaining_len(&self) -> VarSizeInt {
         let property_len = VarSizeInt::from(self.properties.property_len());
@@ -96,23 +96,23 @@ impl TryToByteBuffer for Unsubscribe {
 
 #[derive(Default)]
 pub(crate) struct UnsubscribeBuilder {
-    packet_identifier: Option<TwoByteInteger>,
+    packet_identifier: Option<u16>,
     user_property: Vec<UserProperty>,
-    payload: Vec<UTF8String>,
+    payload: Vec<String>,
 }
 
 impl UnsubscribeBuilder {
-    pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: u16) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }
 
-    pub(crate) fn payload(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn payload(&mut self, val: String) -> &mut Self {
         self.payload.push(val);
         self
     }

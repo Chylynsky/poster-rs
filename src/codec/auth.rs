@@ -6,7 +6,7 @@ use crate::core::{
         TryToByteBuffer,
     },
 };
-use std::mem;
+use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum AuthReason {
@@ -34,19 +34,19 @@ impl Default for AuthReason {
 
 impl SizedProperty for AuthReason {
     fn property_len(&self) -> usize {
-        (*self as Byte).property_len()
+        (*self as u8).property_len()
     }
 }
 
 impl TryFromBytes for AuthReason {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::try_from(Byte::try_from_bytes(bytes)?)
+        Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
 
 impl ToByteBuffer for AuthReason {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as Byte).to_byte_buffer(buf)
+        (*self as u8).to_byte_buffer(buf)
     }
 }
 
@@ -116,7 +116,7 @@ impl TryFromBytes for Auth {
         let mut builder = AuthBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<Byte>()?;
+        let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr != Self::FIXED_HDR {
             return None;
         }
@@ -220,17 +220,17 @@ impl AuthBuilder {
         self
     }
 
-    pub(crate) fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn authentication_method(&mut self, val: String) -> &mut Self {
         self.authentication_method = Some(AuthenticationMethod(val));
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
         self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }

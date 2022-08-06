@@ -1,7 +1,4 @@
-use crate::core::{
-    base_types::Byte,
-    utils::{ByteReader, PacketID, TryFromBytes},
-};
+use crate::core::utils::{ByteReader, PacketID, TryFromBytes};
 
 pub(crate) struct Pingresp {}
 
@@ -26,7 +23,7 @@ impl TryFromBytes for Pingresp {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
         let builder = PingrespBuilder::default();
         let mut reader = ByteReader::from(bytes);
-        let _fixed_hdr = reader.try_read::<Byte>()?;
+        let _fixed_hdr = reader.try_read::<u8>()?;
         debug_assert!(_fixed_hdr >> 4 == Self::PACKET_ID as u8);
 
         builder.build()

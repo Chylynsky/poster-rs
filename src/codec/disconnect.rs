@@ -6,7 +6,7 @@ use crate::core::{
         TryToByteBuffer,
     },
 };
-use std::mem;
+use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum DisconnectReason {
@@ -80,7 +80,7 @@ impl DisconnectReason {
 
 impl SizedProperty for DisconnectReason {
     fn property_len(&self) -> usize {
-        mem::size_of::<Byte>()
+        mem::size_of::<u8>()
     }
 }
 
@@ -92,13 +92,13 @@ impl Default for DisconnectReason {
 
 impl TryFromBytes for DisconnectReason {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::try_from(Byte::try_from_bytes(bytes)?)
+        Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
 
 impl ToByteBuffer for DisconnectReason {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as Byte).to_byte_buffer(buf)
+        (*self as u8).to_byte_buffer(buf)
     }
 }
 
@@ -196,7 +196,7 @@ impl PacketID for Disconnect {
 impl SizedPacket for Disconnect {
     fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
-        mem::size_of::<Byte>() + remaining_len.len() + remaining_len.value() as usize
+        mem::size_of::<u8>() + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
@@ -205,7 +205,7 @@ impl TryFromBytes for Disconnect {
         let mut builder = DisconnectBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<Byte>()?;
+        let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr != Self::FIXED_HDR {
             return None; // Invalid header
         }
@@ -285,22 +285,22 @@ impl DisconnectBuilder {
         self
     }
 
-    pub(crate) fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub(crate) fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
         self.session_expiry_interval = SessionExpiryInterval(val);
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
         self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn server_reference(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn server_reference(&mut self, val: String) -> &mut Self {
         self.server_reference = Some(ServerReference(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }

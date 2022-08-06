@@ -1,11 +1,8 @@
 use crate::{
     codec::ack::{Ack, AckBuilder},
-    core::{
-        base_types::*,
-        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
-    },
+    core::utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
 };
-use std::mem;
+use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum PubcompReason {
@@ -31,19 +28,19 @@ impl Default for PubcompReason {
 
 impl SizedProperty for PubcompReason {
     fn property_len(&self) -> usize {
-        mem::size_of::<Byte>()
+        mem::size_of::<u8>()
     }
 }
 
 impl TryFromBytes for PubcompReason {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::try_from(Byte::try_from_bytes(bytes)?)
+        Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
 
 impl ToByteBuffer for PubcompReason {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as Byte).to_byte_buffer(buf)
+        (*self as u8).to_byte_buffer(buf)
     }
 }
 

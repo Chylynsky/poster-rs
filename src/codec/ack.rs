@@ -6,10 +6,10 @@ use crate::core::{
         TryToByteBuffer,
     },
 };
-use std::{cmp::PartialEq, mem};
+use core::{cmp::PartialEq, mem};
 
 pub(crate) struct Ack<ReasonT> {
-    pub(crate) packet_identifier: NonZero<TwoByteInteger>,
+    pub(crate) packet_identifier: NonZero<u16>,
     pub(crate) reason: ReasonT,
 
     pub(crate) reason_string: Option<ReasonString>,
@@ -73,7 +73,7 @@ where
         let mut builder = AckBuilder::<ReasonT>::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<Byte>()?;
+        let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr != Self::FIXED_HDR {
             return None; // Invalid header
         }
@@ -85,7 +85,7 @@ where
             return None; // Invalid packet size
         }
 
-        let packet_id = reader.try_read::<NonZero<TwoByteInteger>>()?;
+        let packet_id = reader.try_read::<NonZero<u16>>()?;
         builder.packet_identifier(packet_id);
 
         // When remaining length is 2, the Reason is 0x00 and there are no properties.
@@ -160,7 +160,7 @@ pub(crate) struct AckBuilder<ReasonT>
 where
     ReasonT: Default,
 {
-    packet_identifier: Option<NonZero<TwoByteInteger>>,
+    packet_identifier: Option<NonZero<u16>>,
     reason: Option<ReasonT>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
@@ -170,7 +170,7 @@ impl<ReasonT> AckBuilder<ReasonT>
 where
     ReasonT: Default,
 {
-    pub(crate) fn packet_identifier(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
@@ -180,12 +180,12 @@ where
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
         self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }

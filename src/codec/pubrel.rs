@@ -1,9 +1,6 @@
 use crate::{
     codec::ack::{Ack, AckBuilder},
-    core::{
-        base_types::*,
-        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
-    },
+    core::utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -30,19 +27,19 @@ impl Default for PubrelReason {
 
 impl SizedProperty for PubrelReason {
     fn property_len(&self) -> usize {
-        (*self as Byte).property_len()
+        (*self as u8).property_len()
     }
 }
 
 impl TryFromBytes for PubrelReason {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::try_from(Byte::try_from_bytes(bytes)?)
+        Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
 
 impl ToByteBuffer for PubrelReason {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as Byte).to_byte_buffer(buf)
+        (*self as u8).to_byte_buffer(buf)
     }
 }
 

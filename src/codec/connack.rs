@@ -3,7 +3,7 @@ use crate::core::{
     properties::*,
     utils::{ByteReader, PacketID, SizedProperty, TryFromBytes},
 };
-use std::mem;
+use core::mem;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub(crate) enum ConnectReason {
@@ -69,19 +69,19 @@ impl Default for ConnectReason {
 
 impl SizedProperty for ConnectReason {
     fn property_len(&self) -> usize {
-        (*self as Byte).property_len()
+        (*self as u8).property_len()
     }
 }
 
 impl TryFromBytes for ConnectReason {
     fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        Self::try_from(Byte::try_from_bytes(bytes)?)
+        Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
 
 pub(crate) struct Connack {
     // Connack variable header
-    session_present: Boolean,
+    session_present: bool,
     reason: ConnectReason,
 
     // Connack properties
@@ -121,7 +121,7 @@ impl TryFromBytes for Connack {
         let mut builder = ConnackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<Byte>()?;
+        let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr >> 4 != Self::PACKET_ID {
             return None; // Invalid header
         }
@@ -133,7 +133,7 @@ impl TryFromBytes for Connack {
             return None; // Invalid packet size
         }
 
-        let session_present = reader.try_read::<Boolean>()?;
+        let session_present = reader.try_read::<bool>()?;
         builder.session_present(session_present);
 
         let reason = reader.try_read::<ConnectReason>()?;
@@ -239,7 +239,7 @@ pub(crate) struct ConnackBuilder {
 }
 
 impl ConnackBuilder {
-    pub(crate) fn session_present(&mut self, val: Boolean) -> &mut Self {
+    pub(crate) fn session_present(&mut self, val: bool) -> &mut Self {
         self.session_present = Some(val);
         self
     }
@@ -249,17 +249,17 @@ impl ConnackBuilder {
         self
     }
 
-    pub(crate) fn wildcard_subscription_available(&mut self, val: Boolean) -> &mut Self {
+    pub(crate) fn wildcard_subscription_available(&mut self, val: bool) -> &mut Self {
         self.wildcard_subscription_available = WildcardSubscriptionAvailable(val);
         self
     }
 
-    pub(crate) fn subscription_identifier_available(&mut self, val: Boolean) -> &mut Self {
+    pub(crate) fn subscription_identifier_available(&mut self, val: bool) -> &mut Self {
         self.subscription_identifier_available = SubscriptionIdentifierAvailable(val);
         self
     }
 
-    pub(crate) fn shared_subscription_available(&mut self, val: Boolean) -> &mut Self {
+    pub(crate) fn shared_subscription_available(&mut self, val: bool) -> &mut Self {
         self.shared_subscription_available = SharedSubscriptionAvailable(val);
         self
     }
@@ -269,32 +269,32 @@ impl ConnackBuilder {
         self
     }
 
-    pub(crate) fn retain_available(&mut self, val: Boolean) -> &mut Self {
+    pub(crate) fn retain_available(&mut self, val: bool) -> &mut Self {
         self.retain_available = RetainAvailable(val);
         self
     }
 
-    pub(crate) fn server_keep_alive(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub(crate) fn server_keep_alive(&mut self, val: u16) -> &mut Self {
         self.server_keep_alive = Some(ServerKeepAlive(val));
         self
     }
 
-    pub(crate) fn receive_maximum(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+    pub(crate) fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
         self.receive_maximum = ReceiveMaximum(val);
         self
     }
 
-    pub(crate) fn topic_alias_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub(crate) fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
         self.topic_alias_maximum = TopicAliasMaximum(val);
         self
     }
 
-    pub(crate) fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub(crate) fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
         self.session_expiry_interval = SessionExpiryInterval(val);
         self
     }
 
-    pub(crate) fn maximum_packet_size(&mut self, val: NonZero<FourByteInteger>) -> &mut Self {
+    pub(crate) fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
         self.maximum_packet_size = Some(MaximumPacketSize(val));
         self
     }
@@ -304,31 +304,31 @@ impl ConnackBuilder {
         self
     }
 
-    pub(crate) fn assigned_client_identifier(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn assigned_client_identifier(&mut self, val: String) -> &mut Self {
         self.assigned_client_identifier = Some(AssignedClientIdentifier(val));
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
         self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn response_information(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn response_information(&mut self, val: String) -> &mut Self {
         self.response_information = Some(ResponseInformation(val));
         self
     }
-    pub(crate) fn server_reference(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn server_reference(&mut self, val: String) -> &mut Self {
         self.server_reference = Some(ServerReference(val));
         self
     }
 
-    pub(crate) fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn authentication_method(&mut self, val: String) -> &mut Self {
         self.authentication_method = Some(AuthenticationMethod(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }

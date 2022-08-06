@@ -1,7 +1,4 @@
-use crate::core::{
-    base_types::Byte,
-    utils::{ByteWriter, PacketID, SizedPacket, TryToByteBuffer},
-};
+use crate::core::utils::{ByteWriter, PacketID, SizedPacket, TryToByteBuffer};
 use std::mem;
 
 pub(crate) struct Pingreq {}
@@ -16,7 +13,7 @@ impl PacketID for Pingreq {
 
 impl SizedPacket for Pingreq {
     fn packet_len(&self) -> usize {
-        2 * mem::size_of::<Byte>()
+        2 * mem::size_of::<u8>()
     }
 }
 

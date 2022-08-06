@@ -3,7 +3,7 @@ use crate::core::{
     properties::*,
     utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
 };
-use std::mem;
+use core::mem;
 
 #[derive(Clone, Copy)]
 pub(crate) enum RetainHandling {
@@ -21,7 +21,7 @@ pub(crate) struct SubscriptionOptions {
 
 impl SizedProperty for SubscriptionOptions {
     fn property_len(&self) -> usize {
-        mem::size_of::<Byte>()
+        mem::size_of::<u8>()
     }
 }
 
@@ -90,9 +90,9 @@ impl ToByteBuffer for SubscribeProperties {
 }
 
 pub(crate) struct Subscribe {
-    packet_identifier: TwoByteInteger,
+    packet_identifier: u16,
     properties: SubscribeProperties,
-    payload: Vec<(UTF8String, SubscriptionOptions)>,
+    payload: Vec<(String, SubscriptionOptions)>,
 }
 
 impl Subscribe {
@@ -151,14 +151,14 @@ impl TryToByteBuffer for Subscribe {
 
 #[derive(Default)]
 pub(crate) struct SubscribeBuilder {
-    packet_identifier: Option<TwoByteInteger>,
+    packet_identifier: Option<u16>,
     subscription_identifier: Option<SubscriptionIdentifier>,
     user_property: Vec<UserProperty>,
-    payload: Vec<(UTF8String, SubscriptionOptions)>,
+    payload: Vec<(String, SubscriptionOptions)>,
 }
 
 impl SubscribeBuilder {
-    pub(crate) fn packet_identifier(&mut self, packet_identifier: TwoByteInteger) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, packet_identifier: u16) -> &mut Self {
         self.packet_identifier = Some(packet_identifier);
         self
     }
@@ -171,12 +171,12 @@ impl SubscribeBuilder {
         self
     }
 
-    pub(crate) fn user_property(&mut self, user_property: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, user_property: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(user_property));
         self
     }
 
-    pub(crate) fn payload(&mut self, payload: (UTF8String, SubscriptionOptions)) -> &mut Self {
+    pub(crate) fn payload(&mut self, payload: (String, SubscriptionOptions)) -> &mut Self {
         self.payload.push(payload);
         self
     }

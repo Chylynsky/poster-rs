@@ -3,7 +3,7 @@ use crate::core::{
     properties::*,
     utils::{ByteReader, PacketID, TryFromBytes},
 };
-use std::mem;
+use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum UnsubackReason {
@@ -32,7 +32,7 @@ impl UnsubackReason {
 }
 
 pub(crate) struct Unsuback {
-    packet_identifier: TwoByteInteger,
+    packet_identifier: u16,
 
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
@@ -53,7 +53,7 @@ impl TryFromBytes for Unsuback {
         let mut builder = UnsubackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<Byte>()?;
+        let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr != Self::FIXED_HDR {
             return None; // Invalid header
         }
@@ -65,7 +65,7 @@ impl TryFromBytes for Unsuback {
             return None; // Invalid packet size
         }
 
-        let packet_id = reader.try_read::<TwoByteInteger>()?;
+        let packet_id = reader.try_read::<u16>()?;
         builder.packet_identifier(packet_id);
 
         let property_len = reader.try_read::<VarSizeInt>()?;
@@ -101,24 +101,24 @@ impl TryFromBytes for Unsuback {
 
 #[derive(Default)]
 pub(crate) struct UnsubackBuilder {
-    packet_identifier: Option<TwoByteInteger>,
+    packet_identifier: Option<u16>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
     payload: Vec<UnsubackReason>,
 }
 
 impl UnsubackBuilder {
-    pub(crate) fn packet_identifier(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: u16) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
         self.reason_string = Some(ReasonString(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }

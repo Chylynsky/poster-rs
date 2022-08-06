@@ -5,15 +5,15 @@ use crate::core::{
         ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, TryFromBytes, TryToByteBuffer,
     },
 };
-use std::mem;
+use core::mem;
 
 pub(crate) struct Publish {
     dup: bool,
     retain: bool,
     qos: QoS,
 
-    topic_name: UTF8String,
-    packet_identifier: Option<NonZero<TwoByteInteger>>,
+    topic_name: String,
+    packet_identifier: Option<NonZero<u16>>,
 
     payload_format_indicator: Option<PayloadFormatIndicator>,
     topic_alias: Option<TopicAlias>,
@@ -28,7 +28,7 @@ pub(crate) struct Publish {
 }
 
 impl Publish {
-    fn fixed_hdr(&self) -> Byte {
+    fn fixed_hdr(&self) -> u8 {
         (Self::PACKET_ID << 4)
             | ((self.dup as u8) << 3)
             | ((self.qos as u8) << 1)
@@ -102,7 +102,7 @@ impl PacketID for Publish {
 impl SizedPacket for Publish {
     fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
-        mem::size_of::<Byte>() // Fixed header size
+        mem::size_of::<u8>() // Fixed header size
             + remaining_len.len()
             + remaining_len.value() as usize
     }
@@ -113,7 +113,7 @@ impl TryFromBytes for Publish {
         let mut builder = PublishBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<Byte>()?;
+        let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr >> 4 != Self::PACKET_ID {
             return None; // Invalid header
         }
@@ -131,12 +131,12 @@ impl TryFromBytes for Publish {
             return None; // Invalid packet size
         }
 
-        let topic_name = reader.try_read::<UTF8String>()?;
+        let topic_name = reader.try_read::<String>()?;
         builder.topic_name(topic_name);
 
         // Packet identifier inly available if QoS > 0
         if qos == QoS::AtLeastOnce || qos == QoS::ExactlyOnce {
-            let packet_id = reader.try_read::<NonZero<TwoByteInteger>>()?;
+            let packet_id = reader.try_read::<NonZero<u16>>()?;
             builder.packet_identifier(packet_id);
         }
 
@@ -243,12 +243,12 @@ impl TryToByteBuffer for Publish {
 
 #[derive(Default)]
 pub(crate) struct PublishBuilder {
-    dup: Boolean,
-    retain: Boolean,
+    dup: bool,
+    retain: bool,
     qos: QoS,
 
-    topic_name: Option<UTF8String>,
-    packet_identifier: Option<NonZero<TwoByteInteger>>,
+    topic_name: Option<String>,
+    packet_identifier: Option<NonZero<u16>>,
 
     payload_format_indicator: Option<PayloadFormatIndicator>,
     topic_alias: Option<TopicAlias>,
@@ -278,27 +278,27 @@ impl PublishBuilder {
         self
     }
 
-    pub(crate) fn topic_name(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn topic_name(&mut self, val: String) -> &mut Self {
         self.topic_name = Some(val);
         self
     }
 
-    pub(crate) fn packet_identifier(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
 
-    pub(crate) fn payload_format_indicator(&mut self, val: Boolean) -> &mut Self {
+    pub(crate) fn payload_format_indicator(&mut self, val: bool) -> &mut Self {
         self.payload_format_indicator = Some(PayloadFormatIndicator(val));
         self
     }
 
-    pub(crate) fn topic_alias(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+    pub(crate) fn topic_alias(&mut self, val: NonZero<u16>) -> &mut Self {
         self.topic_alias = Some(TopicAlias(val));
         self
     }
 
-    pub(crate) fn message_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub(crate) fn message_expiry_interval(&mut self, val: u32) -> &mut Self {
         self.message_expiry_interval = Some(MessageExpiryInterval(val));
         self
     }
@@ -313,17 +313,17 @@ impl PublishBuilder {
         self
     }
 
-    pub(crate) fn response_topic(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn response_topic(&mut self, val: String) -> &mut Self {
         self.response_topic = Some(ResponseTopic(val));
         self
     }
 
-    pub(crate) fn content_type(&mut self, val: UTF8String) -> &mut Self {
+    pub(crate) fn content_type(&mut self, val: String) -> &mut Self {
         self.content_type = Some(ContentType(val));
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }

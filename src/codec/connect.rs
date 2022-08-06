@@ -3,7 +3,7 @@ use crate::core::{
     properties::*,
     utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
 };
-use std::mem;
+use core::mem;
 
 #[derive(Default)]
 pub(crate) struct ConnectWillProperties {
@@ -216,19 +216,19 @@ impl ToByteBuffer for ConnectProperties {
 #[derive(Default)]
 pub(crate) struct ConnectMetadata {
     will_qos: QoS,
-    will_retain: Boolean,
-    clean_start: Boolean,
+    will_retain: bool,
+    clean_start: bool,
 }
 
 #[derive(Default)]
 pub(crate) struct ConnectPayload {
     meta: ConnectMetadata,
 
-    client_identifier: UTF8String,
+    client_identifier: String,
     will_properties: Option<ConnectWillProperties>,
-    will_topic: Option<UTF8String>,
+    will_topic: Option<String>,
     will_payload: Option<Binary>,
-    username: Option<UTF8String>,
+    username: Option<String>,
     password: Option<Binary>,
 }
 
@@ -258,7 +258,7 @@ impl SizedProperty for ConnectPayload {
             .as_ref()
             .map(|val| {
                 let len = VarSizeInt::from(val.property_len());
-                // If present, the length of Variable Byte Integer must be added
+                // If present, the length of Variable u8 Integer must be added
                 len.len() + len.value() as usize
             })
             .unwrap_or(0);
@@ -325,7 +325,7 @@ impl ToByteBuffer for ConnectPayload {
 
 #[derive(Default)]
 pub(crate) struct Connect {
-    keep_alive: TwoByteInteger,
+    keep_alive: u16,
     properties: ConnectProperties,
     payload: ConnectPayload,
 }
@@ -338,7 +338,7 @@ impl Connect {
     fn remaining_len(&self) -> VarSizeInt {
         let protocol_name_len = Self::PROTOCOL_NAME.property_len();
         let protocol_ver_len = Self::PROTOCOL_VERSION.property_len();
-        let connect_flags_len = mem::size_of::<Byte>();
+        let connect_flags_len = mem::size_of::<u8>();
         let keep_alive_len = self.keep_alive.property_len();
         let property_len = VarSizeInt::from(self.properties.property_len());
         let payload_len = self.payload.property_len();
@@ -392,7 +392,7 @@ impl TryToByteBuffer for Connect {
 
 #[derive(Default)]
 pub struct ConnectBuilder {
-    keep_alive: Option<TwoByteInteger>,
+    keep_alive: Option<u16>,
 
     session_expiry_interval: Option<SessionExpiryInterval>,
     receive_maximum: Option<ReceiveMaximum>,
@@ -405,9 +405,9 @@ pub struct ConnectBuilder {
     user_property: Vec<UserProperty>,
 
     will_qos: QoS,
-    will_retain: Boolean,
-    clean_start: Boolean,
-    client_identifier: Option<UTF8String>,
+    will_retain: bool,
+    clean_start: bool,
+    client_identifier: Option<String>,
 
     will_delay_interval: Option<WillDelayInterval>,
     will_payload_format_indicator: Option<PayloadFormatIndicator>,
@@ -417,54 +417,54 @@ pub struct ConnectBuilder {
     will_correlation_data: Option<CorrelationData>,
     will_user_property: Vec<UserProperty>,
 
-    will_topic: Option<UTF8String>,
+    will_topic: Option<String>,
     will_payload: Option<Binary>,
-    username: Option<UTF8String>,
+    username: Option<String>,
     password: Option<Binary>,
 }
 
 impl ConnectBuilder {
-    pub fn keep_alive(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub fn keep_alive(&mut self, val: u16) -> &mut Self {
         self.keep_alive = Some(val);
         self
     }
 
-    pub fn session_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
         self.session_expiry_interval = Some(SessionExpiryInterval(val));
         self
     }
 
-    pub fn receive_maximum(&mut self, val: NonZero<TwoByteInteger>) -> &mut Self {
+    pub fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
         self.receive_maximum = Some(ReceiveMaximum(val));
         self
     }
 
-    pub fn maximum_packet_size(&mut self, val: NonZero<FourByteInteger>) -> &mut Self {
+    pub fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
         self.maximum_packet_size = Some(MaximumPacketSize(val));
         self
     }
 
-    pub fn topic_alias_maximum(&mut self, val: TwoByteInteger) -> &mut Self {
+    pub fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
         self.topic_alias_maximum = Some(TopicAliasMaximum(val));
         self
     }
 
-    pub fn request_response_information(&mut self, val: Boolean) -> &mut Self {
+    pub fn request_response_information(&mut self, val: bool) -> &mut Self {
         self.request_response_information = Some(RequestResponseInformation(val));
         self
     }
 
-    pub fn request_problem_information(&mut self, val: Boolean) -> &mut Self {
+    pub fn request_problem_information(&mut self, val: bool) -> &mut Self {
         self.request_problem_information = Some(RequestProblemInformation(val));
         self
     }
 
-    pub fn authentication_method(&mut self, val: UTF8String) -> &mut Self {
+    pub fn authentication_method(&mut self, val: String) -> &mut Self {
         self.authentication_method = Some(AuthenticationMethod(val));
         self
     }
 
-    pub fn user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub fn user_property(&mut self, val: StringPair) -> &mut Self {
         self.user_property.push(UserProperty(val));
         self
     }
@@ -474,42 +474,42 @@ impl ConnectBuilder {
         self
     }
 
-    pub fn will_retain(&mut self, val: Boolean) -> &mut Self {
+    pub fn will_retain(&mut self, val: bool) -> &mut Self {
         self.will_retain = val;
         self
     }
 
-    pub fn clean_start(&mut self, val: Boolean) -> &mut Self {
+    pub fn clean_start(&mut self, val: bool) -> &mut Self {
         self.clean_start = val;
         self
     }
 
-    pub fn client_identifier(&mut self, val: UTF8String) -> &mut Self {
+    pub fn client_identifier(&mut self, val: String) -> &mut Self {
         self.client_identifier = Some(val);
         self
     }
 
-    pub fn will_delay_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn will_delay_interval(&mut self, val: u32) -> &mut Self {
         self.will_delay_interval = Some(WillDelayInterval(val));
         self
     }
 
-    pub fn will_payload_format_indicator(&mut self, val: Boolean) -> &mut Self {
+    pub fn will_payload_format_indicator(&mut self, val: bool) -> &mut Self {
         self.will_payload_format_indicator = Some(PayloadFormatIndicator(val));
         self
     }
 
-    pub fn will_message_expiry_interval(&mut self, val: FourByteInteger) -> &mut Self {
+    pub fn will_message_expiry_interval(&mut self, val: u32) -> &mut Self {
         self.will_message_expiry_interval = Some(MessageExpiryInterval(val));
         self
     }
 
-    pub fn will_content_type(&mut self, val: UTF8String) -> &mut Self {
+    pub fn will_content_type(&mut self, val: String) -> &mut Self {
         self.will_content_type = Some(ContentType(val));
         self
     }
 
-    pub fn will_reponse_topic(&mut self, val: UTF8String) -> &mut Self {
+    pub fn will_reponse_topic(&mut self, val: String) -> &mut Self {
         self.will_reponse_topic = Some(ResponseTopic(val));
         self
     }
@@ -519,12 +519,12 @@ impl ConnectBuilder {
         self
     }
 
-    pub fn will_user_property(&mut self, val: UTF8StringPair) -> &mut Self {
+    pub fn will_user_property(&mut self, val: StringPair) -> &mut Self {
         self.will_user_property.push(UserProperty(val));
         self
     }
 
-    pub fn will_topic(&mut self, val: UTF8String) -> &mut Self {
+    pub fn will_topic(&mut self, val: String) -> &mut Self {
         self.will_topic = Some(val);
         self
     }
@@ -534,7 +534,7 @@ impl ConnectBuilder {
         self
     }
 
-    pub fn username(&mut self, val: UTF8String) -> &mut Self {
+    pub fn username(&mut self, val: String) -> &mut Self {
         self.username = Some(val);
         self
     }
