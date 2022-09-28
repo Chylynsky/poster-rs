@@ -5,7 +5,7 @@ use crate::{
         pubrel::Pubrel, suback::Suback, subscribe::Subscribe, unsuback::Unsuback,
         unsubscribe::Unsubscribe,
     },
-    core::utils::{PacketID, TryFromBytes, TryToByteBuffer},
+    core::utils::{PacketID, SizedPacket, TryFromBytes, TryToByteBuffer},
 };
 
 pub(crate) enum RxPacket {
@@ -20,6 +20,24 @@ pub(crate) enum RxPacket {
     Pingresp(Pingresp),
     Disconnect(Disconnect),
     Auth(Auth),
+}
+
+impl RxPacket {
+    pub(crate) fn id(&self) -> u8 {
+        match self {
+            Self::Connack(_) => Connack::PACKET_ID,
+            Self::Publish(_) => Publish::PACKET_ID,
+            Self::Puback(_) => Puback::PACKET_ID,
+            Self::Pubrec(_) => Pubrec::PACKET_ID,
+            Self::Pubrel(_) => Pubrel::PACKET_ID,
+            Self::Pubcomp(_) => Pubcomp::PACKET_ID,
+            Self::Suback(_) => Suback::PACKET_ID,
+            Self::Unsuback(_) => Unsuback::PACKET_ID,
+            Self::Pingresp(_) => Pingresp::PACKET_ID,
+            Self::Disconnect(_) => Disconnect::PACKET_ID,
+            Self::Auth(_) => Auth::PACKET_ID,
+        }
+    }
 }
 
 impl TryFromBytes for RxPacket {
@@ -58,7 +76,42 @@ pub(crate) enum TxPacket {
     Auth(Auth),
 }
 
-#[allow(unused_variables)]
+impl TxPacket {
+    pub(crate) fn id(&self) -> u8 {
+        match self {
+            TxPacket::Connect(_) => Connect::PACKET_ID,
+            TxPacket::Publish(_) => Publish::PACKET_ID,
+            TxPacket::Puback(_) => Puback::PACKET_ID,
+            TxPacket::Pubrec(_) => Pubrec::PACKET_ID,
+            TxPacket::Pubrel(_) => Pubrel::PACKET_ID,
+            TxPacket::Pubcomp(_) => Pubcomp::PACKET_ID,
+            TxPacket::Subscribe(_) => Subscribe::PACKET_ID,
+            TxPacket::Unsubscribe(_) => Unsubscribe::PACKET_ID,
+            TxPacket::Pingreq(_) => Pingreq::PACKET_ID,
+            TxPacket::Disconnect(_) => Disconnect::PACKET_ID,
+            TxPacket::Auth(_) => Auth::PACKET_ID,
+        }
+    }
+}
+
+impl SizedPacket for TxPacket {
+    fn packet_len(&self) -> usize {
+        match self {
+            TxPacket::Connect(packet) => packet.packet_len(),
+            TxPacket::Publish(packet) => packet.packet_len(),
+            TxPacket::Puback(packet) => packet.packet_len(),
+            TxPacket::Pubrec(packet) => packet.packet_len(),
+            TxPacket::Pubrel(packet) => packet.packet_len(),
+            TxPacket::Pubcomp(packet) => packet.packet_len(),
+            TxPacket::Subscribe(packet) => packet.packet_len(),
+            TxPacket::Unsubscribe(packet) => packet.packet_len(),
+            TxPacket::Pingreq(packet) => packet.packet_len(),
+            TxPacket::Disconnect(packet) => packet.packet_len(),
+            TxPacket::Auth(packet) => packet.packet_len(),
+        }
+    }
+}
+
 impl TryToByteBuffer for TxPacket {
     fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
         match self {

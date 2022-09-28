@@ -27,7 +27,7 @@ where
 macro_rules! declare_property {
     ($property_name:ident, $property_type:ty, $property_id:literal) => {
         #[derive(Clone, Debug, PartialEq)]
-        pub(crate) struct $property_name(pub(crate) $property_type);
+        pub(crate) struct $property_name($property_type);
 
         impl PropertyID for $property_name {
             const PROPERTY_ID: u8 = $property_id;
@@ -50,6 +50,18 @@ macro_rules! declare_property {
             fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
                 let result = buf.get_mut(0..self.property_len())?;
                 Some(to_byte_buffer_unchecked(self, &self.0, result))
+            }
+        }
+
+        impl From<$property_type> for $property_name {
+            fn from(val: $property_type) -> Self {
+                Self { 0: val }
+            }
+        }
+
+        impl From<$property_name> for $property_type {
+            fn from(val: $property_name) -> $property_type {
+                val.0
             }
         }
     };

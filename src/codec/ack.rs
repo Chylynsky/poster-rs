@@ -104,10 +104,10 @@ where
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::ReasonString(val) => {
-                    builder.reason_string(val.0);
+                    builder.reason_string(val.into());
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.0);
+                    builder.user_property(val.into());
                 }
                 _ => {
                     return None;
@@ -181,12 +181,12 @@ where
     }
 
     pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(ReasonString(val));
+        self.reason_string = Some(val.into());
         self
     }
 
     pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+        self.user_property.push(val.into());
         self
     }
 
@@ -246,11 +246,14 @@ pub(crate) mod test {
 
         assert_eq!(packet.packet_identifier, NonZero::from(0x4573));
         assert_eq!(packet.reason, ReasonT::default());
-        assert_eq!(packet.reason_string.unwrap().0, "Success");
+        assert_eq!(
+            String::from(packet.reason_string.unwrap()),
+            String::from("Success")
+        );
         assert_eq!(packet.user_property.len(), 1);
         assert_eq!(
             packet.user_property[0],
-            UserProperty((String::from("key"), String::from("val")))
+            UserProperty::from((String::from("key"), String::from("val")))
         );
     }
 

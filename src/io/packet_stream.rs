@@ -1,5 +1,5 @@
 use crate::{
-    codec::packets::RxPacket,
+    codec::RxPacket,
     core::base_types::VarSizeInt,
     core::utils::{ByteReader, TryFromBytes},
 };
@@ -10,8 +10,8 @@ use std::{
 };
 
 enum PacketStreamState {
-    ReadRemainingLength,
-    ReadRemainingData(usize),
+    ReadPacketSize,
+    ReadPacket(usize),
 }
 
 pub(crate) struct PacketStream<StreamT> {
@@ -22,7 +22,7 @@ pub(crate) struct PacketStream<StreamT> {
 impl<'a, StreamT> From<StreamT> for PacketStream<StreamT> {
     fn from(stream: StreamT) -> Self {
         Self {
-            state: PacketStreamState::ReadRemainingLength,
+            state: PacketStreamState::ReadPacketSize,
             stream,
         }
     }
@@ -48,25 +48,29 @@ where
             }
 
             match state {
-                PacketStreamState::ReadRemainingLength => {
+                PacketStreamState::ReadPacketSize => {
                     let mut reader = ByteReader::from(&buf[1..]);
                     if let Some(remaining_len) = reader.try_read::<VarSizeInt>() {
-                        *state = PacketStreamState::ReadRemainingData(remaining_len.into());
+                        *state = PacketStreamState::ReadPacket(
+                            1 + remaining_len.len() + remaining_len.value() as usize,
+                        );
                         return self.poll_next(cx);
                     }
                 }
-                PacketStreamState::ReadRemainingData(remaining_len) => {
-                    if buf.len() >= *remaining_len {
+                PacketStreamState::ReadPacket(packet_size) => {
+                    if buf.len() >= *packet_size {
                         let result = RxPacket::try_from_bytes(buf);
-                        Pin::new(&mut stream).consume(*remaining_len); // Consume the packet
-                        *state = PacketStreamState::ReadRemainingLength;
+
+                        println!("[RX] Got packet: {:?}", &buf);
+
+                        Pin::new(&mut stream).consume(*packet_size); // Consume the packet
+                        *state = PacketStreamState::ReadPacketSize;
                         return Poll::Ready(result);
                     }
                 }
             }
         }
 
-        cx.waker().wake_by_ref();
         Poll::Pending
     }
 }

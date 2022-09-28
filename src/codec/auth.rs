@@ -9,7 +9,7 @@ use crate::core::{
 use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum AuthReason {
+pub enum AuthReason {
     Success = 0x00,
     ContinueAuthentication = 0x18,
     ReAuthenticate = 0x19,
@@ -52,12 +52,12 @@ impl ToByteBuffer for AuthReason {
 
 #[derive(Default)]
 pub(crate) struct Auth {
-    reason: AuthReason,
+    pub(crate) reason: AuthReason,
 
-    authentication_method: Option<AuthenticationMethod>,
-    authentication_data: Option<AuthenticationData>,
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
+    pub(crate) authentication_method: Option<AuthenticationMethod>,
+    pub(crate) authentication_data: Option<AuthenticationData>,
+    pub(crate) reason_string: Option<ReasonString>,
+    pub(crate) user_property: Vec<UserProperty>,
 }
 
 impl Auth {
@@ -145,16 +145,16 @@ impl TryFromBytes for Auth {
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::AuthenticationMethod(val) => {
-                    builder.authentication_method(val.0);
+                    builder.authentication_method(val.into());
                 }
                 Property::AuthenticationData(val) => {
-                    builder.authentication_data(val.0);
+                    builder.authentication_data(val.into());
                 }
                 Property::ReasonString(val) => {
-                    builder.reason_string(val.0);
+                    builder.reason_string(val.into());
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.0);
+                    builder.user_property(val.into());
                 }
                 _ => {
                     return None;
@@ -216,22 +216,22 @@ impl AuthBuilder {
     }
 
     pub(crate) fn authentication_data(&mut self, val: Binary) -> &mut Self {
-        self.authentication_data = Some(AuthenticationData(val));
+        self.authentication_data = Some(val.into());
         self
     }
 
     pub(crate) fn authentication_method(&mut self, val: String) -> &mut Self {
-        self.authentication_method = Some(AuthenticationMethod(val));
+        self.authentication_method = Some(val.into());
         self
     }
 
     pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(ReasonString(val));
+        self.reason_string = Some(val.into());
         self
     }
 
     pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+        self.user_property.push(val.into());
         self
     }
 

@@ -5,7 +5,7 @@ use crate::core::{
 };
 
 pub(crate) struct UnsubscribeProperties {
-    user_property: Vec<UserProperty>,
+    pub(crate) user_property: Vec<UserProperty>,
 }
 
 impl SizedProperty for UnsubscribeProperties {
@@ -36,9 +36,9 @@ impl ToByteBuffer for UnsubscribeProperties {
 }
 
 pub(crate) struct Unsubscribe {
-    packet_identifier: u16,
-    properties: UnsubscribeProperties,
-    payload: Vec<String>,
+    pub(crate) packet_identifier: NonZero<u16>,
+    pub(crate) properties: UnsubscribeProperties,
+    pub(crate) payload: Vec<String>,
 }
 
 impl Unsubscribe {
@@ -96,19 +96,19 @@ impl TryToByteBuffer for Unsubscribe {
 
 #[derive(Default)]
 pub(crate) struct UnsubscribeBuilder {
-    packet_identifier: Option<u16>,
+    packet_identifier: Option<NonZero<u16>>,
     user_property: Vec<UserProperty>,
     payload: Vec<String>,
 }
 
 impl UnsubscribeBuilder {
-    pub(crate) fn packet_identifier(&mut self, val: u16) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
 
     pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+        self.user_property.push(val.into());
         self
     }
 
@@ -159,7 +159,7 @@ mod test {
         ];
 
         let mut builder = UnsubscribeBuilder::default();
-        builder.packet_identifier(13);
+        builder.packet_identifier(NonZero::from(13));
         builder.payload(String::from("a/b"));
         builder.payload(String::from("c/d"));
 

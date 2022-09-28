@@ -6,7 +6,7 @@ use crate::core::{
 use core::mem;
 
 #[derive(Default)]
-pub(crate) struct ConnectWillProperties {
+struct ConnectWillProperties {
     will_delay_interval: Option<WillDelayInterval>,
     payload_format_indicator: Option<PayloadFormatIndicator>,
     message_expiry_interval: Option<MessageExpiryInterval>,
@@ -100,7 +100,7 @@ impl ToByteBuffer for ConnectWillProperties {
 }
 
 #[derive(Default)]
-pub(crate) struct ConnectProperties {
+struct ConnectProperties {
     session_expiry_interval: Option<SessionExpiryInterval>,
     receive_maximum: Option<ReceiveMaximum>,
     maximum_packet_size: Option<MaximumPacketSize>,
@@ -214,14 +214,14 @@ impl ToByteBuffer for ConnectProperties {
 }
 
 #[derive(Default)]
-pub(crate) struct ConnectMetadata {
+struct ConnectMetadata {
     will_qos: QoS,
     will_retain: bool,
     clean_start: bool,
 }
 
 #[derive(Default)]
-pub(crate) struct ConnectPayload {
+struct ConnectPayload {
     meta: ConnectMetadata,
 
     client_identifier: String,
@@ -353,6 +353,11 @@ impl Connect {
                 + payload_len,
         )
     }
+
+    pub(crate) fn is_extended_auth(&self) -> bool {
+        self.properties.authentication_method.is_some()
+            && self.properties.authentication_data.is_some()
+    }
 }
 
 impl PacketID for Connect {
@@ -391,7 +396,7 @@ impl TryToByteBuffer for Connect {
 }
 
 #[derive(Default)]
-pub struct ConnectBuilder {
+pub(crate) struct ConnectBuilder {
     keep_alive: Option<u16>,
 
     session_expiry_interval: Option<SessionExpiryInterval>,
@@ -424,122 +429,122 @@ pub struct ConnectBuilder {
 }
 
 impl ConnectBuilder {
-    pub fn keep_alive(&mut self, val: u16) -> &mut Self {
+    pub(crate) fn keep_alive(&mut self, val: u16) -> &mut Self {
         self.keep_alive = Some(val);
         self
     }
 
-    pub fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.session_expiry_interval = Some(SessionExpiryInterval(val));
+    pub(crate) fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
+        self.session_expiry_interval = Some(val.into());
         self
     }
 
-    pub fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.receive_maximum = Some(ReceiveMaximum(val));
+    pub(crate) fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
+        self.receive_maximum = Some(val.into());
         self
     }
 
-    pub fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
-        self.maximum_packet_size = Some(MaximumPacketSize(val));
+    pub(crate) fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
+        self.maximum_packet_size = Some(val.into());
         self
     }
 
-    pub fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
-        self.topic_alias_maximum = Some(TopicAliasMaximum(val));
+    pub(crate) fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
+        self.topic_alias_maximum = Some(val.into());
         self
     }
 
-    pub fn request_response_information(&mut self, val: bool) -> &mut Self {
-        self.request_response_information = Some(RequestResponseInformation(val));
+    pub(crate) fn request_response_information(&mut self, val: bool) -> &mut Self {
+        self.request_response_information = Some(val.into());
         self
     }
 
-    pub fn request_problem_information(&mut self, val: bool) -> &mut Self {
-        self.request_problem_information = Some(RequestProblemInformation(val));
+    pub(crate) fn request_problem_information(&mut self, val: bool) -> &mut Self {
+        self.request_problem_information = Some(val.into());
         self
     }
 
-    pub fn authentication_method(&mut self, val: String) -> &mut Self {
-        self.authentication_method = Some(AuthenticationMethod(val));
+    pub(crate) fn authentication_method(&mut self, val: String) -> &mut Self {
+        self.authentication_method = Some(val.into());
         self
     }
 
-    pub fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
+        self.user_property.push(val.into());
         self
     }
 
-    pub fn will_qos(&mut self, val: QoS) -> &mut Self {
+    pub(crate) fn will_qos(&mut self, val: QoS) -> &mut Self {
         self.will_qos = val;
         self
     }
 
-    pub fn will_retain(&mut self, val: bool) -> &mut Self {
+    pub(crate) fn will_retain(&mut self, val: bool) -> &mut Self {
         self.will_retain = val;
         self
     }
 
-    pub fn clean_start(&mut self, val: bool) -> &mut Self {
+    pub(crate) fn clean_start(&mut self, val: bool) -> &mut Self {
         self.clean_start = val;
         self
     }
 
-    pub fn client_identifier(&mut self, val: String) -> &mut Self {
+    pub(crate) fn client_identifier(&mut self, val: String) -> &mut Self {
         self.client_identifier = Some(val);
         self
     }
 
-    pub fn will_delay_interval(&mut self, val: u32) -> &mut Self {
-        self.will_delay_interval = Some(WillDelayInterval(val));
+    pub(crate) fn will_delay_interval(&mut self, val: u32) -> &mut Self {
+        self.will_delay_interval = Some(val.into());
         self
     }
 
-    pub fn will_payload_format_indicator(&mut self, val: bool) -> &mut Self {
-        self.will_payload_format_indicator = Some(PayloadFormatIndicator(val));
+    pub(crate) fn will_payload_format_indicator(&mut self, val: bool) -> &mut Self {
+        self.will_payload_format_indicator = Some(val.into());
         self
     }
 
-    pub fn will_message_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.will_message_expiry_interval = Some(MessageExpiryInterval(val));
+    pub(crate) fn will_message_expiry_interval(&mut self, val: u32) -> &mut Self {
+        self.will_message_expiry_interval = Some(val.into());
         self
     }
 
-    pub fn will_content_type(&mut self, val: String) -> &mut Self {
-        self.will_content_type = Some(ContentType(val));
+    pub(crate) fn will_content_type(&mut self, val: String) -> &mut Self {
+        self.will_content_type = Some(val.into());
         self
     }
 
-    pub fn will_reponse_topic(&mut self, val: String) -> &mut Self {
-        self.will_reponse_topic = Some(ResponseTopic(val));
+    pub(crate) fn will_reponse_topic(&mut self, val: String) -> &mut Self {
+        self.will_reponse_topic = Some(val.into());
         self
     }
 
-    pub fn will_correlation_data(&mut self, val: Binary) -> &mut Self {
-        self.will_correlation_data = Some(CorrelationData(val));
+    pub(crate) fn will_correlation_data(&mut self, val: Binary) -> &mut Self {
+        self.will_correlation_data = Some(val.into());
         self
     }
 
-    pub fn will_user_property(&mut self, val: StringPair) -> &mut Self {
-        self.will_user_property.push(UserProperty(val));
+    pub(crate) fn will_user_property(&mut self, val: StringPair) -> &mut Self {
+        self.will_user_property.push(val.into());
         self
     }
 
-    pub fn will_topic(&mut self, val: String) -> &mut Self {
+    pub(crate) fn will_topic(&mut self, val: String) -> &mut Self {
         self.will_topic = Some(val);
         self
     }
 
-    pub fn will_payload(&mut self, val: Binary) -> &mut Self {
+    pub(crate) fn will_payload(&mut self, val: Binary) -> &mut Self {
         self.will_payload = Some(val);
         self
     }
 
-    pub fn username(&mut self, val: String) -> &mut Self {
+    pub(crate) fn username(&mut self, val: String) -> &mut Self {
         self.username = Some(val);
         self
     }
 
-    pub fn password(&mut self, val: Binary) -> &mut Self {
+    pub(crate) fn password(&mut self, val: Binary) -> &mut Self {
         self.password = Some(val);
         self
     }

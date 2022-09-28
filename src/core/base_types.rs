@@ -448,26 +448,9 @@ impl TryFromBytes for u32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NonZero<T>(T)
+pub(crate) struct NonZero<T>(T)
 where
     T: Copy;
-
-impl<T> NonZero<T>
-where
-    T: Copy + std::cmp::PartialEq<i32>,
-{
-    pub fn try_from(val: T) -> Option<Self> {
-        if val == 0 {
-            return None;
-        }
-
-        Some(Self(val))
-    }
-
-    pub fn value(&self) -> T {
-        self.0
-    }
-}
 
 impl From<u8> for NonZero<u8> {
     fn from(val: u8) -> Self {
@@ -514,7 +497,7 @@ impl TryFromBytes for NonZero<u8> {
 
 impl From<u16> for NonZero<u16> {
     fn from(val: u16) -> Self {
-        assert!(val != 0);
+        assert!(val != 0, "Value cannot be 0.");
         Self(val)
     }
 }
@@ -557,7 +540,7 @@ impl TryFromBytes for NonZero<u16> {
 
 impl From<u32> for NonZero<u32> {
     fn from(val: u32) -> Self {
-        assert!(val != 0);
+        assert!(val != 0, "Value cannot be 0.");
         Self(val)
     }
 }
@@ -600,7 +583,7 @@ impl TryFromBytes for NonZero<u32> {
 
 impl From<VarSizeInt> for NonZero<VarSizeInt> {
     fn from(val: VarSizeInt) -> Self {
-        assert!(val.value() != 0);
+        assert!(val.value() != 0, "Value cannot be 0.");
         Self(val)
     }
 }

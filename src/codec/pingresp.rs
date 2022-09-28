@@ -7,7 +7,7 @@ impl Pingresp {
 }
 
 #[derive(Default)]
-pub(crate) struct PingrespBuilder {}
+struct PingrespBuilder {}
 
 impl PingrespBuilder {
     fn build(self) -> Option<Pingresp> {

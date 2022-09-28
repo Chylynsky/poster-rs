@@ -8,23 +8,23 @@ use crate::core::{
 use core::mem;
 
 pub(crate) struct Publish {
-    dup: bool,
-    retain: bool,
-    qos: QoS,
+    pub(crate) dup: bool,
+    pub(crate) retain: bool,
+    pub(crate) qos: QoS,
 
-    topic_name: String,
-    packet_identifier: Option<NonZero<u16>>,
+    pub(crate) topic_name: String,
+    pub(crate) packet_identifier: Option<NonZero<u16>>,
 
-    payload_format_indicator: Option<PayloadFormatIndicator>,
-    topic_alias: Option<TopicAlias>,
-    message_expiry_interval: Option<MessageExpiryInterval>,
-    subscription_identifier: Option<SubscriptionIdentifier>,
-    correlation_data: Option<CorrelationData>,
-    response_topic: Option<ResponseTopic>,
-    content_type: Option<ContentType>,
-    user_property: Vec<UserProperty>,
+    pub(crate) payload_format_indicator: Option<PayloadFormatIndicator>,
+    pub(crate) topic_alias: Option<TopicAlias>,
+    pub(crate) message_expiry_interval: Option<MessageExpiryInterval>,
+    pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
+    pub(crate) correlation_data: Option<CorrelationData>,
+    pub(crate) response_topic: Option<ResponseTopic>,
+    pub(crate) content_type: Option<ContentType>,
+    pub(crate) user_property: Vec<UserProperty>,
 
-    payload: Binary,
+    pub(crate) payload: Binary,
 }
 
 impl Publish {
@@ -134,7 +134,7 @@ impl TryFromBytes for Publish {
         let topic_name = reader.try_read::<String>()?;
         builder.topic_name(topic_name);
 
-        // Packet identifier inly available if QoS > 0
+        // Packet identifier only available if QoS > 0
         if qos == QoS::AtLeastOnce || qos == QoS::ExactlyOnce {
             let packet_id = reader.try_read::<NonZero<u16>>()?;
             builder.packet_identifier(packet_id);
@@ -148,28 +148,28 @@ impl TryFromBytes for Publish {
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::PayloadFormatIndicator(val) => {
-                    builder.payload_format_indicator(val.0);
+                    builder.payload_format_indicator(val.into());
                 }
                 Property::TopicAlias(val) => {
-                    builder.topic_alias(val.0);
+                    builder.topic_alias(val.into());
                 }
                 Property::MessageExpiryInterval(val) => {
-                    builder.message_expiry_interval(val.0);
+                    builder.message_expiry_interval(val.into());
                 }
                 Property::SubscriptionIdentifier(val) => {
-                    builder.subscription_identifier(val.0);
+                    builder.subscription_identifier(val.into());
                 }
                 Property::CorrelationData(val) => {
-                    builder.correlation_data(val.0);
+                    builder.correlation_data(val.into());
                 }
                 Property::ResponseTopic(val) => {
-                    builder.response_topic(val.0);
+                    builder.response_topic(val.into());
                 }
                 Property::ContentType(val) => {
-                    builder.content_type(val.0);
+                    builder.content_type(val.into());
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.0);
+                    builder.user_property(val.into());
                 }
                 _ => {
                     return None;
@@ -289,42 +289,42 @@ impl PublishBuilder {
     }
 
     pub(crate) fn payload_format_indicator(&mut self, val: bool) -> &mut Self {
-        self.payload_format_indicator = Some(PayloadFormatIndicator(val));
+        self.payload_format_indicator = Some(val.into());
         self
     }
 
     pub(crate) fn topic_alias(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.topic_alias = Some(TopicAlias(val));
+        self.topic_alias = Some(val.into());
         self
     }
 
     pub(crate) fn message_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.message_expiry_interval = Some(MessageExpiryInterval(val));
+        self.message_expiry_interval = Some(val.into());
         self
     }
 
     pub(crate) fn subscription_identifier(&mut self, val: NonZero<VarSizeInt>) -> &mut Self {
-        self.subscription_identifier = Some(SubscriptionIdentifier(val));
+        self.subscription_identifier = Some(val.into());
         self
     }
 
     pub(crate) fn correlation_data(&mut self, val: Binary) -> &mut Self {
-        self.correlation_data = Some(CorrelationData(val));
+        self.correlation_data = Some(val.into());
         self
     }
 
     pub(crate) fn response_topic(&mut self, val: String) -> &mut Self {
-        self.response_topic = Some(ResponseTopic(val));
+        self.response_topic = Some(val.into());
         self
     }
 
     pub(crate) fn content_type(&mut self, val: String) -> &mut Self {
-        self.content_type = Some(ContentType(val));
+        self.content_type = Some(val.into());
         self
     }
 
     pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+        self.user_property.push(val.into());
         self
     }
 

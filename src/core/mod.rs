@@ -1,4 +1,4 @@
-pub mod base_types;
-pub mod error;
-pub mod properties;
-pub mod utils;
+pub(crate) mod base_types;
+pub(crate) mod error;
+pub(crate) mod properties;
+pub(crate) mod utils;

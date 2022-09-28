@@ -1,24 +1,16 @@
 [package]
-name = "poster-rs"
+name = "poster"
 version = "0.1.0"
 edition = "2021"
 readme = "README.md"
 description = "MQTT library for Rust."
 homepage = "https://github.com/Chylynsky/poster-rs"
 repository = "https://github.com/Chylynsky/poster-rs"
-categories = ["network-programming"]
+categories = ["network-programming", "mqtt", "networking"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-derive_builder = "0.11"
+either = "1.8"
 futures = "0.3"
-
-[dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros", "net", "io-util"] }
-tokio-stream = "0.1"
-tokio-util = { version = "0.7", features = ["compat"] }
-
-[[example]]
-name = "tokio-chat"
-path = "example/tokio-chat/main.rs"
+# bytes = "1.2"

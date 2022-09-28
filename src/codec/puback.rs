@@ -5,7 +5,7 @@ use crate::{
 use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum PubackReason {
+pub enum PubackReason {
     Success = 0x00,
     NoMatchingSubscribers = 0x10,
     UnspecifiedError = 0x80,

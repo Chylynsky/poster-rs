@@ -6,17 +6,28 @@ use crate::core::{
 use core::mem;
 
 #[derive(Clone, Copy)]
-pub(crate) enum RetainHandling {
+pub enum RetainHandling {
     SendOnSubscribe = 0,
     SendIfNoSubscription = 1,
     NoSendOnSubscribe = 2,
 }
 
 pub(crate) struct SubscriptionOptions {
-    maximum_qos: MaximumQoS,
-    no_local: bool,
-    retain_as_published: bool,
-    retain_handling: RetainHandling,
+    pub(crate) maximum_qos: MaximumQoS,
+    pub(crate) no_local: bool,
+    pub(crate) retain_as_published: bool,
+    pub(crate) retain_handling: RetainHandling,
+}
+
+impl Default for SubscriptionOptions {
+    fn default() -> Self {
+        Self {
+            maximum_qos: MaximumQoS::from(QoS::ExactlyOnce),
+            no_local: false,
+            retain_as_published: false,
+            retain_handling: RetainHandling::SendOnSubscribe,
+        }
+    }
 }
 
 impl SizedProperty for SubscriptionOptions {
@@ -35,7 +46,8 @@ impl ToByteBuffer for SubscriptionOptions {
         let mut writer = ByteWriter::from(result);
 
         {
-            let val = (self.maximum_qos.0 as u8)
+            let qos: QoS = self.maximum_qos.clone().into();
+            let val = (qos as u8)
                 | ((self.no_local as u8) << 3)
                 | ((self.retain_as_published as u8) << 4)
                 | ((self.retain_handling as u8) << 5);
@@ -47,8 +59,8 @@ impl ToByteBuffer for SubscriptionOptions {
 }
 
 pub(crate) struct SubscribeProperties {
-    subscription_identifier: Option<SubscriptionIdentifier>,
-    user_property: Vec<UserProperty>,
+    pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
+    pub(crate) user_property: Vec<UserProperty>,
 }
 
 impl SizedProperty for SubscribeProperties {
@@ -90,9 +102,9 @@ impl ToByteBuffer for SubscribeProperties {
 }
 
 pub(crate) struct Subscribe {
-    packet_identifier: u16,
-    properties: SubscribeProperties,
-    payload: Vec<(String, SubscriptionOptions)>,
+    pub(crate) packet_identifier: NonZero<u16>,
+    pub(crate) properties: SubscribeProperties,
+    pub(crate) payload: Vec<(String, SubscriptionOptions)>,
 }
 
 impl Subscribe {
@@ -151,28 +163,25 @@ impl TryToByteBuffer for Subscribe {
 
 #[derive(Default)]
 pub(crate) struct SubscribeBuilder {
-    packet_identifier: Option<u16>,
+    packet_identifier: Option<NonZero<u16>>,
     subscription_identifier: Option<SubscriptionIdentifier>,
     user_property: Vec<UserProperty>,
     payload: Vec<(String, SubscriptionOptions)>,
 }
 
 impl SubscribeBuilder {
-    pub(crate) fn packet_identifier(&mut self, packet_identifier: u16) -> &mut Self {
+    pub(crate) fn packet_identifier(&mut self, packet_identifier: NonZero<u16>) -> &mut Self {
         self.packet_identifier = Some(packet_identifier);
         self
     }
 
-    pub(crate) fn subscription_identifier(
-        &mut self,
-        subscription_identifier: NonZero<VarSizeInt>,
-    ) -> &mut Self {
-        self.subscription_identifier = Some(SubscriptionIdentifier(subscription_identifier));
+    pub(crate) fn subscription_identifier(&mut self, val: NonZero<VarSizeInt>) -> &mut Self {
+        self.subscription_identifier = Some(val.into());
         self
     }
 
-    pub(crate) fn user_property(&mut self, user_property: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(user_property));
+    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
+        self.user_property.push(val.into());
         self
     }
 
@@ -219,11 +228,11 @@ mod test {
             0b10,
         ];
         let mut builder = SubscribeBuilder::default();
-        builder.packet_identifier(32);
+        builder.packet_identifier(NonZero::from(32));
         builder.payload((
             String::from("a/b"),
             SubscriptionOptions {
-                maximum_qos: MaximumQoS(QoS::ExactlyOnce),
+                maximum_qos: MaximumQoS::from(QoS::ExactlyOnce),
                 no_local: false,
                 retain_as_published: false,
                 retain_handling: RetainHandling::SendOnSubscribe,

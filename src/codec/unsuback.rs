@@ -32,12 +32,12 @@ impl UnsubackReason {
 }
 
 pub(crate) struct Unsuback {
-    packet_identifier: u16,
+    pub(crate) packet_identifier: NonZero<u16>,
 
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
+    pub(crate) reason_string: Option<ReasonString>,
+    pub(crate) user_property: Vec<UserProperty>,
 
-    payload: Vec<UnsubackReason>,
+    pub(crate) payload: Vec<UnsubackReason>,
 }
 
 impl Unsuback {
@@ -65,7 +65,7 @@ impl TryFromBytes for Unsuback {
             return None; // Invalid packet size
         }
 
-        let packet_id = reader.try_read::<u16>()?;
+        let packet_id = reader.try_read::<NonZero<u16>>()?;
         builder.packet_identifier(packet_id);
 
         let property_len = reader.try_read::<VarSizeInt>()?;
@@ -78,10 +78,10 @@ impl TryFromBytes for Unsuback {
         for property in PropertyIterator::from(properties) {
             match property {
                 Property::ReasonString(val) => {
-                    builder.reason_string(val.0);
+                    builder.reason_string(val.into());
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.0);
+                    builder.user_property(val.into());
                 }
                 _ => {
                     return None;
@@ -100,35 +100,35 @@ impl TryFromBytes for Unsuback {
 }
 
 #[derive(Default)]
-pub(crate) struct UnsubackBuilder {
-    packet_identifier: Option<u16>,
+struct UnsubackBuilder {
+    packet_identifier: Option<NonZero<u16>>,
     reason_string: Option<ReasonString>,
     user_property: Vec<UserProperty>,
     payload: Vec<UnsubackReason>,
 }
 
 impl UnsubackBuilder {
-    pub(crate) fn packet_identifier(&mut self, val: u16) -> &mut Self {
+    fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
         self.packet_identifier = Some(val);
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(ReasonString(val));
+    fn reason_string(&mut self, val: String) -> &mut Self {
+        self.reason_string = Some(val.into());
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+    fn user_property(&mut self, val: StringPair) -> &mut Self {
+        self.user_property.push(val.into());
         self
     }
 
-    pub(crate) fn payload(&mut self, val: Vec<UnsubackReason>) -> &mut Self {
+    fn payload(&mut self, val: Vec<UnsubackReason>) -> &mut Self {
         self.payload = val;
         self
     }
 
-    pub(crate) fn build(self) -> Option<Unsuback> {
+    fn build(self) -> Option<Unsuback> {
         Some(Unsuback {
             packet_identifier: self.packet_identifier?,
             reason_string: self.reason_string,
@@ -175,12 +175,15 @@ mod test {
 
         let packet = Unsuback::try_from_bytes(&PACKET).unwrap();
 
-        assert_eq!(packet.packet_identifier, 0x4573);
-        assert_eq!(packet.reason_string.unwrap().0, "test");
+        assert_eq!(packet.packet_identifier, NonZero::from(0x4573));
+        assert_eq!(
+            String::from(packet.reason_string.unwrap()),
+            String::from("test")
+        );
         assert_eq!(packet.user_property.len(), 1);
         assert_eq!(
             packet.user_property[0],
-            UserProperty((String::from("key"), String::from("val")))
+            UserProperty::from((String::from("key"), String::from("val")))
         );
         assert_eq!(packet.payload.len(), 1);
         assert_eq!(packet.payload[0], UnsubackReason::Success)

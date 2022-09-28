@@ -1,3 +1,4 @@
-/target
 .vscode
+target
+example
 Cargo.lock

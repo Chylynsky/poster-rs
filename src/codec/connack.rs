@@ -6,7 +6,7 @@ use crate::core::{
 use core::mem;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub(crate) enum ConnectReason {
+pub enum ConnectReason {
     Success = 0x00,
     UnspecifiedError = 0x80,
     MalformedPacket = 0x81,
@@ -81,32 +81,32 @@ impl TryFromBytes for ConnectReason {
 
 pub(crate) struct Connack {
     // Connack variable header
-    session_present: bool,
-    reason: ConnectReason,
+    pub(crate) session_present: bool,
+    pub(crate) reason: ConnectReason,
 
     // Connack properties
-    wildcard_subscription_available: WildcardSubscriptionAvailable,
-    subscription_identifier_available: SubscriptionIdentifierAvailable,
-    shared_subscription_available: SharedSubscriptionAvailable,
-    maximum_qos: MaximumQoS,
-    retain_available: RetainAvailable,
+    pub(crate) wildcard_subscription_available: WildcardSubscriptionAvailable,
+    pub(crate) subscription_identifier_available: SubscriptionIdentifierAvailable,
+    pub(crate) shared_subscription_available: SharedSubscriptionAvailable,
+    pub(crate) maximum_qos: MaximumQoS,
+    pub(crate) retain_available: RetainAvailable,
 
-    server_keep_alive: Option<ServerKeepAlive>,
-    receive_maximum: ReceiveMaximum,
-    topic_alias_maximum: TopicAliasMaximum,
+    pub(crate) server_keep_alive: Option<ServerKeepAlive>,
+    pub(crate) receive_maximum: ReceiveMaximum,
+    pub(crate) topic_alias_maximum: TopicAliasMaximum,
 
-    session_expiry_interval: SessionExpiryInterval,
-    maximum_packet_size: Option<MaximumPacketSize>,
+    pub(crate) session_expiry_interval: SessionExpiryInterval,
+    pub(crate) maximum_packet_size: Option<MaximumPacketSize>,
 
-    authentication_data: Option<AuthenticationData>,
+    pub(crate) authentication_data: Option<AuthenticationData>,
 
-    assigned_client_identifier: Option<AssignedClientIdentifier>,
-    reason_string: Option<ReasonString>,
-    response_information: Option<ResponseInformation>,
-    server_reference: Option<ServerReference>,
-    authentication_method: Option<AuthenticationMethod>,
+    pub(crate) assigned_client_identifier: Option<AssignedClientIdentifier>,
+    pub(crate) reason_string: Option<ReasonString>,
+    pub(crate) response_information: Option<ResponseInformation>,
+    pub(crate) server_reference: Option<ServerReference>,
+    pub(crate) authentication_method: Option<AuthenticationMethod>,
 
-    user_property: Vec<UserProperty>,
+    pub(crate) user_property: Vec<UserProperty>,
 }
 
 impl PacketID for Connack {
@@ -147,55 +147,55 @@ impl TryFromBytes for Connack {
         for property in PropertyIterator::from(reader.get_buf()) {
             match property {
                 Property::WildcardSubscriptionAvailable(val) => {
-                    builder.wildcard_subscription_available(val.0);
+                    builder.wildcard_subscription_available(val.into());
                 }
                 Property::SubscriptionIdentifierAvailable(val) => {
-                    builder.subscription_identifier_available(val.0);
+                    builder.subscription_identifier_available(val.into());
                 }
                 Property::SharedSubscriptionAvailable(val) => {
-                    builder.shared_subscription_available(val.0);
+                    builder.shared_subscription_available(val.into());
                 }
                 Property::MaximumQoS(val) => {
-                    builder.maximum_qos(val.0);
+                    builder.maximum_qos(val.into());
                 }
                 Property::RetainAvailable(val) => {
-                    builder.retain_available(val.0);
+                    builder.retain_available(val.into());
                 }
                 Property::ServerKeepAlive(val) => {
-                    builder.server_keep_alive(val.0);
+                    builder.server_keep_alive(val.into());
                 }
                 Property::ReceiveMaximum(val) => {
-                    builder.receive_maximum(val.0);
+                    builder.receive_maximum(val.into());
                 }
                 Property::TopicAliasMaximum(val) => {
-                    builder.topic_alias_maximum(val.0);
+                    builder.topic_alias_maximum(val.into());
                 }
                 Property::SessionExpiryInterval(val) => {
-                    builder.session_expiry_interval(val.0);
+                    builder.session_expiry_interval(val.into());
                 }
                 Property::MaximumPacketSize(val) => {
-                    builder.maximum_packet_size(val.0);
+                    builder.maximum_packet_size(val.into());
                 }
                 Property::AuthenticationData(val) => {
-                    builder.authentication_data(val.0);
+                    builder.authentication_data(val.into());
                 }
                 Property::AssignedClientIdentifier(val) => {
-                    builder.assigned_client_identifier(val.0);
+                    builder.assigned_client_identifier(val.into());
                 }
                 Property::ReasonString(val) => {
-                    builder.reason_string(val.0);
+                    builder.reason_string(val.into());
                 }
                 Property::ResponseInformation(val) => {
-                    builder.response_information(val.0);
+                    builder.response_information(val.into());
                 }
                 Property::ServerReference(val) => {
-                    builder.server_reference(val.0);
+                    builder.server_reference(val.into());
                 }
                 Property::AuthenticationMethod(val) => {
-                    builder.authentication_method(val.0);
+                    builder.authentication_method(val.into());
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.0);
+                    builder.user_property(val.into());
                 }
                 _ => {
                     return None;
@@ -208,7 +208,7 @@ impl TryFromBytes for Connack {
 }
 
 #[derive(Default)]
-pub(crate) struct ConnackBuilder {
+struct ConnackBuilder {
     // Connack variable header
     session_present: Option<bool>,
     reason: Option<ConnectReason>,
@@ -239,101 +239,101 @@ pub(crate) struct ConnackBuilder {
 }
 
 impl ConnackBuilder {
-    pub(crate) fn session_present(&mut self, val: bool) -> &mut Self {
+    fn session_present(&mut self, val: bool) -> &mut Self {
         self.session_present = Some(val);
         self
     }
 
-    pub(crate) fn reason(&mut self, val: ConnectReason) -> &mut Self {
+    fn reason(&mut self, val: ConnectReason) -> &mut Self {
         self.reason = Some(val);
         self
     }
 
-    pub(crate) fn wildcard_subscription_available(&mut self, val: bool) -> &mut Self {
-        self.wildcard_subscription_available = WildcardSubscriptionAvailable(val);
+    fn wildcard_subscription_available(&mut self, val: bool) -> &mut Self {
+        self.wildcard_subscription_available = val.into();
         self
     }
 
-    pub(crate) fn subscription_identifier_available(&mut self, val: bool) -> &mut Self {
-        self.subscription_identifier_available = SubscriptionIdentifierAvailable(val);
+    fn subscription_identifier_available(&mut self, val: bool) -> &mut Self {
+        self.subscription_identifier_available = val.into();
         self
     }
 
-    pub(crate) fn shared_subscription_available(&mut self, val: bool) -> &mut Self {
-        self.shared_subscription_available = SharedSubscriptionAvailable(val);
+    fn shared_subscription_available(&mut self, val: bool) -> &mut Self {
+        self.shared_subscription_available = val.into();
         self
     }
 
-    pub(crate) fn maximum_qos(&mut self, val: QoS) -> &mut Self {
-        self.maximum_qos = MaximumQoS(val);
+    fn maximum_qos(&mut self, val: QoS) -> &mut Self {
+        self.maximum_qos = val.into();
         self
     }
 
-    pub(crate) fn retain_available(&mut self, val: bool) -> &mut Self {
-        self.retain_available = RetainAvailable(val);
+    fn retain_available(&mut self, val: bool) -> &mut Self {
+        self.retain_available = val.into();
         self
     }
 
-    pub(crate) fn server_keep_alive(&mut self, val: u16) -> &mut Self {
-        self.server_keep_alive = Some(ServerKeepAlive(val));
+    fn server_keep_alive(&mut self, val: u16) -> &mut Self {
+        self.server_keep_alive = Some(val.into());
         self
     }
 
-    pub(crate) fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.receive_maximum = ReceiveMaximum(val);
+    fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
+        self.receive_maximum = val.into();
         self
     }
 
-    pub(crate) fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
-        self.topic_alias_maximum = TopicAliasMaximum(val);
+    fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
+        self.topic_alias_maximum = val.into();
         self
     }
 
-    pub(crate) fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.session_expiry_interval = SessionExpiryInterval(val);
+    fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
+        self.session_expiry_interval = val.into();
         self
     }
 
-    pub(crate) fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
-        self.maximum_packet_size = Some(MaximumPacketSize(val));
+    fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
+        self.maximum_packet_size = Some(val.into());
         self
     }
 
-    pub(crate) fn authentication_data(&mut self, val: Binary) -> &mut Self {
-        self.authentication_data = Some(AuthenticationData(val));
+    fn authentication_data(&mut self, val: Binary) -> &mut Self {
+        self.authentication_data = Some(val.into());
         self
     }
 
-    pub(crate) fn assigned_client_identifier(&mut self, val: String) -> &mut Self {
-        self.assigned_client_identifier = Some(AssignedClientIdentifier(val));
+    fn assigned_client_identifier(&mut self, val: String) -> &mut Self {
+        self.assigned_client_identifier = Some(val.into());
         self
     }
 
-    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(ReasonString(val));
+    fn reason_string(&mut self, val: String) -> &mut Self {
+        self.reason_string = Some(val.into());
         self
     }
 
-    pub(crate) fn response_information(&mut self, val: String) -> &mut Self {
-        self.response_information = Some(ResponseInformation(val));
+    fn response_information(&mut self, val: String) -> &mut Self {
+        self.response_information = Some(val.into());
         self
     }
-    pub(crate) fn server_reference(&mut self, val: String) -> &mut Self {
-        self.server_reference = Some(ServerReference(val));
-        self
-    }
-
-    pub(crate) fn authentication_method(&mut self, val: String) -> &mut Self {
-        self.authentication_method = Some(AuthenticationMethod(val));
+    fn server_reference(&mut self, val: String) -> &mut Self {
+        self.server_reference = Some(val.into());
         self
     }
 
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(UserProperty(val));
+    fn authentication_method(&mut self, val: String) -> &mut Self {
+        self.authentication_method = Some(val.into());
         self
     }
 
-    pub(crate) fn build(self) -> Option<Connack> {
+    fn user_property(&mut self, val: StringPair) -> &mut Self {
+        self.user_property.push(val.into());
+        self
+    }
+
+    fn build(self) -> Option<Connack> {
         Some(Connack {
             session_present: self.session_present?,
             reason: self.reason?,
@@ -377,22 +377,22 @@ mod test {
         assert!(!result.session_present);
         assert_eq!(result.reason, ConnectReason::Success);
         assert_eq!(result.receive_maximum, ReceiveMaximum::default());
-        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum(0));
-        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
-        assert_eq!(result.retain_available, RetainAvailable(true));
-        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
+        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum::from(0));
+        assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::ExactlyOnce));
+        assert_eq!(result.retain_available, RetainAvailable::from(true));
+        assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::ExactlyOnce));
         assert!(result.maximum_packet_size.is_none());
         assert_eq!(
             result.wildcard_subscription_available,
-            WildcardSubscriptionAvailable(true)
+            WildcardSubscriptionAvailable::from(true)
         );
         assert_eq!(
             result.subscription_identifier_available,
-            SubscriptionIdentifierAvailable(true)
+            SubscriptionIdentifierAvailable::from(true)
         );
         assert_eq!(
             result.shared_subscription_available,
-            SharedSubscriptionAvailable(true)
+            SharedSubscriptionAvailable::from(true)
         );
     }
 
@@ -420,23 +420,29 @@ mod test {
         assert!(!result.session_present);
         assert!(result.maximum_packet_size.is_none());
         assert_eq!(result.reason, ConnectReason::Success);
-        assert_eq!(result.receive_maximum, ReceiveMaximum(NonZero::from(20)));
-        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum(10));
-        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
-        assert_eq!(result.server_keep_alive, Some(ServerKeepAlive(0xffff)));
-        assert_eq!(result.retain_available, RetainAvailable(true));
-        assert_eq!(result.maximum_qos, MaximumQoS(QoS::ExactlyOnce));
+        assert_eq!(
+            result.receive_maximum,
+            ReceiveMaximum::from(NonZero::from(20))
+        );
+        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum::from(10));
+        assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::ExactlyOnce));
+        assert_eq!(
+            result.server_keep_alive,
+            Some(ServerKeepAlive::from(0xffff))
+        );
+        assert_eq!(result.retain_available, RetainAvailable::from(true));
+        assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::ExactlyOnce));
         assert_eq!(
             result.wildcard_subscription_available,
-            WildcardSubscriptionAvailable(true)
+            WildcardSubscriptionAvailable::from(true)
         );
         assert_eq!(
             result.subscription_identifier_available,
-            SubscriptionIdentifierAvailable(true)
+            SubscriptionIdentifierAvailable::from(true)
         );
         assert_eq!(
             result.shared_subscription_available,
-            SharedSubscriptionAvailable(true)
+            SharedSubscriptionAvailable::from(true)
         );
     }
 
@@ -519,43 +525,49 @@ mod test {
         assert!(result.authentication_method.is_none());
         assert!(!result.session_present);
         assert_eq!(result.reason, ConnectReason::Success);
-        assert_eq!(result.session_expiry_interval, SessionExpiryInterval(900));
-        assert_eq!(result.receive_maximum, ReceiveMaximum(NonZero::from(20000)));
-        assert_eq!(result.maximum_qos, MaximumQoS(QoS::AtLeastOnce));
-        assert_eq!(result.retain_available, RetainAvailable(true));
+        assert_eq!(
+            result.session_expiry_interval,
+            SessionExpiryInterval::from(900)
+        );
+        assert_eq!(
+            result.receive_maximum,
+            ReceiveMaximum::from(NonZero::from(20000))
+        );
+        assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::AtLeastOnce));
+        assert_eq!(result.retain_available, RetainAvailable::from(true));
         assert_eq!(
             result.maximum_packet_size,
-            Some(MaximumPacketSize(NonZero::from(256)))
+            Some(MaximumPacketSize::from(NonZero::from(256)))
         );
         assert_eq!(
             result.assigned_client_identifier,
-            Some(AssignedClientIdentifier(String::from("test")))
+            Some(AssignedClientIdentifier::from(String::from("test")))
         );
-        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum(10));
+        assert_eq!(result.topic_alias_maximum, TopicAliasMaximum::from(10));
         assert_eq!(
             result.reason_string,
-            Some(ReasonString(String::from("success")))
+            Some(ReasonString::from(String::from("success")))
         );
         assert_eq!(
             result.wildcard_subscription_available,
-            WildcardSubscriptionAvailable(true)
+            WildcardSubscriptionAvailable::from(true)
         );
         assert_eq!(
             result.subscription_identifier_available,
-            SubscriptionIdentifierAvailable(true)
+            SubscriptionIdentifierAvailable::from(true)
         );
         assert_eq!(
             result.shared_subscription_available,
-            SharedSubscriptionAvailable(true)
+            SharedSubscriptionAvailable::from(true)
         );
-        assert_eq!(result.server_keep_alive, Some(ServerKeepAlive(100)));
+        assert_eq!(result.server_keep_alive, Some(ServerKeepAlive::from(100)));
         assert_eq!(
             result.response_information,
-            Some(ResponseInformation(String::from("test")))
+            Some(ResponseInformation::from(String::from("test")))
         );
         assert_eq!(
             result.server_reference,
-            Some(ServerReference(String::from("test")))
+            Some(ServerReference::from(String::from("test")))
         );
     }
 }
