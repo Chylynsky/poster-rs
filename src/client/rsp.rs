@@ -123,9 +123,9 @@ impl From<Puback> for PublishRsp {
 }
 
 pub struct UnsubscribeRsp {
-    reason: UnsubackReason,
-    reason_string: Option<String>,
-    user_property: Vec<(String, String)>,
+    pub reason: UnsubackReason,
+    pub reason_string: Option<String>,
+    pub user_property: Vec<(String, String)>,
 }
 
 impl From<Unsuback> for UnsubscribeRsp {

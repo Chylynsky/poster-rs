@@ -4,6 +4,6 @@ mod opts;
 mod rsp;
 mod streams;
 
-pub use context::{run, Context};
-pub use opts::{ConnectOpts, SubscribeOpts};
-pub use rsp::{ConnectRsp, SubscribeRsp};
+pub use context::{run, Context, ContextHandle};
+pub use opts::{ConnectOpts, PublishOpts, SubscribeOpts, UnsubscribeOpts};
+pub use rsp::{ConnectRsp, PublishRsp, SubscribeRsp, UnsubscribeRsp};

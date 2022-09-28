@@ -6,7 +6,7 @@ use crate::core::{
 use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum UnsubackReason {
+pub enum UnsubackReason {
     Success = 0x00,
     NoSubscriptionExisted = 0x11,
     UnspecifiedError = 0x80,

@@ -7,4 +7,4 @@ mod core;
 mod io;
 
 pub use client::*;
-pub use codec::{ConnectReason, SubackReason};
+pub use codec::{AuthReason, ConnectReason, PubackReason, SubackReason, UnsubackReason};

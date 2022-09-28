@@ -18,7 +18,7 @@ use std::{
     collections::HashMap,
     mem,
     sync::{
-        atomic::{AtomicU16, AtomicUsize, Ordering},
+        atomic::{AtomicU16, Ordering},
         Arc,
     },
 };
@@ -381,13 +381,6 @@ impl ContextHandle {
 
 /// Makes [Context] object start processing MQTT traffic, blocking the current task/thread until
 /// graceful disconnection or critical error.
-///
-/// # Thread example
-/// ```
-/// let ctx_thread = std::thread::spawn(move || {
-///     poster::run(ctx); // Blocks until disconnection or critical error.
-/// });
-/// ```
 ///
 /// # Tokio example
 /// ```

@@ -253,7 +253,7 @@ impl PublishOpts {
         self
     }
 
-    pub fn topic_name(mut self, val: String) -> Self {
+    pub fn topic(mut self, val: String) -> Self {
         self.builder.topic_name(val);
         self
     }
@@ -304,7 +304,7 @@ impl PublishOpts {
         self
     }
 
-    pub fn payload(mut self, val: Vec<u8>) -> Self {
+    pub fn data(mut self, val: Vec<u8>) -> Self {
         self.builder.payload(val);
         self
     }
@@ -329,7 +329,7 @@ impl UnsubscribeOpts {
         self
     }
 
-    pub fn payload(mut self, val: String) -> Self {
+    pub fn topic(mut self, val: String) -> Self {
         self.builder.payload(val);
         self
     }
