@@ -226,6 +226,12 @@ impl SubscribeOpts {
         self
     }
 
+    pub(crate) fn subscription_identifier(mut self, val: u32) -> Self {
+        self.builder
+            .subscription_identifier(NonZero::from(VarSizeInt::from(val)));
+        self
+    }
+
     pub(crate) fn build(self) -> Option<Subscribe> {
         let mut opts = self;
         opts.builder.payload((opts.topic, opts.opts));

@@ -1,9 +1,9 @@
 use crate::{
     codec::{
-        Auth, AuthReason, Connack, ConnectReason, Puback, PubackReason, Suback, SubackReason,
-        Unsuback, UnsubackReason,
+        Auth, AuthReason, Connack, ConnectReason, Puback, PubackReason, Publish, Suback,
+        SubackReason, Unsuback, UnsubackReason,
     },
-    core::base_types::{NonZero, QoS},
+    core::base_types::{NonZero, QoS, VarSizeInt},
 };
 
 pub struct ConnectRsp {
@@ -138,6 +138,55 @@ impl From<Unsuback> for UnsubscribeRsp {
                 .into_iter()
                 .map(|val| val.into())
                 .collect::<Vec<(String, String)>>(),
+        }
+    }
+}
+
+pub struct PublishData {
+    pub dup: bool,
+    pub retain: bool,
+    pub qos: QoS,
+
+    pub topic_name: String,
+
+    pub payload_format_indicator: Option<bool>,
+    pub topic_alias: Option<u16>,
+    pub message_expiry_interval: Option<u32>,
+    pub subscription_identifier: Option<u32>,
+    pub correlation_data: Option<Vec<u8>>,
+    pub response_topic: Option<String>,
+    pub content_type: Option<String>,
+    pub user_property: Vec<(String, String)>,
+
+    pub payload: Vec<u8>,
+}
+
+impl From<Publish> for PublishData {
+    fn from(pck: Publish) -> Self {
+        Self {
+            dup: pck.dup,
+            retain: pck.retain,
+            qos: pck.qos,
+            topic_name: pck.topic_name,
+            payload_format_indicator: pck.payload_format_indicator.map(|val| val.into()),
+            topic_alias: pck.topic_alias.map(|val| {
+                let topic_alias: NonZero<u16> = val.into();
+                topic_alias.value()
+            }),
+            message_expiry_interval: pck.message_expiry_interval.map(|val| val.into()),
+            subscription_identifier: pck.subscription_identifier.map(|val| {
+                let sub_id: NonZero<VarSizeInt> = val.into();
+                sub_id.value().into()
+            }),
+            correlation_data: pck.correlation_data.map(|val| val.into()),
+            response_topic: pck.response_topic.map(|val| val.into()),
+            content_type: pck.content_type.map(|val| val.into()),
+            user_property: pck
+                .user_property
+                .into_iter()
+                .map(|val| val.into())
+                .collect::<Vec<(String, String)>>(),
+            payload: pck.payload,
         }
     }
 }

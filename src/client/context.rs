@@ -6,7 +6,10 @@ use crate::{
         streams::{RxPacketStream, TxPacketStream},
     },
     codec::*,
-    core::utils::PacketID,
+    core::{
+        base_types::{NonZero, VarSizeInt},
+        utils::PacketID,
+    },
 };
 use either::{Either, Left, Right};
 use futures::{
@@ -18,7 +21,7 @@ use std::{
     collections::HashMap,
     mem,
     sync::{
-        atomic::{AtomicU16, Ordering},
+        atomic::{AtomicU16, AtomicU32, Ordering},
         Arc,
     },
 };
@@ -26,8 +29,6 @@ use std::{
 // TODO:
 // Subscription streams
 // Revisit error handling
-// Use NonZero from std
-// Use bytes for buffering (zero-copy) in codec?
 
 fn tx_packet_to_action_id(packet: &TxPacket) -> u32 {
     match packet {
@@ -62,6 +63,7 @@ fn tx_packet_to_action_id(packet: &TxPacket) -> u32 {
 }
 
 fn rx_packet_to_action_id(packet: &RxPacket) -> u32 {
+    // Note that PUBLISH packet is ommited, it is handled as a subscription
     match packet {
         RxPacket::Connack(_) => 0,
         RxPacket::Auth(_) => 0,
@@ -73,14 +75,7 @@ fn rx_packet_to_action_id(packet: &RxPacket) -> u32 {
                 | ((u16::from(unsuback.packet_identifier) as u32) << 8)
         }
         RxPacket::Pingresp(_) => (Pingresp::PACKET_ID as u32) << 24,
-        RxPacket::Publish(publish) => {
-            (Puback::PACKET_ID as u32) << 24
-                | (publish
-                    .packet_identifier
-                    .map(|val| -> u32 { u16::from(val) as u32 })
-                    .unwrap_or(0u32)
-                    << 8)
-        }
+
         RxPacket::Puback(puback) => {
             (Puback::PACKET_ID as u32) << 24 | ((u16::from(puback.packet_identifier) as u32) << 8)
         }
@@ -121,7 +116,8 @@ pub struct Context<RxStreamT, TxStreamT> {
     tx: TxPacketStream<TxStreamT>,
 
     active_requests: HashMap<u32, oneshot::Sender<RxPacket>>,
-    // active_subscriptions: HashMap<String, Channel>,
+    active_subscriptions: HashMap<u32, mpsc::Sender<RxPacket>>,
+
     message_queue: mpsc::Receiver<ContextMessage>,
 }
 
@@ -144,19 +140,20 @@ where
     /// User is responsible for making sure that at the point of calling this method,
     /// both the `rx` and `tx` are connected to the broker and ready for communication.
     pub fn new(rx: RxStreamT, tx: TxStreamT) -> (Self, ContextHandle) {
-        let (sender, receiver) = mpsc::channel(mem::size_of::<ContextMessage>());
+        let (sender, receiver) = mpsc::channel(16 * mem::size_of::<ContextMessage>());
 
         (
             Self {
                 rx: RxPacketStream::from(BufReader::with_capacity(Self::DEFAULT_BUF_SIZE, rx)),
                 tx: TxPacketStream::with_capacity(Self::DEFAULT_BUF_SIZE, tx),
                 active_requests: HashMap::new(),
-                // active_subscriptions: HashMap::new(),
+                active_subscriptions: HashMap::new(),
                 message_queue: receiver,
             },
             ContextHandle {
                 sender: sender,
                 packet_id: Arc::new(AtomicU16::from(1)),
+                sub_id: Arc::new(AtomicU32::from(1)),
             },
         )
     }
@@ -167,6 +164,7 @@ where
 pub struct ContextHandle {
     sender: mpsc::Sender<ContextMessage>,
     packet_id: Arc<AtomicU16>,
+    sub_id: Arc<AtomicU32>,
 }
 
 impl ContextHandle {
@@ -316,6 +314,7 @@ impl ContextHandle {
 
         let packet = opts
             .packet_identifier(self.packet_id.fetch_add(1, Ordering::Relaxed))
+            .subscription_identifier(self.sub_id.fetch_add(1, Ordering::Relaxed))
             .build()
             .expect("Invalid options found in SubscribeOpts.");
         let tx_packet = TxPacket::Subscribe(packet);
@@ -331,14 +330,14 @@ impl ContextHandle {
             .try_send(message)
             .expect("Error sending subscribe request to the context.");
 
-        receiver.await.ok().and_then(|packet| match packet {
+        receiver.await.ok().map(|packet| match packet {
             RxPacket::Suback(suback) => {
-                return Some((
+                return (
                     SubscribeRsp::from(suback),
                     SubscribeStream {
                         receiver: str_receiver,
                     },
-                ))
+                )
             }
             _ => {
                 panic!("Unexpected packet type.");
@@ -368,7 +367,7 @@ impl ContextHandle {
 
         self.sender
             .try_send(message)
-            .expect("Error sending ping request to the context.");
+            .expect("Error sending unsubscribe request to the context.");
 
         receiver.await.ok().map(|packet| match packet {
             RxPacket::Unsuback(unsuback) => UnsubscribeRsp::from(unsuback),
@@ -399,18 +398,34 @@ where
     loop {
         futures::select! {
             rx_packet_result = pck_fut => {
-                if let Some(rx_packet) = rx_packet_result {
-                    let id = rx_packet_to_action_id(&rx_packet);
+                if rx_packet_result.is_none() {
+                    // Socket closed
+                    eprintln!("Socket closed.");
+                    return;
+                }
 
-                    if let Some(sender) = ctx.active_requests.remove(&id) {
-                        sender.send(rx_packet).ok().expect("Failed to pass response to the context handle.");
+                let rx_packet = rx_packet_result.unwrap();
+
+                if let RxPacket::Publish(publish) = &rx_packet {
+                    if  publish.subscription_identifier.is_none() {
+                        continue;
                     }
 
-                    pck_fut = ctx.rx.next().fuse();
+                    let sub_id: NonZero<VarSizeInt> = publish.subscription_identifier.clone().unwrap().into();
+                    let subscription = ctx.active_subscriptions.get_mut(&sub_id.value().into()).expect("Subscription identifier not found.");
+
+                    subscription.try_send(rx_packet).expect("Failed to pass data to suscription.");
                     continue;
                 }
 
-              return; // Socket closed.
+                let id = rx_packet_to_action_id(&rx_packet);
+
+                if let Some(sender) = ctx.active_requests.remove(&id) {
+                    sender.send(rx_packet).ok().expect("Failed to pass response to the context handle.");
+                }
+
+                pck_fut = ctx.rx.next().fuse();
+                continue;
             },
             message_result = msg_fut => {
                 if let Some(msg_type) = message_result {
@@ -427,9 +442,13 @@ where
                             ctx.tx.write(msg.packet).await.expect("Failed to publish packet.");
                         },
                     }
+
+                    msg_fut = ctx.message_queue.next().fuse();
+                    continue;
                 }
 
-                msg_fut = ctx.message_queue.next().fuse()
+                eprintln!("MESSAGE QUEUE CLOSED");
+                return; // CRITICAL ERROR - message queue closed
             }
         }
     }

@@ -1,8 +1,8 @@
-use crate::codec::RxPacket;
+use crate::{client::rsp::PublishData, codec::RxPacket};
 use futures::{
     channel::mpsc,
     task::{self, Poll},
-    Stream,
+    Stream, StreamExt,
 };
 use std::pin::Pin;
 
@@ -11,9 +11,18 @@ pub struct SubscribeStream {
 }
 
 impl Stream for SubscribeStream {
-    type Item = ();
+    type Item = PublishData;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        Pin::new(&mut self).poll_next(cx)
+        match Pin::new(&mut self).receiver.poll_next_unpin(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(packet) => {
+                if let Some(RxPacket::Publish(publish)) = packet {
+                    return Poll::Ready(Some(PublishData::from(publish)));
+                }
+
+                return Poll::Ready(None);
+            }
+        }
     }
 }

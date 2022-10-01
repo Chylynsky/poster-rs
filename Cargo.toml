@@ -13,4 +13,3 @@ categories = ["network-programming", "mqtt", "networking"]
 [dependencies]
 either = "1.8"
 futures = "0.3"
-# bytes = "1.2"

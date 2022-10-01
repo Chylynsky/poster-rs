@@ -27,6 +27,8 @@ impl ToByteBuffer for UnsubscribeProperties {
         let result = &mut buf[0..len];
         let mut writer = ByteWriter::from(result);
 
+        writer.write(&property_len);
+
         for val in self.user_property.iter() {
             writer.write(val);
         }

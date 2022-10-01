@@ -452,6 +452,15 @@ pub(crate) struct NonZero<T>(T)
 where
     T: Copy;
 
+impl<T> NonZero<T>
+where
+    T: Copy,
+{
+    pub(crate) fn value(&self) -> T {
+        self.0
+    }
+}
+
 impl From<u8> for NonZero<u8> {
     fn from(val: u8) -> Self {
         assert!(val != 0);

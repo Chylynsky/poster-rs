@@ -5,3 +5,6 @@ Key features:
 * runtime agnostic (based on futures, see examples)
 * per subscription streams
 * cloneable handle lets you publish/subscribe/etc from multiple tasks/threads
+
+Broker requirements:
+* Support for subscription identifiers
