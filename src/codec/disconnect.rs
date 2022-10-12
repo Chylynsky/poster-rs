@@ -1,5 +1,10 @@
 use crate::core::{
     base_types::*,
+    error::{
+        CodecError, ConversionError, InsufficientBufferSize, InvalidPacketHeader,
+        InvalidPacketSize, InvalidPropertyLength, InvalidValue, MandatoryPropertyMissing,
+        UnexpectedProperty,
+    },
     properties::*,
     utils::{
         ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
@@ -41,39 +46,41 @@ pub(crate) enum DisconnectReason {
     WildcardSubscriptionsNotSupported = 0xa2,
 }
 
-impl DisconnectReason {
-    fn try_from(val: u8) -> Option<Self> {
+impl TryFrom<u8> for DisconnectReason {
+    type Error = ConversionError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0x00 => Some(DisconnectReason::Success),
-            0x04 => Some(DisconnectReason::DisconnectWithWillMessage),
-            0x80 => Some(DisconnectReason::UnspecifiedError),
-            0x81 => Some(DisconnectReason::MalformedPacket),
-            0x82 => Some(DisconnectReason::ProtocolError),
-            0x83 => Some(DisconnectReason::ImplementationSpecificError),
-            0x87 => Some(DisconnectReason::NotAuthorized),
-            0x89 => Some(DisconnectReason::ServerBusy),
-            0x8b => Some(DisconnectReason::ServerShuttingDown),
-            0x8d => Some(DisconnectReason::KeepAliveTimeout),
-            0x8e => Some(DisconnectReason::SessionTakenOver),
-            0x8f => Some(DisconnectReason::TopicFilterInvalid),
-            0x90 => Some(DisconnectReason::TopicNameInvalid),
-            0x93 => Some(DisconnectReason::ReceiveMaximumExcceeded),
-            0x94 => Some(DisconnectReason::TopicAliasInvalid),
-            0x95 => Some(DisconnectReason::PacketTooLarge),
-            0x96 => Some(DisconnectReason::MessageRateTooHigh),
-            0x97 => Some(DisconnectReason::QuotaExceeded),
-            0x98 => Some(DisconnectReason::AdministrativeAction),
-            0x99 => Some(DisconnectReason::PayloadFormatInvalid),
-            0x9a => Some(DisconnectReason::RetainNotSupported),
-            0x9b => Some(DisconnectReason::QoSNotSupported),
-            0x9c => Some(DisconnectReason::UseAnotherServer),
-            0x9d => Some(DisconnectReason::ServerMoved),
-            0x9e => Some(DisconnectReason::SharedSubscriptionsNotSupported),
-            0x9f => Some(DisconnectReason::ConnectionRateExceeded),
-            0xa0 => Some(DisconnectReason::MaximumConnectTime),
-            0xa1 => Some(DisconnectReason::SubscriptionIdentifiersNotSupported),
-            0xa2 => Some(DisconnectReason::WildcardSubscriptionsNotSupported),
-            _ => None,
+            0x00 => Ok(DisconnectReason::Success),
+            0x04 => Ok(DisconnectReason::DisconnectWithWillMessage),
+            0x80 => Ok(DisconnectReason::UnspecifiedError),
+            0x81 => Ok(DisconnectReason::MalformedPacket),
+            0x82 => Ok(DisconnectReason::ProtocolError),
+            0x83 => Ok(DisconnectReason::ImplementationSpecificError),
+            0x87 => Ok(DisconnectReason::NotAuthorized),
+            0x89 => Ok(DisconnectReason::ServerBusy),
+            0x8b => Ok(DisconnectReason::ServerShuttingDown),
+            0x8d => Ok(DisconnectReason::KeepAliveTimeout),
+            0x8e => Ok(DisconnectReason::SessionTakenOver),
+            0x8f => Ok(DisconnectReason::TopicFilterInvalid),
+            0x90 => Ok(DisconnectReason::TopicNameInvalid),
+            0x93 => Ok(DisconnectReason::ReceiveMaximumExcceeded),
+            0x94 => Ok(DisconnectReason::TopicAliasInvalid),
+            0x95 => Ok(DisconnectReason::PacketTooLarge),
+            0x96 => Ok(DisconnectReason::MessageRateTooHigh),
+            0x97 => Ok(DisconnectReason::QuotaExceeded),
+            0x98 => Ok(DisconnectReason::AdministrativeAction),
+            0x99 => Ok(DisconnectReason::PayloadFormatInvalid),
+            0x9a => Ok(DisconnectReason::RetainNotSupported),
+            0x9b => Ok(DisconnectReason::QoSNotSupported),
+            0x9c => Ok(DisconnectReason::UseAnotherServer),
+            0x9d => Ok(DisconnectReason::ServerMoved),
+            0x9e => Ok(DisconnectReason::SharedSubscriptionsNotSupported),
+            0x9f => Ok(DisconnectReason::ConnectionRateExceeded),
+            0xa0 => Ok(DisconnectReason::MaximumConnectTime),
+            0xa1 => Ok(DisconnectReason::SubscriptionIdentifiersNotSupported),
+            0xa2 => Ok(DisconnectReason::WildcardSubscriptionsNotSupported),
+            _ => Err(InvalidValue.into()),
         }
     }
 }
@@ -91,7 +98,9 @@ impl Default for DisconnectReason {
 }
 
 impl TryFromBytes for DisconnectReason {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = ConversionError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
@@ -201,20 +210,22 @@ impl SizedPacket for Disconnect {
 }
 
 impl TryFromBytes for Disconnect {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut builder = DisconnectBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr != Self::FIXED_HDR {
-            return None; // Invalid header
+            return Err(InvalidPacketHeader.into());
         }
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
         let packet_size =
             mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
         if packet_size > bytes.len() {
-            return None; // Invalid packet size
+            return Err(InvalidPacketSize.into());
         }
 
         let reason = reader.try_read::<DisconnectReason>()?;
@@ -222,14 +233,18 @@ impl TryFromBytes for Disconnect {
 
         let property_len = reader.try_read::<VarSizeInt>()?;
         if property_len.value() as usize > reader.remaining() {
-            return None; // Invalid property length
+            return Err(InvalidPropertyLength.into());
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            match property {
+            if property.is_err() {
+                return Err(property.unwrap_err().into());
+            }
+
+            match property.unwrap() {
                 Property::SessionExpiryInterval(_) => {
                     // The Session Expiry Interval MUST NOT be sent on a DISCONNECT by the Server
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
                 Property::ReasonString(val) => {
                     builder.reason_string(val.into());
@@ -241,7 +256,7 @@ impl TryFromBytes for Disconnect {
                     builder.user_property(val.into());
                 }
                 _ => {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
             }
         }
@@ -251,10 +266,12 @@ impl TryFromBytes for Disconnect {
 }
 
 impl TryToByteBuffer for Disconnect {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let packet_len = self.packet_len();
+    type Error = CodecError;
 
-        let result = buf.get_mut(0..packet_len)?;
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
+        let result = buf
+            .get_mut(0..self.packet_len())
+            .ok_or(InsufficientBufferSize)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&Self::FIXED_HDR);
@@ -266,7 +283,7 @@ impl TryToByteBuffer for Disconnect {
         writer.write(&self.reason);
         writer.write(&self.properties);
 
-        Some(result)
+        Ok(result)
     }
 }
 
@@ -305,7 +322,7 @@ impl DisconnectBuilder {
         self
     }
 
-    pub(crate) fn build(self) -> Option<Disconnect> {
+    pub(crate) fn build(self) -> Result<Disconnect, CodecError> {
         let properties = DisconnectProperties {
             session_expiry_interval: self.session_expiry_interval,
             reason_string: self.reason_string,
@@ -313,8 +330,8 @@ impl DisconnectBuilder {
             server_reference: self.server_reference,
         };
 
-        Some(Disconnect {
-            reason: self.reason?,
+        Ok(Disconnect {
+            reason: self.reason.ok_or(MandatoryPropertyMissing)?,
             properties,
         })
     }

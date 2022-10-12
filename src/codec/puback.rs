@@ -1,6 +1,9 @@
 use crate::{
     codec::ack::{Ack, AckBuilder},
-    core::utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+    core::{
+        error::{CodecError, ConversionError, InvalidValue},
+        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+    },
 };
 use core::mem;
 
@@ -17,19 +20,21 @@ pub enum PubackReason {
     PayloadFormatInvalid = 0x99,
 }
 
-impl PubackReason {
-    fn try_from(val: u8) -> Option<Self> {
+impl TryFrom<u8> for PubackReason {
+    type Error = ConversionError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0x00 => Some(PubackReason::Success),
-            0x10 => Some(PubackReason::NoMatchingSubscribers),
-            0x80 => Some(PubackReason::UnspecifiedError),
-            0x83 => Some(PubackReason::ImplementationSpecificError),
-            0x87 => Some(PubackReason::NotAuthorized),
-            0x90 => Some(PubackReason::TopicNameInvalid),
-            0x91 => Some(PubackReason::PacketIdentifierInUse),
-            0x97 => Some(PubackReason::QuotaExceeded),
-            0x99 => Some(PubackReason::PayloadFormatInvalid),
-            _ => None,
+            0x00 => Ok(PubackReason::Success),
+            0x10 => Ok(PubackReason::NoMatchingSubscribers),
+            0x80 => Ok(PubackReason::UnspecifiedError),
+            0x83 => Ok(PubackReason::ImplementationSpecificError),
+            0x87 => Ok(PubackReason::NotAuthorized),
+            0x90 => Ok(PubackReason::TopicNameInvalid),
+            0x91 => Ok(PubackReason::PacketIdentifierInUse),
+            0x97 => Ok(PubackReason::QuotaExceeded),
+            0x99 => Ok(PubackReason::PayloadFormatInvalid),
+            _ => Err(InvalidValue.into()),
         }
     }
 }
@@ -47,7 +52,9 @@ impl Default for PubackReason {
 }
 
 impl TryFromBytes for PubackReason {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = ConversionError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }

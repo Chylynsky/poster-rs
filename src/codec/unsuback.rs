@@ -1,5 +1,9 @@
 use crate::core::{
     base_types::*,
+    error::{
+        CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
+        InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
+    },
     properties::*,
     utils::{ByteReader, PacketID, TryFromBytes},
 };
@@ -16,17 +20,19 @@ pub enum UnsubackReason {
     PacketIdentifierInUse = 0x91,
 }
 
-impl UnsubackReason {
-    pub(crate) fn try_from(val: u8) -> Option<Self> {
+impl TryFrom<u8> for UnsubackReason {
+    type Error = ConversionError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0x00 => Some(UnsubackReason::Success),
-            0x11 => Some(UnsubackReason::NoSubscriptionExisted),
-            0x80 => Some(UnsubackReason::UnspecifiedError),
-            0x83 => Some(UnsubackReason::ImplementationSpecificError),
-            0x87 => Some(UnsubackReason::NotAuthorized),
-            0x8f => Some(UnsubackReason::TopicFilterInvalid),
-            0x91 => Some(UnsubackReason::PacketIdentifierInUse),
-            _ => None,
+            0x00 => Ok(UnsubackReason::Success),
+            0x11 => Ok(UnsubackReason::NoSubscriptionExisted),
+            0x80 => Ok(UnsubackReason::UnspecifiedError),
+            0x83 => Ok(UnsubackReason::ImplementationSpecificError),
+            0x87 => Ok(UnsubackReason::NotAuthorized),
+            0x8f => Ok(UnsubackReason::TopicFilterInvalid),
+            0x91 => Ok(UnsubackReason::PacketIdentifierInUse),
+            _ => Err(InvalidValue.into()),
         }
     }
 }
@@ -49,20 +55,28 @@ impl PacketID for Unsuback {
 }
 
 impl TryFromBytes for Unsuback {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut builder = UnsubackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<u8>()?;
-        if fixed_hdr != Self::FIXED_HDR {
-            return None; // Invalid header
-        }
+        let fixed_hdr = reader
+            .try_read::<u8>()
+            .map_err(CodecError::from)
+            .and_then(|val| {
+                if val != Self::FIXED_HDR {
+                    return Err(InvalidPacketHeader.into());
+                }
+
+                return Ok(val);
+            })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
         let packet_size =
             mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
         if packet_size > bytes.len() {
-            return None; // Invalid packet size
+            return Err(InvalidPacketSize.into());
         }
 
         let packet_id = reader.try_read::<NonZero<u16>>()?;
@@ -70,13 +84,17 @@ impl TryFromBytes for Unsuback {
 
         let property_len = reader.try_read::<VarSizeInt>()?;
         if property_len.value() as usize > reader.remaining() {
-            return None; // Invalid property length
+            return Err(InvalidPropertyLength.into());
         }
 
-        let (properties, payload) = reader.get_buf().split_at(property_len.into());
+        let (property_buf, payload) = reader.get_buf().split_at(property_len.into());
 
-        for property in PropertyIterator::from(properties) {
-            match property {
+        for property in PropertyIterator::from(property_buf) {
+            if property.is_err() {
+                return Err(property.unwrap_err().into());
+            }
+
+            match property.unwrap() {
                 Property::ReasonString(val) => {
                     builder.reason_string(val.into());
                 }
@@ -84,7 +102,7 @@ impl TryFromBytes for Unsuback {
                     builder.user_property(val.into());
                 }
                 _ => {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
             }
         }
@@ -93,7 +111,7 @@ impl TryFromBytes for Unsuback {
             payload
                 .iter()
                 .map(|&val| UnsubackReason::try_from(val))
-                .collect::<Option<Vec<UnsubackReason>>>()?,
+                .collect::<Result<Vec<UnsubackReason>, ConversionError>>()?,
         );
         builder.build()
     }
@@ -128,9 +146,9 @@ impl UnsubackBuilder {
         self
     }
 
-    fn build(self) -> Option<Unsuback> {
-        Some(Unsuback {
-            packet_identifier: self.packet_identifier?,
+    fn build(self) -> Result<Unsuback, CodecError> {
+        Ok(Unsuback {
+            packet_identifier: self.packet_identifier.ok_or(MandatoryPropertyMissing)?,
             reason_string: self.reason_string,
             user_property: self.user_property,
             payload: self.payload,

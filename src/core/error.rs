@@ -1,7 +1,8 @@
 use core::fmt;
+use std::{error::Error, string::FromUtf8Error};
 
-#[derive(Debug, Clone)]
-pub struct InvalidValue {}
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidValue;
 
 impl fmt::Display for InvalidValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -9,35 +10,43 @@ impl fmt::Display for InvalidValue {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct InvalidHeader {}
+impl Error for InvalidValue {}
 
-impl fmt::Display for InvalidHeader {
+#[derive(Debug, Clone, Copy)]
+pub struct ValueIsZero;
+
+impl fmt::Display for ValueIsZero {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "invalid packet header")
+        write!(f, "value must be other than 0")
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct InvalidPacketLength {}
+impl Error for ValueIsZero {}
 
-impl fmt::Display for InvalidPacketLength {
+#[derive(Debug, Clone, Copy)]
+pub struct ValueExceedesMaximum;
+
+impl fmt::Display for ValueExceedesMaximum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "invalid packet length")
+        write!(f, "value exceedes maximum")
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct InvalidPropertyLength {}
+impl Error for ValueExceedesMaximum {}
 
-impl fmt::Display for InvalidPropertyLength {
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidEncoding;
+
+impl fmt::Display for InvalidEncoding {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "invalid property length")
+        write!(f, "invalid encoding")
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct InsufficientBufferSize {}
+impl Error for InvalidEncoding {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InsufficientBufferSize;
 
 impl fmt::Display for InsufficientBufferSize {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -45,4 +54,237 @@ impl fmt::Display for InsufficientBufferSize {
     }
 }
 
-pub enum MqttError {}
+impl Error for InsufficientBufferSize {}
+
+#[derive(Debug, Clone)]
+pub enum ConversionError {
+    InvalidValue(InvalidValue),
+    ValueIsZero(ValueIsZero),
+    ValueExceedesMaximum(ValueExceedesMaximum),
+    InvalidEncoding(InvalidEncoding),
+    Utf8Error(FromUtf8Error),
+    InsufficientBufferSize(InsufficientBufferSize),
+}
+
+impl fmt::Display for ConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidValue(err) => write!(f, "ConversionError: {}", err),
+            Self::ValueIsZero(err) => write!(f, "ConversionError: {}", err),
+            Self::ValueExceedesMaximum(err) => write!(f, "ConversionError: {}", err),
+            Self::InvalidEncoding(err) => write!(f, "ConversionError: {}", err),
+            Self::Utf8Error(err) => write!(f, "ConversionError: {}", err),
+            Self::InsufficientBufferSize(err) => write!(f, "ConversionError: {}", err),
+        }
+    }
+}
+
+impl Error for ConversionError {}
+
+impl From<InvalidValue> for ConversionError {
+    fn from(err: InvalidValue) -> Self {
+        Self::InvalidValue(err)
+    }
+}
+
+impl From<ValueIsZero> for ConversionError {
+    fn from(err: ValueIsZero) -> Self {
+        Self::ValueIsZero(err)
+    }
+}
+
+impl From<ValueExceedesMaximum> for ConversionError {
+    fn from(err: ValueExceedesMaximum) -> Self {
+        Self::ValueExceedesMaximum(err)
+    }
+}
+
+impl From<InvalidEncoding> for ConversionError {
+    fn from(err: InvalidEncoding) -> Self {
+        Self::InvalidEncoding(err)
+    }
+}
+
+impl From<FromUtf8Error> for ConversionError {
+    fn from(err: FromUtf8Error) -> Self {
+        Self::Utf8Error(err)
+    }
+}
+
+impl From<InsufficientBufferSize> for ConversionError {
+    fn from(err: InsufficientBufferSize) -> Self {
+        Self::InsufficientBufferSize(err)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidPropertyId;
+
+impl fmt::Display for InvalidPropertyId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid property identifier")
+    }
+}
+
+impl Error for InvalidPropertyId {}
+
+#[derive(Debug, Clone)]
+pub enum PropertyError {
+    ConversionError(ConversionError),
+    InvalidPropertyId(InvalidPropertyId),
+}
+
+impl fmt::Display for PropertyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::ConversionError(err) => write!(f, "PropertyError: {}", err),
+            Self::InvalidPropertyId(err) => write!(f, "PropertyError: {}", err),
+        }
+    }
+}
+
+impl Error for PropertyError {}
+
+impl From<ConversionError> for PropertyError {
+    fn from(err: ConversionError) -> Self {
+        Self::ConversionError(err)
+    }
+}
+
+impl From<InvalidPropertyId> for PropertyError {
+    fn from(err: InvalidPropertyId) -> Self {
+        Self::InvalidPropertyId(err)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UnexpectedProperty;
+
+impl fmt::Display for UnexpectedProperty {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "unexpected property")
+    }
+}
+
+impl Error for UnexpectedProperty {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidPacketHeader;
+
+impl fmt::Display for InvalidPacketHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid packet header")
+    }
+}
+
+impl Error for InvalidPacketHeader {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidPacketSize;
+
+impl fmt::Display for InvalidPacketSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid packet size")
+    }
+}
+
+impl Error for InvalidPacketSize {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InvalidPropertyLength;
+
+impl fmt::Display for InvalidPropertyLength {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid property length")
+    }
+}
+
+impl Error for InvalidPropertyLength {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MandatoryPropertyMissing;
+
+impl fmt::Display for MandatoryPropertyMissing {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "mandatory property missing")
+    }
+}
+
+impl Error for MandatoryPropertyMissing {}
+
+#[derive(Debug, Clone)]
+pub enum CodecError {
+    ConversionError(ConversionError),
+    PropertyError(PropertyError),
+    UnexpectedProperty(UnexpectedProperty),
+    InvalidPacketHeader(InvalidPacketHeader),
+    InvalidPacketSize(InvalidPacketSize),
+    InvalidPropertyLength(InvalidPropertyLength),
+    InsufficientBufferSize(InsufficientBufferSize),
+    MandatoryPropertyMissing(MandatoryPropertyMissing),
+}
+
+impl fmt::Display for CodecError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::ConversionError(err) => write!(f, "CodecError: {}", err),
+            Self::PropertyError(err) => write!(f, "CodecError: {}", err),
+            Self::UnexpectedProperty(err) => write!(f, "CodecError: {}", err),
+            Self::InvalidPacketHeader(err) => write!(f, "CodecError: {}", err),
+            Self::InvalidPacketSize(err) => write!(f, "CodecError: {}", err),
+            Self::InvalidPropertyLength(err) => write!(f, "CodecError: {}", err),
+            Self::InsufficientBufferSize(err) => write!(f, "CodecError: {}", err),
+            Self::MandatoryPropertyMissing(err) => write!(f, "CodecError: {}", err),
+        }
+    }
+}
+
+impl Error for CodecError {}
+
+impl From<ConversionError> for CodecError {
+    fn from(err: ConversionError) -> Self {
+        Self::PropertyError(err.into())
+    }
+}
+
+impl From<PropertyError> for CodecError {
+    fn from(err: PropertyError) -> Self {
+        Self::PropertyError(err)
+    }
+}
+
+impl From<UnexpectedProperty> for CodecError {
+    fn from(err: UnexpectedProperty) -> Self {
+        Self::UnexpectedProperty(err)
+    }
+}
+
+impl From<InvalidPacketHeader> for CodecError {
+    fn from(err: InvalidPacketHeader) -> Self {
+        Self::InvalidPacketHeader(err)
+    }
+}
+
+impl From<InvalidPacketSize> for CodecError {
+    fn from(err: InvalidPacketSize) -> Self {
+        Self::InvalidPacketSize(err)
+    }
+}
+
+impl From<InvalidPropertyLength> for CodecError {
+    fn from(err: InvalidPropertyLength) -> Self {
+        Self::InvalidPropertyLength(err)
+    }
+}
+
+impl From<InsufficientBufferSize> for CodecError {
+    fn from(err: InsufficientBufferSize) -> Self {
+        Self::InsufficientBufferSize(err)
+    }
+}
+
+impl From<MandatoryPropertyMissing> for CodecError {
+    fn from(err: MandatoryPropertyMissing) -> Self {
+        Self::MandatoryPropertyMissing(err)
+    }
+}

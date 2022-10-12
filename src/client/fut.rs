@@ -1,10 +1,10 @@
 use crate::{client::rsp::PublishData, codec::RxPacket};
+use core::pin::Pin;
 use futures::{
     channel::mpsc,
     task::{self, Poll},
     Stream, StreamExt,
 };
-use std::pin::Pin;
 
 pub struct SubscribeStream {
     pub(crate) receiver: mpsc::UnboundedReceiver<RxPacket>,

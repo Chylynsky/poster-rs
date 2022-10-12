@@ -1,13 +1,13 @@
 use crate::{
     codec::RxPacket,
-    core::base_types::VarSizeInt,
     core::utils::{ByteReader, TryFromBytes},
+    core::{base_types::VarSizeInt, error::CodecError},
 };
-use futures::{AsyncBufRead, Stream};
-use std::{
+use core::{
     pin::Pin,
     task::{Context, Poll},
 };
+use futures::{AsyncBufRead, Stream};
 
 enum PacketStreamState {
     ReadPacketSize,
@@ -38,7 +38,7 @@ impl<StreamT> Stream for PacketStream<StreamT>
 where
     StreamT: AsyncBufRead + Unpin,
 {
-    type Item = RxPacket;
+    type Item = Result<RxPacket, CodecError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let (state, mut stream) = self.split_borrows_mut();
@@ -50,7 +50,7 @@ where
             match state {
                 PacketStreamState::ReadPacketSize => {
                     let mut reader = ByteReader::from(&buf[1..]);
-                    if let Some(remaining_len) = reader.try_read::<VarSizeInt>() {
+                    if let Ok(remaining_len) = reader.try_read::<VarSizeInt>() {
                         *state = PacketStreamState::ReadPacket(
                             1 + remaining_len.len() + remaining_len.value() as usize,
                         );
@@ -65,7 +65,7 @@ where
 
                         Pin::new(&mut stream).consume(*packet_size); // Consume the packet
                         *state = PacketStreamState::ReadPacketSize;
-                        return Poll::Ready(result);
+                        return Poll::Ready(Some(result));
                     }
                 }
             }

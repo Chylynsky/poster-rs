@@ -1,5 +1,8 @@
-use crate::core::utils::{ByteWriter, PacketID, SizedPacket, TryToByteBuffer};
-use std::mem;
+use crate::core::{
+    error::{CodecError, InsufficientBufferSize},
+    utils::{ByteWriter, PacketID, SizedPacket, TryToByteBuffer},
+};
+use core::mem;
 
 pub(crate) struct Pingreq {}
 
@@ -18,16 +21,18 @@ impl SizedPacket for Pingreq {
 }
 
 impl TryToByteBuffer for Pingreq {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let packet_len = self.packet_len();
+    type Error = CodecError;
 
-        let result = buf.get_mut(0..packet_len)?;
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
+        let result = buf
+            .get_mut(0..self.packet_len())
+            .ok_or(InsufficientBufferSize)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&Self::FIXED_HDR);
         writer.write(&0u8);
 
-        Some(result)
+        Ok(result)
     }
 }
 

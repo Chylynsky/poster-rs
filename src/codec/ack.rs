@@ -1,5 +1,9 @@
 use crate::core::{
     base_types::*,
+    error::{
+        CodecError, ConversionError, InsufficientBufferSize, InvalidPacketHeader,
+        InvalidPacketSize, InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
+    },
     properties::*,
     utils::{
         ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
@@ -68,21 +72,30 @@ impl<ReasonT> TryFromBytes for Ack<ReasonT>
 where
     Self: PacketID,
     ReasonT: Default + PartialEq + TryFromBytes + SizedProperty,
+    <ReasonT as TryFromBytes>::Error: Into<CodecError>,
 {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut builder = AckBuilder::<ReasonT>::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<u8>()?;
-        if fixed_hdr != Self::FIXED_HDR {
-            return None; // Invalid header
-        }
+        let fixed_hdr = reader
+            .try_read::<u8>()
+            .map_err(CodecError::from)
+            .and_then(|val| {
+                if val != Self::FIXED_HDR {
+                    return Err(InvalidPacketHeader.into());
+                }
+
+                return Ok(val);
+            })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
         let packet_size =
             mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
         if packet_size > bytes.len() {
-            return None; // Invalid packet size
+            return Err(InvalidPacketSize.into());
         }
 
         let packet_id = reader.try_read::<NonZero<u16>>()?;
@@ -93,16 +106,20 @@ where
             return builder.build();
         }
 
-        let reason = reader.try_read::<ReasonT>()?;
+        let reason = reader.try_read::<ReasonT>().map_err(|err| err.into())?;
         builder.reason(reason);
 
         let property_len = reader.try_read::<VarSizeInt>()?;
         if property_len.value() as usize > reader.remaining() {
-            return None; // Invalid property length
+            return Err(InvalidPropertyLength.into());
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            match property {
+            if property.is_err() {
+                return Err(property.unwrap_err().into());
+            }
+
+            match property.unwrap() {
                 Property::ReasonString(val) => {
                     builder.reason_string(val.into());
                 }
@@ -110,7 +127,7 @@ where
                     builder.user_property(val.into());
                 }
                 _ => {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
             }
         }
@@ -124,8 +141,12 @@ where
     Self: PacketID,
     ReasonT: Default + SizedProperty + PartialEq + ToByteBuffer,
 {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let result = buf.get_mut(0..self.packet_len())?;
+    type Error = CodecError;
+
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
+        let result = buf
+            .get_mut(0..self.packet_len())
+            .ok_or(InsufficientBufferSize)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&Self::FIXED_HDR);
@@ -137,7 +158,7 @@ where
         writer.write(&self.packet_identifier);
 
         if remaining_len.value() == 2 {
-            return Some(result);
+            return Ok(result);
         }
 
         writer.write(&self.reason);
@@ -151,7 +172,7 @@ where
             writer.write(val);
         }
 
-        Some(result)
+        Ok(result)
     }
 }
 
@@ -190,9 +211,9 @@ where
         self
     }
 
-    pub(crate) fn build(self) -> Option<Ack<ReasonT>> {
-        Some(Ack {
-            packet_identifier: self.packet_identifier?,
+    pub(crate) fn build(self) -> Result<Ack<ReasonT>, CodecError> {
+        Ok(Ack {
+            packet_identifier: self.packet_identifier.ok_or(MandatoryPropertyMissing)?,
             reason: self.reason.unwrap_or_default(),
             reason_string: self.reason_string,
             user_property: self.user_property,
@@ -204,12 +225,13 @@ where
 pub(crate) mod test {
     use super::*;
     use crate::core::utils::PropertyID;
-    use std::{cmp::PartialEq, fmt::Debug};
+    use core::{cmp::PartialEq, fmt::Debug};
 
     pub(crate) fn from_bytes_impl<ReasonT>()
     where
         ReasonT: Debug + PartialEq + Default + TryFromBytes + SizedProperty,
         Ack<ReasonT>: PacketID,
+        <ReasonT as TryFromBytes>::Error: Debug + Into<CodecError>,
     {
         let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let input_packet = [
@@ -261,6 +283,7 @@ pub(crate) mod test {
     where
         ReasonT: Debug + PartialEq + Default + TryFromBytes + SizedProperty,
         Ack<ReasonT>: PacketID,
+        <ReasonT as TryFromBytes>::Error: Debug + Into<CodecError>,
     {
         let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let input_packet = [
@@ -278,6 +301,7 @@ pub(crate) mod test {
     where
         ReasonT: PartialEq + Default + TryFromBytes,
         Ack<ReasonT>: PacketID + TryToByteBuffer,
+        <Ack<ReasonT> as TryToByteBuffer>::Error: Debug + Into<CodecError>,
     {
         let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let expected_packet = [
@@ -328,6 +352,7 @@ pub(crate) mod test {
     where
         ReasonT: PartialEq + Default + TryFromBytes,
         Ack<ReasonT>: PacketID + TryToByteBuffer,
+        <Ack<ReasonT> as TryToByteBuffer>::Error: Debug,
     {
         let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let expected_packet = [

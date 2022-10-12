@@ -1,5 +1,9 @@
 use crate::core::{
     base_types::*,
+    error::{
+        CodecError, InsufficientBufferSize, InvalidPacketHeader, InvalidPacketSize,
+        InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
+    },
     properties::*,
     utils::{
         ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, TryFromBytes, TryToByteBuffer,
@@ -109,13 +113,15 @@ impl SizedPacket for Publish {
 }
 
 impl TryFromBytes for Publish {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut builder = PublishBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
         let fixed_hdr = reader.try_read::<u8>()?;
         if fixed_hdr >> 4 != Self::PACKET_ID {
-            return None; // Invalid header
+            return Err(InvalidPacketHeader.into());
         }
 
         let qos = QoS::try_from(((fixed_hdr >> 1) & 0x03) as u8)?;
@@ -128,7 +134,7 @@ impl TryFromBytes for Publish {
         let packet_size =
             mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
         if packet_size > bytes.len() {
-            return None; // Invalid packet size
+            return Err(InvalidPacketSize.into());
         }
 
         let topic_name = reader.try_read::<String>()?;
@@ -140,13 +146,18 @@ impl TryFromBytes for Publish {
             builder.packet_identifier(packet_id);
         }
 
-        let property_len = reader.try_read::<VarSizeInt>()?;
-        if property_len.value() as usize > reader.remaining() {
-            return None; // Invalid property length
+        let property_len = reader.try_read::<VarSizeInt>().map(usize::from)?;
+        if property_len as usize > reader.remaining() {
+            return Err(InvalidPropertyLength.into());
         }
 
-        for property in PropertyIterator::from(reader.get_buf()) {
-            match property {
+        let property_buf = reader.get_buf().get(..property_len).unwrap();
+        for property in PropertyIterator::from(property_buf) {
+            if property.is_err() {
+                return Err(property.unwrap_err().into());
+            }
+
+            match property.unwrap() {
                 Property::PayloadFormatIndicator(val) => {
                     builder.payload_format_indicator(val.into());
                 }
@@ -172,10 +183,12 @@ impl TryFromBytes for Publish {
                     builder.user_property(val.into());
                 }
                 _ => {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
             }
         }
+
+        reader.advance_by(property_len);
 
         builder.payload(reader.try_read::<Binary>()?);
         builder.build()
@@ -183,10 +196,12 @@ impl TryFromBytes for Publish {
 }
 
 impl TryToByteBuffer for Publish {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let packet_len = self.packet_len();
+    type Error = CodecError;
 
-        let result = buf.get_mut(0..packet_len)?;
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
+        let result = buf
+            .get_mut(0..self.packet_len())
+            .ok_or(InsufficientBufferSize)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&self.fixed_hdr());
@@ -237,7 +252,7 @@ impl TryToByteBuffer for Publish {
 
         writer.write(&self.payload);
 
-        Some(result)
+        Ok(result)
     }
 }
 
@@ -333,30 +348,30 @@ impl PublishBuilder {
         self
     }
 
-    pub(crate) fn build(self) -> Option<Publish> {
+    pub(crate) fn build(self) -> Result<Publish, CodecError> {
         match self.qos {
             QoS::AtMostOnce => {
                 if self.dup {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
 
                 if self.packet_identifier.is_some() {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
             }
             QoS::AtLeastOnce => {
-                self.packet_identifier?;
+                self.packet_identifier.ok_or(MandatoryPropertyMissing)?;
             }
             QoS::ExactlyOnce => {
-                self.packet_identifier?;
+                self.packet_identifier.ok_or(MandatoryPropertyMissing)?;
             }
         }
 
-        Some(Publish {
+        Ok(Publish {
             dup: self.dup,
             retain: self.retain,
             qos: self.qos,
-            topic_name: self.topic_name?,
+            topic_name: self.topic_name.ok_or(MandatoryPropertyMissing)?,
             packet_identifier: self.packet_identifier,
             payload_format_indicator: self.payload_format_indicator,
             topic_alias: self.topic_alias,
@@ -366,7 +381,7 @@ impl PublishBuilder {
             response_topic: self.response_topic,
             content_type: self.content_type,
             user_property: self.user_property,
-            payload: self.payload?,
+            payload: self.payload.ok_or(MandatoryPropertyMissing)?,
         })
     }
 }
@@ -378,8 +393,9 @@ mod test {
     const FIXED_HDR: u8 = (((Publish::PACKET_ID as u8) << 4) | 0x0b) as u8; // DUP: 1, QoS: 1, RETAIN: 1
     const PACKET: [u8; 17] = [
         FIXED_HDR, 15, // Remaining length
-        0,  // Topic length
-        4, b't', b'e', b's', b't', 0, 13, // Packet ID
+        0,  // Topic length MSB
+        4,  // Topic length LSB
+        b't', b'e', b's', b't', 0, 13, // Packet ID
         0,  // Property length
         // Payload
         0, 4, b't', b'e', b's', b't',

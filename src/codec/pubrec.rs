@@ -1,6 +1,9 @@
 use crate::{
     codec::ack::{Ack, AckBuilder},
-    core::utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+    core::{
+        error::{ConversionError, InvalidValue},
+        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+    },
 };
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -16,19 +19,21 @@ pub(crate) enum PubrecReason {
     PayloadFormatInvalid = 0x99,
 }
 
-impl PubrecReason {
-    fn try_from(val: u8) -> Option<Self> {
+impl TryFrom<u8> for PubrecReason {
+    type Error = ConversionError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0x00 => Some(PubrecReason::Success),
-            0x10 => Some(PubrecReason::NoMatchingSubscribers),
-            0x80 => Some(PubrecReason::UnspecifiedError),
-            0x83 => Some(PubrecReason::ImplementationSpecificError),
-            0x87 => Some(PubrecReason::NotAuthorized),
-            0x90 => Some(PubrecReason::TopicNameInvalid),
-            0x91 => Some(PubrecReason::PacketIdentifierInUse),
-            0x97 => Some(PubrecReason::QuotaExceeded),
-            0x99 => Some(PubrecReason::PayloadFormatInvalid),
-            _ => None,
+            0x00 => Ok(PubrecReason::Success),
+            0x10 => Ok(PubrecReason::NoMatchingSubscribers),
+            0x80 => Ok(PubrecReason::UnspecifiedError),
+            0x83 => Ok(PubrecReason::ImplementationSpecificError),
+            0x87 => Ok(PubrecReason::NotAuthorized),
+            0x90 => Ok(PubrecReason::TopicNameInvalid),
+            0x91 => Ok(PubrecReason::PacketIdentifierInUse),
+            0x97 => Ok(PubrecReason::QuotaExceeded),
+            0x99 => Ok(PubrecReason::PayloadFormatInvalid),
+            _ => Err(InvalidValue.into()),
         }
     }
 }
@@ -46,7 +51,9 @@ impl SizedProperty for PubrecReason {
 }
 
 impl TryFromBytes for PubrecReason {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = ConversionError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }

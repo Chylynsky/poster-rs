@@ -1,5 +1,6 @@
 use crate::core::{
     base_types::*,
+    error::{CodecError, InsufficientBufferSize},
     properties::*,
     utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
 };
@@ -137,10 +138,12 @@ impl SizedPacket for Subscribe {
 }
 
 impl TryToByteBuffer for Subscribe {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-        let packet_len = self.packet_len();
+    type Error = CodecError;
 
-        let result = buf.get_mut(0..packet_len)?;
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
+        let result = buf
+            .get_mut(0..self.packet_len())
+            .ok_or(InsufficientBufferSize)?;
         let mut writer = ByteWriter::from(result);
 
         writer.write(&Self::FIXED_HDR);
@@ -157,7 +160,7 @@ impl TryToByteBuffer for Subscribe {
             writer.write(opts);
         }
 
-        Some(result)
+        Ok(result)
     }
 }
 

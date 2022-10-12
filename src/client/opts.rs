@@ -4,7 +4,10 @@ use crate::{
         RetainHandling, Subscribe, SubscribeBuilder, SubscriptionOptions, Unsubscribe,
         UnsubscribeBuilder,
     },
-    core::base_types::{NonZero, QoS, VarSizeInt},
+    core::{
+        base_types::{NonZero, QoS, VarSizeInt},
+        error::CodecError,
+    },
 };
 
 #[derive(Default)]
@@ -178,7 +181,7 @@ impl AuthOpts {
         self
     }
 
-    pub(crate) fn build(self) -> Option<Auth> {
+    pub(crate) fn build(self) -> Result<Auth, CodecError> {
         self.builder.build()
     }
 }
@@ -315,7 +318,7 @@ impl PublishOpts {
         self
     }
 
-    pub(crate) fn build(self) -> Option<Publish> {
+    pub(crate) fn build(self) -> Result<Publish, CodecError> {
         self.builder.build()
     }
 }

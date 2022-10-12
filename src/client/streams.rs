@@ -33,6 +33,7 @@ impl<TxStreamT> TxPacketStream<TxStreamT> {
     where
         TxStreamT: AsyncWrite + Unpin,
         PacketT: SizedPacket + TryToByteBuffer,
+        <PacketT as TryToByteBuffer>::Error: core::fmt::Debug,
     {
         self.buf.resize(packet.packet_len(), 0u8);
         let raw = packet.try_to_byte_buffer(&mut self.buf).unwrap();

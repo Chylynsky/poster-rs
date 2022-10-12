@@ -1,5 +1,9 @@
 use crate::core::{
     base_types::*,
+    error::{
+        CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
+        InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
+    },
     properties::*,
     utils::{ByteReader, PacketID, SizedProperty, TryFromBytes},
 };
@@ -31,32 +35,34 @@ pub enum ConnectReason {
     ConnectionRateExceeded = 0x9f,
 }
 
-impl ConnectReason {
-    fn try_from(val: u8) -> Option<Self> {
+impl TryFrom<u8> for ConnectReason {
+    type Error = ConversionError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0x00 => Some(ConnectReason::Success),
-            0x80 => Some(ConnectReason::UnspecifiedError),
-            0x81 => Some(ConnectReason::MalformedPacket),
-            0x82 => Some(ConnectReason::ProtocolError),
-            0x83 => Some(ConnectReason::ImplementationSpecificError),
-            0x84 => Some(ConnectReason::UnsupportedProtocolVersion),
-            0x85 => Some(ConnectReason::ClientIdentifierNotValid),
-            0x86 => Some(ConnectReason::BadUserNameOrPassword),
-            0x87 => Some(ConnectReason::NotAuthorized),
-            0x88 => Some(ConnectReason::ServerUnavailable),
-            0x89 => Some(ConnectReason::ServerBusy),
-            0x8a => Some(ConnectReason::Banned),
-            0x8c => Some(ConnectReason::BadUthenticationMethod),
-            0x90 => Some(ConnectReason::TopicNameInvalid),
-            0x95 => Some(ConnectReason::PacketTooLarge),
-            0x97 => Some(ConnectReason::QuotaExceeded),
-            0x99 => Some(ConnectReason::PayloadFormatInvalid),
-            0x9a => Some(ConnectReason::RetainNotSupported),
-            0x9b => Some(ConnectReason::QoSNotSupported),
-            0x9c => Some(ConnectReason::UseAnotherServer),
-            0x9d => Some(ConnectReason::ServerMoved),
-            0x9f => Some(ConnectReason::ConnectionRateExceeded),
-            _ => None,
+            0x00 => Ok(ConnectReason::Success),
+            0x80 => Ok(ConnectReason::UnspecifiedError),
+            0x81 => Ok(ConnectReason::MalformedPacket),
+            0x82 => Ok(ConnectReason::ProtocolError),
+            0x83 => Ok(ConnectReason::ImplementationSpecificError),
+            0x84 => Ok(ConnectReason::UnsupportedProtocolVersion),
+            0x85 => Ok(ConnectReason::ClientIdentifierNotValid),
+            0x86 => Ok(ConnectReason::BadUserNameOrPassword),
+            0x87 => Ok(ConnectReason::NotAuthorized),
+            0x88 => Ok(ConnectReason::ServerUnavailable),
+            0x89 => Ok(ConnectReason::ServerBusy),
+            0x8a => Ok(ConnectReason::Banned),
+            0x8c => Ok(ConnectReason::BadUthenticationMethod),
+            0x90 => Ok(ConnectReason::TopicNameInvalid),
+            0x95 => Ok(ConnectReason::PacketTooLarge),
+            0x97 => Ok(ConnectReason::QuotaExceeded),
+            0x99 => Ok(ConnectReason::PayloadFormatInvalid),
+            0x9a => Ok(ConnectReason::RetainNotSupported),
+            0x9b => Ok(ConnectReason::QoSNotSupported),
+            0x9c => Ok(ConnectReason::UseAnotherServer),
+            0x9d => Ok(ConnectReason::ServerMoved),
+            0x9f => Ok(ConnectReason::ConnectionRateExceeded),
+            _ => Err(InvalidValue.into()),
         }
     }
 }
@@ -74,7 +80,9 @@ impl SizedProperty for ConnectReason {
 }
 
 impl TryFromBytes for ConnectReason {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = ConversionError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
@@ -114,23 +122,31 @@ impl PacketID for Connack {
 }
 
 impl TryFromBytes for Connack {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self>
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
         let mut builder = ConnackBuilder::default();
         let mut reader = ByteReader::from(bytes);
 
-        let fixed_hdr = reader.try_read::<u8>()?;
-        if fixed_hdr >> 4 != Self::PACKET_ID {
-            return None; // Invalid header
-        }
+        let fixed_hdr = reader
+            .try_read::<u8>()
+            .map_err(CodecError::from)
+            .and_then(|val| {
+                if val >> 4 != Self::PACKET_ID {
+                    return Err(InvalidPacketHeader.into());
+                }
+
+                return Ok(val);
+            })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
         let packet_size =
             mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
         if packet_size > bytes.len() {
-            return None; // Invalid packet size
+            return Err(InvalidPacketSize.into());
         }
 
         let session_present = reader.try_read::<bool>()?;
@@ -141,11 +157,15 @@ impl TryFromBytes for Connack {
 
         let property_len = reader.try_read::<VarSizeInt>()?;
         if property_len.value() as usize > reader.remaining() {
-            return None; // Invalid property length
+            return Err(InvalidPropertyLength.into());
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            match property {
+            if property.is_err() {
+                return Err(property.unwrap_err().into());
+            }
+
+            match property.unwrap() {
                 Property::WildcardSubscriptionAvailable(val) => {
                     builder.wildcard_subscription_available(val.into());
                 }
@@ -198,7 +218,7 @@ impl TryFromBytes for Connack {
                     builder.user_property(val.into());
                 }
                 _ => {
-                    return None;
+                    return Err(UnexpectedProperty.into());
                 }
             }
         }
@@ -333,10 +353,10 @@ impl ConnackBuilder {
         self
     }
 
-    fn build(self) -> Option<Connack> {
-        Some(Connack {
-            session_present: self.session_present?,
-            reason: self.reason?,
+    fn build(self) -> Result<Connack, CodecError> {
+        Ok(Connack {
+            session_present: self.session_present.ok_or(MandatoryPropertyMissing)?,
+            reason: self.reason.ok_or(MandatoryPropertyMissing)?,
             wildcard_subscription_available: self.wildcard_subscription_available,
             subscription_identifier_available: self.subscription_identifier_available,
             shared_subscription_available: self.shared_subscription_available,

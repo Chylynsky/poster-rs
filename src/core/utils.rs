@@ -18,7 +18,9 @@ pub(crate) trait TryFromBytes
 where
     Self: Sized,
 {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self>;
+    type Error;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>;
 }
 
 pub(crate) trait ToByteBuffer {
@@ -26,14 +28,18 @@ pub(crate) trait ToByteBuffer {
 }
 
 pub(crate) trait TryToByteBuffer {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]>;
+    type Error;
+
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error>;
 }
 
 pub(crate) trait TryFromIterator<T>
 where
     Self: Sized,
 {
-    fn try_from_iter<Iter>(iter: Iter) -> Option<Self>
+    type Error;
+
+    fn try_from_iter<Iter>(iter: Iter) -> Result<Self, Self::Error>
     where
         Iter: Iterator<Item = T> + Clone;
 }
@@ -44,7 +50,7 @@ pub(crate) struct ByteReader<'a> {
 }
 
 impl<'a> ByteReader<'a> {
-    fn advance_by(&mut self, n: usize) {
+    pub(crate) fn advance_by(&mut self, n: usize) {
         debug_assert!(self.offset + n <= self.buf.len());
         self.offset += n;
     }
@@ -61,14 +67,14 @@ impl<'a> ByteReader<'a> {
         self.offset
     }
 
-    pub(crate) fn try_read<T>(&mut self) -> Option<T>
+    pub(crate) fn try_read<T>(&mut self) -> Result<T, T::Error>
     where
         T: Sized + TryFromBytes + SizedProperty,
     {
         let buf = &self.buf[self.offset..];
         let result = T::try_from_bytes(buf)?;
         self.advance_by(result.property_len());
-        Some(result)
+        Ok(result)
     }
 
     pub(crate) fn get_buf(&self) -> &[u8] {
@@ -108,14 +114,14 @@ impl<'a> ByteWriter<'a> {
         self.advance_by(written_bytes);
     }
 
-    pub(crate) fn try_write<T>(&mut self, val: &T) -> Option<()>
+    pub(crate) fn try_write<T>(&mut self, val: &T) -> Result<(), T::Error>
     where
         T: TryToByteBuffer,
     {
         let buf = &mut self.buf[self.offset..];
         let written_bytes = val.try_to_byte_buffer(buf)?.len();
         self.advance_by(written_bytes);
-        Some(())
+        Ok(())
     }
 }
 
@@ -157,7 +163,7 @@ mod test {
             let mut writer = ByteWriter::from(&mut buf);
             let result = writer.try_write(&INPUT);
 
-            assert!(result.is_some());
+            assert!(result.is_ok());
             assert_eq!(writer.offset(), std::mem::size_of::<u32>());
             assert_eq!(writer.remaining(), buf.len() - std::mem::size_of::<u32>());
             assert_eq!(&buf[0..std::mem::size_of::<u32>()], INPUT.to_be_bytes());
@@ -171,7 +177,7 @@ mod test {
             let mut writer = ByteWriter::from(&mut buf);
             let result = writer.try_write(&INPUT);
 
-            assert!(result.is_none());
+            assert!(result.is_err());
         }
     }
 
@@ -185,7 +191,7 @@ mod test {
             let mut reader = ByteReader::from(&INPUT);
             let result = reader.try_read::<u8>();
 
-            assert!(result.is_some());
+            assert!(result.is_ok());
             assert_eq!(result.unwrap(), 45);
             assert_eq!(reader.offset(), 1);
             assert_eq!(reader.remaining(), 0);
@@ -198,7 +204,7 @@ mod test {
             let mut reader = ByteReader::from(&INPUT);
             let result = reader.try_read::<u32>();
 
-            assert!(result.is_none());
+            assert!(result.is_err());
         }
     }
 }

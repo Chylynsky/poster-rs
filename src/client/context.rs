@@ -8,27 +8,180 @@ use crate::{
     codec::*,
     core::{
         base_types::{NonZero, VarSizeInt},
+        error::CodecError,
         utils::PacketID,
     },
 };
+use core::{
+    fmt, mem,
+    str::FromStr,
+    sync::atomic::{AtomicU16, AtomicU32, Ordering},
+};
 use either::{Either, Left, Right};
 use futures::{
-    channel::{mpsc, oneshot},
-    io::BufReader,
-    AsyncRead, AsyncWrite, FutureExt, StreamExt,
-};
-use std::{
-    collections::HashMap,
-    mem,
-    sync::{
-        atomic::{AtomicU16, AtomicU32, Ordering},
-        Arc,
+    channel::{
+        mpsc::{self, SendError, TrySendError},
+        oneshot::{self, Canceled},
     },
+    io::BufReader,
+    AsyncRead, AsyncWrite, FutureExt, SinkExt, StreamExt,
 };
+use std::{collections::HashMap, error::Error, io, sync::Arc};
 
-// TODO:
-// Subscription streams
-// Revisit error handling
+#[derive(Debug, Clone)]
+pub struct SocketClosed;
+
+impl fmt::Display for SocketClosed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "socket closed")
+    }
+}
+
+impl Error for SocketClosed {}
+
+impl From<io::Error> for SocketClosed {
+    fn from(_: io::Error) -> Self {
+        Self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HandleClosed;
+
+impl fmt::Display for HandleClosed {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "context handle closed")
+    }
+}
+
+impl Error for HandleClosed {}
+
+impl From<Canceled> for HandleClosed {
+    fn from(_: Canceled) -> Self {
+        Self
+    }
+}
+
+impl From<SendError> for HandleClosed {
+    fn from(_: SendError) -> Self {
+        Self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextExited;
+
+impl fmt::Display for ContextExited {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "context exited")
+    }
+}
+
+impl Error for ContextExited {}
+
+impl From<TrySendError<ContextMessage>> for ContextExited {
+    fn from(_: TrySendError<ContextMessage>) -> Self {
+        Self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InternalError {
+    msg: String,
+}
+
+impl fmt::Display for InternalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "InternalError: {}", self.msg)
+    }
+}
+
+impl Error for InternalError {}
+
+impl From<&str> for InternalError {
+    fn from(s: &str) -> Self {
+        Self {
+            msg: String::from(s),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MqttError {
+    InternalError(InternalError),
+    SocketClosed(SocketClosed),
+    HandleClosed(HandleClosed),
+    ContextExited(ContextExited),
+    CodecError(CodecError),
+}
+
+impl fmt::Display for MqttError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InternalError(err) => write!(f, "MqttError: {}", err),
+            Self::SocketClosed(err) => write!(f, "MqttError: {}", err),
+            Self::HandleClosed(err) => write!(f, "MqttError: {}", err),
+            Self::ContextExited(err) => write!(f, "MqttError: {}", err),
+            Self::CodecError(err) => write!(f, "MqttError: {}", err),
+        }
+    }
+}
+
+impl Error for MqttError {}
+
+impl From<InternalError> for MqttError {
+    fn from(err: InternalError) -> Self {
+        Self::InternalError(err)
+    }
+}
+
+impl From<SocketClosed> for MqttError {
+    fn from(err: SocketClosed) -> Self {
+        Self::SocketClosed(err)
+    }
+}
+
+impl From<io::Error> for MqttError {
+    fn from(err: io::Error) -> Self {
+        Self::SocketClosed(err.into())
+    }
+}
+
+impl From<HandleClosed> for MqttError {
+    fn from(err: HandleClosed) -> Self {
+        Self::HandleClosed(err)
+    }
+}
+
+impl From<Canceled> for MqttError {
+    fn from(err: Canceled) -> Self {
+        Self::HandleClosed(err.into())
+    }
+}
+
+impl From<SendError> for MqttError {
+    fn from(err: SendError) -> Self {
+        Self::HandleClosed(err.into())
+    }
+}
+
+impl From<ContextExited> for MqttError {
+    fn from(err: ContextExited) -> Self {
+        Self::ContextExited(err)
+    }
+}
+
+impl From<TrySendError<ContextMessage>> for MqttError {
+    fn from(err: TrySendError<ContextMessage>) -> Self {
+        Self::ContextExited(err.into())
+    }
+}
+
+impl From<CodecError> for MqttError {
+    fn from(err: CodecError) -> Self {
+        Self::CodecError(err)
+    }
+}
 
 fn tx_packet_to_action_id(packet: &TxPacket) -> u32 {
     match packet {
@@ -58,7 +211,7 @@ fn tx_packet_to_action_id(packet: &TxPacket) -> u32 {
         // TxPacket::Pubrec(_) => (Pubrec::PACKET_ID as u32) << 24,
         // TxPacket::Pubrel(_) => (Pubrel::PACKET_ID as u32) << 24,
         // TxPacket::Pubcomp(_) => (Pubcomp::PACKET_ID as u32) << 24,
-        _ => panic!("Unexpected packet type."),
+        _ => unreachable!("Unexpected packet type."),
     }
 }
 
@@ -83,7 +236,7 @@ fn rx_packet_to_action_id(packet: &RxPacket) -> u32 {
         // TxPacket::Pubrec(_) => (Pubrec::PACKET_ID as u32) << 24,
         // TxPacket::Pubrel(_) => (Pubrel::PACKET_ID as u32) << 24,
         // TxPacket::Pubcomp(_) => (Pubcomp::PACKET_ID as u32) << 24,
-        _ => panic!("Unexpected packet type."),
+        _ => unreachable!("Unexpected packet type."),
     }
 }
 
@@ -116,7 +269,7 @@ pub struct Context<RxStreamT, TxStreamT> {
     tx: TxPacketStream<TxStreamT>,
 
     active_requests: HashMap<u32, oneshot::Sender<RxPacket>>,
-    active_subscriptions: HashMap<u32, mpsc::Sender<RxPacket>>,
+    active_subscriptions: HashMap<u32, mpsc::UnboundedSender<RxPacket>>,
 
     message_queue: mpsc::Receiver<ContextMessage>,
 }
@@ -180,7 +333,10 @@ impl ContextHandle {
     ///
     /// # Arguments
     /// `opts` - Connection options.
-    pub async fn connect(&mut self, opts: ConnectOpts) -> Option<Either<ConnectRsp, AuthRsp>> {
+    pub async fn connect(
+        &mut self,
+        opts: ConnectOpts,
+    ) -> Result<Either<ConnectRsp, AuthRsp>, MqttError> {
         let (sender, receiver) = oneshot::channel();
 
         let packet = opts
@@ -198,13 +354,13 @@ impl ContextHandle {
             .try_send(message)
             .expect("Error sending connect request to the context.");
 
-        receiver.await.ok().map(|packet| match packet {
-            RxPacket::Connack(connack) => Left(ConnectRsp::from(connack)),
-            RxPacket::Auth(auth) => Right(AuthRsp::from(auth)),
+        match receiver.await? {
+            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::from(connack))),
+            RxPacket::Auth(auth) => Ok(Right(AuthRsp::from(auth))),
             _ => {
-                panic!("Unexpected packet type.");
+                unreachable!("Unexpected packet type.");
             }
-        })
+        }
     }
 
     /// Method used for performing the extended authorization between the client and the broker. It corresponds to sending the
@@ -214,7 +370,10 @@ impl ContextHandle {
     ///
     /// # Arguments
     /// `opts` - Authorization options
-    pub async fn authorize(&mut self, opts: AuthOpts) -> Option<Either<ConnectRsp, AuthRsp>> {
+    pub async fn authorize(
+        &mut self,
+        opts: AuthOpts,
+    ) -> Result<Either<ConnectRsp, AuthRsp>, MqttError> {
         let (sender, receiver) = oneshot::channel();
 
         let packet = opts
@@ -232,18 +391,18 @@ impl ContextHandle {
             .try_send(message)
             .expect("Error sending connect request to the context.");
 
-        receiver.await.ok().map(|packet| match packet {
-            RxPacket::Connack(connack) => Left(ConnectRsp::from(connack)),
-            RxPacket::Auth(auth) => Right(AuthRsp::from(auth)),
+        match receiver.await? {
+            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::from(connack))),
+            RxPacket::Auth(auth) => Ok(Right(AuthRsp::from(auth))),
             _ => {
-                panic!("Unexpected packet type.");
+                unreachable!("Unexpected packet type.");
             }
-        })
+        }
     }
 
     /// Performs graceful disconnection with the broker by sending the
     /// [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205) packet.
-    pub async fn disconnect(&mut self) {
+    pub async fn disconnect(&mut self) -> Result<(), MqttError> {
         let mut builder = DisconnectBuilder::default();
         builder.reason(DisconnectReason::Success);
 
@@ -253,14 +412,13 @@ impl ContextHandle {
             packet: TxPacket::Disconnect(packet),
         });
 
-        self.sender
-            .try_send(message)
-            .expect("Error sending disconnect message to the context.");
+        self.sender.try_send(message)?;
+        Ok(())
     }
 
     /// Sends ping to the broker by sending
     /// [Ping](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901195) packet.
-    pub async fn ping(&mut self) {
+    pub async fn ping(&mut self) -> Result<(), MqttError> {
         let (sender, receiver) = oneshot::channel();
 
         let builder = PingreqBuilder::default();
@@ -273,20 +431,17 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender
-            .try_send(message)
-            .expect("Error sending ping request to the context.");
+        self.sender.try_send(message)?;
 
-        receiver.await.ok().map(|packet| match packet {
-            RxPacket::Pingresp(_) => return,
-            _ => {
-                panic!("Unexpected packet type.");
-            }
-        });
+        if let RxPacket::Pingresp(_) = receiver.await? {
+            return Ok(());
+        }
+
+        unreachable!("Unexpected packet type.");
     }
 
     /// TODO: Support higher than QoS 0
-    pub async fn publish(&mut self, opts: PublishOpts) -> Option<PublishRsp> {
+    pub async fn publish(&mut self, opts: PublishOpts) -> Result<Option<PublishRsp>, MqttError> {
         let packet = opts.build().unwrap();
 
         let message = ContextMessage::FireAndForget(FireAndForget {
@@ -295,9 +450,9 @@ impl ContextHandle {
 
         self.sender
             .try_send(message)
-            .expect("Error sending publish message to the context.");
+            .map_err(|_| MqttError::from(ContextExited))?;
 
-        None
+        Ok(None)
     }
 
     /// Performs subscription to the topic specified in `opts`. This corresponds to sending the
@@ -308,7 +463,7 @@ impl ContextHandle {
     pub async fn subscribe(
         &mut self,
         opts: SubscribeOpts,
-    ) -> Option<(SubscribeRsp, SubscribeStream)> {
+    ) -> Result<(SubscribeRsp, SubscribeStream), MqttError> {
         let (sender, receiver) = oneshot::channel();
         let (str_sender, str_receiver) = mpsc::unbounded();
 
@@ -326,23 +481,18 @@ impl ContextHandle {
             stream: str_sender,
         });
 
-        self.sender
-            .try_send(message)
-            .expect("Error sending subscribe request to the context.");
+        self.sender.try_send(message)?;
 
-        receiver.await.ok().map(|packet| match packet {
-            RxPacket::Suback(suback) => {
-                return (
-                    SubscribeRsp::from(suback),
-                    SubscribeStream {
-                        receiver: str_receiver,
-                    },
-                )
-            }
-            _ => {
-                panic!("Unexpected packet type.");
-            }
-        })
+        if let RxPacket::Suback(suback) = receiver.await? {
+            return Ok((
+                SubscribeRsp::from(suback),
+                SubscribeStream {
+                    receiver: str_receiver,
+                },
+            ));
+        }
+
+        unreachable!("Unexpected packet type.");
     }
 
     /// Unsubscribes from the topic specified in `opts`. This corresponds to sending the
@@ -350,7 +500,10 @@ impl ContextHandle {
     ///
     /// # Arguments
     /// `opts` - Subscription options
-    pub async fn unsubscribe(&mut self, opts: UnsubscribeOpts) -> Option<UnsubscribeRsp> {
+    pub async fn unsubscribe(
+        &mut self,
+        opts: UnsubscribeOpts,
+    ) -> Result<UnsubscribeRsp, MqttError> {
         let (sender, receiver) = oneshot::channel();
 
         let packet = opts
@@ -365,16 +518,13 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender
-            .try_send(message)
-            .expect("Error sending unsubscribe request to the context.");
+        self.sender.try_send(message)?;
 
-        receiver.await.ok().map(|packet| match packet {
-            RxPacket::Unsuback(unsuback) => UnsubscribeRsp::from(unsuback),
-            _ => {
-                panic!("Unexpected packet type.");
-            }
-        })
+        if let RxPacket::Unsuback(unsuback) = receiver.await? {
+            return Ok(UnsubscribeRsp::from(unsuback));
+        }
+
+        unreachable!("Unexpected packet type.");
     }
 }
 
@@ -387,7 +537,9 @@ impl ContextHandle {
 ///     poster::run(ctx).await; // Blocks until disconnection or critical error.
 /// });
 /// ```
-pub async fn run<RxStreamT, TxStreamT>(mut ctx: Context<RxStreamT, TxStreamT>)
+pub async fn run<RxStreamT, TxStreamT>(
+    ctx: &mut Context<RxStreamT, TxStreamT>,
+) -> Result<(), MqttError>
 where
     RxStreamT: AsyncRead + Unpin,
     TxStreamT: AsyncWrite + Unpin,
@@ -399,47 +551,60 @@ where
         futures::select! {
             rx_packet_result = pck_fut => {
                 if rx_packet_result.is_none() {
-                    // Socket closed
-                    eprintln!("Socket closed.");
-                    return;
+                   return Err(SocketClosed.into());
                 }
 
-                let rx_packet = rx_packet_result.unwrap();
+                let rx_packet = rx_packet_result.unwrap()?;
 
-                if let RxPacket::Publish(publish) = &rx_packet {
-                    if  publish.subscription_identifier.is_none() {
-                        continue;
+                match rx_packet {
+                    RxPacket::Publish(publish) => {
+                        if  publish.subscription_identifier.is_some() {
+                            let sub_id: NonZero<VarSizeInt> = publish.subscription_identifier.clone().unwrap().into();
+                            let subscription = ctx.active_subscriptions.get_mut(&sub_id.value().into()).ok_or(InternalError::from("subscription identifier not found"))?;
+
+                            subscription.send(RxPacket::Publish(publish)).await?;
+                        }
+                    },
+                    _ => {
+                        let id = rx_packet_to_action_id(&rx_packet);
+                        if let Some(sender) = ctx.active_requests.remove(&id) {
+                            sender.send(rx_packet).map_err(|_| HandleClosed)?;
+                        }
+
+                        pck_fut = ctx.rx.next().fuse();
                     }
-
-                    let sub_id: NonZero<VarSizeInt> = publish.subscription_identifier.clone().unwrap().into();
-                    let subscription = ctx.active_subscriptions.get_mut(&sub_id.value().into()).expect("Subscription identifier not found.");
-
-                    subscription.try_send(rx_packet).expect("Failed to pass data to suscription.");
-                    continue;
                 }
 
-                let id = rx_packet_to_action_id(&rx_packet);
-
-                if let Some(sender) = ctx.active_requests.remove(&id) {
-                    sender.send(rx_packet).ok().expect("Failed to pass response to the context handle.");
-                }
-
-                pck_fut = ctx.rx.next().fuse();
                 continue;
             },
             message_result = msg_fut => {
                 if let Some(msg_type) = message_result {
                     match msg_type {
                         ContextMessage::FireAndForget(msg) => {
-                            ctx.tx.write(msg.packet).await.expect("Failed to publish packet.");
+                            ctx.tx.write(msg.packet).await?;
                         },
                         ContextMessage::AwaitAck(msg) => {
                             ctx.active_requests.insert(msg.action_id, msg.response_channel);
-                            ctx.tx.write(msg.packet).await.expect("Failed to publish packet.");
+                            ctx.tx.write(msg.packet).await?;
                         },
                         ContextMessage::AwaitStream(msg) => {
-                            ctx.active_requests.insert(msg.action_id, msg.response_channel);
-                            ctx.tx.write(msg.packet).await.expect("Failed to publish packet.");
+                            match msg.packet {
+                                TxPacket::Subscribe(sub) => {
+                                    let sub_id_var_size: NonZero<VarSizeInt> = sub.properties.subscription_identifier
+                                        .clone()
+                                        .unwrap()
+                                        .into();
+                                    let sub_id: VarSizeInt = sub_id_var_size.value();
+
+                                    ctx.active_requests.insert(msg.action_id, msg.response_channel);
+                                    ctx.active_subscriptions.insert(sub_id.into(), msg.stream);
+                                    ctx.tx.write(TxPacket::Subscribe(sub)).await?;
+                                },
+                                _ => {
+                                    return Err(InternalError::from("unexpected packet type").into());
+                                }
+                            }
+
                         },
                     }
 
@@ -447,8 +612,7 @@ where
                     continue;
                 }
 
-                eprintln!("MESSAGE QUEUE CLOSED");
-                return; // CRITICAL ERROR - message queue closed
+               return Err(HandleClosed.into());
             }
         }
     }

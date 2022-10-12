@@ -5,7 +5,10 @@ use crate::{
         pubrel::Pubrel, suback::Suback, subscribe::Subscribe, unsuback::Unsuback,
         unsubscribe::Unsubscribe,
     },
-    core::utils::{PacketID, SizedPacket, TryFromBytes, TryToByteBuffer},
+    core::{
+        error::{CodecError, InvalidPacketHeader},
+        utils::{PacketID, SizedPacket, TryFromBytes, TryToByteBuffer},
+    },
 };
 
 pub(crate) enum RxPacket {
@@ -41,7 +44,9 @@ impl RxPacket {
 }
 
 impl TryFromBytes for RxPacket {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self>
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
@@ -57,7 +62,7 @@ impl TryFromBytes for RxPacket {
             Pingresp::PACKET_ID => Pingresp::try_from_bytes(bytes).map(RxPacket::Pingresp),
             Disconnect::PACKET_ID => Disconnect::try_from_bytes(bytes).map(RxPacket::Disconnect),
             Auth::PACKET_ID => Auth::try_from_bytes(bytes).map(RxPacket::Auth),
-            _ => None,
+            _ => Err(InvalidPacketHeader.into()),
         }
     }
 }
@@ -113,7 +118,9 @@ impl SizedPacket for TxPacket {
 }
 
 impl TryToByteBuffer for TxPacket {
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+    type Error = CodecError;
+
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
         match self {
             TxPacket::Connect(packet) => packet.try_to_byte_buffer(buf),
             TxPacket::Publish(packet) => packet.try_to_byte_buffer(buf),

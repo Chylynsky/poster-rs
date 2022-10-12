@@ -1,4 +1,7 @@
-use crate::core::utils::{ByteReader, PacketID, TryFromBytes};
+use crate::core::{
+    error::CodecError,
+    utils::{ByteReader, PacketID, TryFromBytes},
+};
 
 pub(crate) struct Pingresp {}
 
@@ -10,8 +13,8 @@ impl Pingresp {
 struct PingrespBuilder {}
 
 impl PingrespBuilder {
-    fn build(self) -> Option<Pingresp> {
-        Some(Pingresp {})
+    fn build(self) -> Result<Pingresp, CodecError> {
+        Ok(Pingresp {})
     }
 }
 
@@ -20,7 +23,9 @@ impl PacketID for Pingresp {
 }
 
 impl TryFromBytes for Pingresp {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = CodecError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let builder = PingrespBuilder::default();
         let mut reader = ByteReader::from(bytes);
         let _fixed_hdr = reader.try_read::<u8>()?;

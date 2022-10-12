@@ -1,6 +1,9 @@
 use crate::{
     codec::ack::{Ack, AckBuilder},
-    core::utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+    core::{
+        error::{ConversionError, InvalidValue},
+        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+    },
 };
 use core::mem;
 
@@ -10,12 +13,14 @@ pub(crate) enum PubcompReason {
     PacketIdentifierNotFound = 0x92,
 }
 
-impl PubcompReason {
-    fn try_from(val: u8) -> Option<Self> {
+impl TryFrom<u8> for PubcompReason {
+    type Error = ConversionError;
+
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0x00 => Some(PubcompReason::Success),
-            0x92 => Some(PubcompReason::PacketIdentifierNotFound),
-            _ => None,
+            0x00 => Ok(PubcompReason::Success),
+            0x92 => Ok(PubcompReason::PacketIdentifierNotFound),
+            _ => Err(InvalidValue.into()),
         }
     }
 }
@@ -33,7 +38,9 @@ impl SizedProperty for PubcompReason {
 }
 
 impl TryFromBytes for PubcompReason {
-    fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+    type Error = ConversionError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         Self::try_from(u8::try_from_bytes(bytes)?)
     }
 }
