@@ -61,11 +61,11 @@ impl From<Connack> for ConnectRsp {
 }
 
 pub struct AuthRsp {
-    reason: AuthReason,
-    authentication_method: Option<String>,
-    authentication_data: Option<Vec<u8>>,
-    reason_string: Option<String>,
-    user_property: Vec<(String, String)>,
+    pub reason: AuthReason,
+    pub authentication_method: Option<String>,
+    pub authentication_data: Option<Vec<u8>>,
+    pub reason_string: Option<String>,
+    pub user_property: Vec<(String, String)>,
 }
 
 impl From<Auth> for AuthRsp {

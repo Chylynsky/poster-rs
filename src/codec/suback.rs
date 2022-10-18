@@ -9,7 +9,7 @@ use crate::core::{
 };
 use core::mem;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SubackReason {
     GranteedQoS0 = 0x00,
     GranteedQoS1 = 0x01,
@@ -79,7 +79,7 @@ impl TryFromBytes for Suback {
                     return Err(InvalidPacketHeader.into());
                 }
 
-                return Ok(val);
+                Ok(val)
             })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
@@ -100,8 +100,8 @@ impl TryFromBytes for Suback {
         let (property_buf, payload) = reader.get_buf().split_at(property_len.into());
 
         for property in PropertyIterator::from(property_buf) {
-            if property.is_err() {
-                return Err(property.unwrap_err().into());
+            if let Err(err) = property {
+                return Err(err.into());
             }
 
             match property.unwrap() {

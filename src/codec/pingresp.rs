@@ -37,7 +37,7 @@ impl TryFromBytes for Pingresp {
                     return Err(InvalidPacketHeader.into());
                 }
 
-                return Ok(val);
+                Ok(val)
             })?;
 
         builder.build()

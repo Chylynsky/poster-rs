@@ -153,8 +153,8 @@ impl TryFromBytes for Publish {
 
         let property_buf = reader.get_buf().get(..property_len).unwrap();
         for property in PropertyIterator::from(property_buf) {
-            if property.is_err() {
-                return Err(property.unwrap_err().into());
+            if let Err(err) = property {
+                return Err(err.into());
             }
 
             match property.unwrap() {
@@ -409,7 +409,7 @@ mod test {
         assert!(packet.retain);
         assert_eq!(packet.qos, QoS::AtLeastOnce);
         assert_eq!(packet.packet_identifier.unwrap(), 13.into());
-        assert_eq!(String::from_utf8(packet.payload.into()).unwrap(), "test");
+        assert_eq!(String::from_utf8(packet.payload).unwrap(), "test");
     }
 
     #[test]
@@ -420,7 +420,7 @@ mod test {
         builder.retain(true);
         builder.packet_identifier(NonZero::from(13));
         builder.topic_name(String::from("test"));
-        builder.payload(Vec::from([b't', b'e', b's', b't']).into());
+        builder.payload(Vec::from([b't', b'e', b's', b't']));
 
         let packet = builder.build().unwrap();
         let mut buf = [0u8; PACKET.len()];

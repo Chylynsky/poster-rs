@@ -25,24 +25,6 @@ pub(crate) enum RxPacket {
     Auth(Auth),
 }
 
-impl RxPacket {
-    pub(crate) fn id(&self) -> u8 {
-        match self {
-            Self::Connack(_) => Connack::PACKET_ID,
-            Self::Publish(_) => Publish::PACKET_ID,
-            Self::Puback(_) => Puback::PACKET_ID,
-            Self::Pubrec(_) => Pubrec::PACKET_ID,
-            Self::Pubrel(_) => Pubrel::PACKET_ID,
-            Self::Pubcomp(_) => Pubcomp::PACKET_ID,
-            Self::Suback(_) => Suback::PACKET_ID,
-            Self::Unsuback(_) => Unsuback::PACKET_ID,
-            Self::Pingresp(_) => Pingresp::PACKET_ID,
-            Self::Disconnect(_) => Disconnect::PACKET_ID,
-            Self::Auth(_) => Auth::PACKET_ID,
-        }
-    }
-}
-
 impl TryFromBytes for RxPacket {
     type Error = CodecError;
 
@@ -79,24 +61,6 @@ pub(crate) enum TxPacket {
     Pingreq(Pingreq),
     Disconnect(Disconnect),
     Auth(Auth),
-}
-
-impl TxPacket {
-    pub(crate) fn id(&self) -> u8 {
-        match self {
-            TxPacket::Connect(_) => Connect::PACKET_ID,
-            TxPacket::Publish(_) => Publish::PACKET_ID,
-            TxPacket::Puback(_) => Puback::PACKET_ID,
-            TxPacket::Pubrec(_) => Pubrec::PACKET_ID,
-            TxPacket::Pubrel(_) => Pubrel::PACKET_ID,
-            TxPacket::Pubcomp(_) => Pubcomp::PACKET_ID,
-            TxPacket::Subscribe(_) => Subscribe::PACKET_ID,
-            TxPacket::Unsubscribe(_) => Unsubscribe::PACKET_ID,
-            TxPacket::Pingreq(_) => Pingreq::PACKET_ID,
-            TxPacket::Disconnect(_) => Disconnect::PACKET_ID,
-            TxPacket::Auth(_) => Auth::PACKET_ID,
-        }
-    }
 }
 
 impl SizedPacket for TxPacket {

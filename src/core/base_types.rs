@@ -30,7 +30,6 @@ pub(crate) struct VarSizeInt(VarSizeIntState);
 
 impl VarSizeInt {
     pub(crate) const MAX: usize = 0x0fffffff;
-    pub(crate) const MIN: usize = 0;
 
     pub(crate) fn len(&self) -> usize {
         match self.0 {
@@ -58,16 +57,16 @@ impl VarSizeInt {
             VarSizeIntState::SingleByte(val) => result.copy_from_slice(&[val]),
             VarSizeIntState::TwoByte(mut val) => {
                 let byte0 = (val % 0x80) as u8 | 0x80;
-                val = val / 0x80;
+                val /= 0x80;
                 let byte1 = (val % 0x80) as u8;
 
                 result.copy_from_slice(&[byte0, byte1]);
             }
             VarSizeIntState::ThreeByte(mut val) => {
                 let byte0 = (val % 0x80) as u8 | 0x80;
-                val = val / 0x80;
+                val /= 0x80;
                 let byte1 = (val % 0x80) as u8 | 0x80;
-                val = val / 0x80;
+                val /= 0x80;
                 let byte2 = (val % 0x80) as u8;
 
                 result.copy_from_slice(&[byte0, byte1, byte2])
@@ -75,11 +74,11 @@ impl VarSizeInt {
 
             VarSizeIntState::FourByte(mut val) => {
                 let byte0 = (val % 0x80) as u8 | 0x80;
-                val = val / 0x80;
+                val /= 0x80;
                 let byte1 = (val % 0x80) as u8 | 0x80;
-                val = val / 0x80;
+                val /= 0x80;
                 let byte2 = (val % 0x80) as u8 | 0x80;
-                val = val / 0x80;
+                val /= 0x80;
                 let byte3 = (val % 0x80) as u8;
 
                 result.copy_from_slice(&[byte0, byte1, byte2, byte3])
@@ -308,7 +307,10 @@ impl TryFromBytes for u8 {
     type Error = ConversionError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        bytes.get(0).copied().ok_or(InsufficientBufferSize.into())
+        bytes
+            .first()
+            .copied()
+            .ok_or_else(|| InsufficientBufferSize.into())
     }
 }
 
@@ -332,7 +334,7 @@ impl TryToByteBuffer for u8 {
 }
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum QoS {
     AtMostOnce = 0,
     AtLeastOnce = 1,
@@ -369,10 +371,10 @@ impl TryFromBytes for QoS {
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         bytes
-            .get(0)
+            .first()
             .copied()
-            .ok_or(InsufficientBufferSize.into())
-            .and_then(|val| Self::try_from(val))
+            .ok_or_else(|| InsufficientBufferSize.into())
+            .and_then(Self::try_from)
     }
 }
 
@@ -402,8 +404,8 @@ impl TryFromBytes for bool {
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         bytes
-            .get(0)
-            .ok_or(InsufficientBufferSize.into())
+            .first()
+            .ok_or_else(|| InsufficientBufferSize.into())
             .and_then(|val| match val {
                 0u8 => Ok(false),
                 1u8 => Ok(true),
@@ -441,7 +443,7 @@ impl TryFromBytes for u16 {
             .take(mem::size_of::<u16>())
             .map(|&value| value as u16)
             .reduce(|result, tmp| result << 8 | tmp)
-            .ok_or(InsufficientBufferSize.into())
+            .ok_or_else(|| InsufficientBufferSize.into())
     }
 }
 
@@ -500,7 +502,7 @@ impl TryFromBytes for u32 {
             .take(mem::size_of::<u32>())
             .map(|&value| value as u32)
             .reduce(|result, tmp| result << 8 | tmp)
-            .ok_or(InsufficientBufferSize.into())
+            .ok_or_else(|| InsufficientBufferSize.into())
     }
 }
 
@@ -560,7 +562,7 @@ impl TryFromBytes for NonZero<u8> {
                 return Err(ValueIsZero.into());
             }
 
-            return Ok(NonZero(val));
+            Ok(NonZero(val))
         })
     }
 }
@@ -607,7 +609,7 @@ impl TryFromBytes for NonZero<u16> {
                 return Err(ValueIsZero.into());
             }
 
-            return Ok(NonZero(val));
+            Ok(NonZero(val))
         })
     }
 }
@@ -654,7 +656,7 @@ impl TryFromBytes for NonZero<u32> {
                 return Err(ValueIsZero.into());
             }
 
-            return Ok(NonZero(val));
+            Ok(NonZero(val))
         })
     }
 }
@@ -701,7 +703,7 @@ impl TryFromBytes for NonZero<VarSizeInt> {
                 return Err(ValueIsZero.into());
             }
 
-            return Ok(NonZero(val));
+            Ok(NonZero(val))
         })
     }
 }
@@ -711,7 +713,7 @@ pub(crate) struct Binary(Vec<u8>);
 
 impl From<Vec<u8>> for Binary {
     fn from(val: Vec<u8>) -> Self {
-        Self { 0: val }
+        Self(val)
     }
 }
 
@@ -747,8 +749,8 @@ impl TryFromBytes for Binary {
 
         remaining
             .get(0..size)
-            .ok_or(InsufficientBufferSize.into())
-            .map(|val| Self { 0: Vec::from(val) })
+            .ok_or_else(|| InsufficientBufferSize.into())
+            .map(|val| Self(Vec::from(val)))
     }
 }
 
@@ -819,7 +821,7 @@ impl TryFromBytes for Payload {
 impl ToByteBuffer for Payload {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
         let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&self);
+        result.copy_from_slice(self);
         result
     }
 }
@@ -831,7 +833,7 @@ impl TryToByteBuffer for Payload {
         let result = buf
             .get_mut(0..self.property_len())
             .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&self);
+        result.copy_from_slice(self);
         Ok(result)
     }
 }
@@ -861,7 +863,7 @@ impl TryFromBytes for String {
 
         remaining
             .get(0..size)
-            .ok_or(InsufficientBufferSize.into())
+            .ok_or_else(|| InsufficientBufferSize.into())
             .and_then(|val| String::from_utf8(Vec::from(val)).map_err(ConversionError::from))
     }
 }

@@ -7,8 +7,8 @@ use crate::{
 };
 use core::mem;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum PubcompReason {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PubcompReason {
     Success = 0x00,
     PacketIdentifierNotFound = 0x92,
 }

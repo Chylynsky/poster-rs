@@ -13,15 +13,6 @@ pub(crate) struct TxPacketStream<TxStreamT> {
 }
 
 impl<TxStreamT> TxPacketStream<TxStreamT> {
-    const DEFAULT_BUF_SIZE: usize = 1024;
-
-    pub(crate) fn new(inner: TxStreamT) -> Self {
-        Self {
-            stream: inner,
-            buf: Vec::with_capacity(Self::DEFAULT_BUF_SIZE),
-        }
-    }
-
     pub(crate) fn with_capacity(capacity: usize, inner: TxStreamT) -> Self {
         Self {
             stream: inner,

@@ -1,8 +1,8 @@
 use crate::core::{
     base_types::*,
     error::{
-        CodecError, ConversionError, InsufficientBufferSize, InvalidPacketHeader,
-        InvalidPacketSize, InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
+        CodecError, InsufficientBufferSize, InvalidPacketHeader, InvalidPacketSize,
+        InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
     },
     properties::*,
     utils::{
@@ -88,7 +88,7 @@ where
                     return Err(InvalidPacketHeader.into());
                 }
 
-                return Ok(val);
+                Ok(val)
             })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
@@ -115,8 +115,8 @@ where
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            if property.is_err() {
-                return Err(property.unwrap_err().into());
+            if let Err(err) = property {
+                return Err(err.into());
             }
 
             match property.unwrap() {

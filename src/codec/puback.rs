@@ -1,13 +1,13 @@
 use crate::{
     codec::ack::{Ack, AckBuilder},
     core::{
-        error::{CodecError, ConversionError, InvalidValue},
+        error::{ConversionError, InvalidValue},
         utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
     },
 };
 use core::mem;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PubackReason {
     Success = 0x00,
     NoMatchingSubscribers = 0x10,

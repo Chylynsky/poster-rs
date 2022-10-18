@@ -13,7 +13,7 @@ use crate::core::{
 };
 use core::mem;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AuthReason {
     Success = 0x00,
     ContinueAuthentication = 0x18,
@@ -135,7 +135,7 @@ impl TryFromBytes for Auth {
                     return Err(InvalidPacketHeader.into());
                 }
 
-                return Ok(val);
+                Ok(val)
             })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
@@ -160,8 +160,8 @@ impl TryFromBytes for Auth {
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            if property.is_err() {
-                return Err(property.unwrap_err().into());
+            if let Err(err) = property {
+                return Err(err.into());
             }
 
             match property.unwrap() {

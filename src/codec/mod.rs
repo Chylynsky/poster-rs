@@ -21,13 +21,12 @@ mod packets;
 
 pub(crate) use auth::{Auth, AuthBuilder};
 pub(crate) use connect::{Connect, ConnectBuilder};
-pub(crate) use disconnect::{Disconnect, DisconnectBuilder, DisconnectReason};
-pub(crate) use pingreq::{Pingreq, PingreqBuilder};
-pub(crate) use puback::{Puback, PubackBuilder};
-pub(crate) use pubcomp::{Pubcomp, PubcompBuilder, PubcompReason};
+pub(crate) use disconnect::{Disconnect, DisconnectBuilder};
+pub(crate) use pingreq::PingreqBuilder;
+pub(crate) use puback::Puback;
+
 pub(crate) use publish::{Publish, PublishBuilder};
-pub(crate) use pubrec::{Pubrec, PubrecBuilder, PubrecReason};
-pub(crate) use pubrel::{Pubrel, PubrelBuilder, PubrelReason};
+
 pub(crate) use subscribe::{RetainHandling, Subscribe, SubscribeBuilder, SubscriptionOptions};
 pub(crate) use unsubscribe::{Unsubscribe, UnsubscribeBuilder};
 
@@ -41,6 +40,10 @@ pub(crate) use packets::{RxPacket, TxPacket};
 
 pub use auth::AuthReason;
 pub use connack::ConnectReason;
+pub use disconnect::DisconnectReason;
 pub use puback::PubackReason;
+pub use pubcomp::PubcompReason;
+pub use pubrec::PubrecReason;
+pub use pubrel::PubrelReason;
 pub use suback::SubackReason;
 pub use unsuback::UnsubackReason;

@@ -1,12 +1,9 @@
 use crate::core::{
     base_types::*,
     error::{ConversionError, InsufficientBufferSize, InvalidPropertyId, PropertyError},
-    utils::{
-        ByteWriter, PropertyID, SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator,
-        TryToByteBuffer,
-    },
+    utils::{ByteWriter, PropertyID, SizedProperty, ToByteBuffer, TryFromBytes, TryToByteBuffer},
 };
-use core::{convert::From, fmt, iter::Iterator, mem};
+use core::{convert::From, iter::Iterator, mem};
 
 fn to_byte_buffer_unchecked<'a, PropertyT, UnderlyingT>(
     _: &PropertyT,
@@ -217,329 +214,222 @@ impl<'a> Iterator for PropertyIterator<'a> {
             .filter(|val| val.len() == 1)?;
         self.buf = self.buf.get(id.len()..)?;
 
-        return match u8::from(id) {
-            PayloadFormatIndicator::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+        match u8::from(id) {
+            PayloadFormatIndicator::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::PayloadFormatIndicator(
+                        PayloadFormatIndicator(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::PayloadFormatIndicator(
-                    PayloadFormatIndicator(val),
-                )))
-            }
-            RequestResponseInformation::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            RequestResponseInformation::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::RequestResponseInformation(
+                        RequestResponseInformation(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::RequestResponseInformation(
-                    RequestResponseInformation(val),
-                )))
-            }
-            WildcardSubscriptionAvailable::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            WildcardSubscriptionAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::WildcardSubscriptionAvailable(
+                        WildcardSubscriptionAvailable(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::WildcardSubscriptionAvailable(
-                    WildcardSubscriptionAvailable(val),
-                )))
-            }
-            SubscriptionIdentifierAvailable::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            SubscriptionIdentifierAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::SubscriptionIdentifierAvailable(
+                        SubscriptionIdentifierAvailable(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::SubscriptionIdentifierAvailable(
-                    SubscriptionIdentifierAvailable(val),
-                )))
-            }
-            SharedSubscriptionAvailable::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            SharedSubscriptionAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::SharedSubscriptionAvailable(
+                        SharedSubscriptionAvailable(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::SharedSubscriptionAvailable(
-                    SharedSubscriptionAvailable(val),
-                )))
-            }
-            RetainAvailable::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            RetainAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::RetainAvailable(RetainAvailable(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::RetainAvailable(RetainAvailable(val))))
-            }
-            RequestProblemInformation::PROPERTY_ID => {
-                let result = bool::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            RequestProblemInformation::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::RequestProblemInformation(
+                        RequestProblemInformation(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::RequestProblemInformation(
-                    RequestProblemInformation(val),
-                )))
-            }
-            MaximumQoS::PROPERTY_ID => {
-                let result = QoS::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            MaximumQoS::PROPERTY_ID => match QoS::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::MaximumQoS(MaximumQoS(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::MaximumQoS(MaximumQoS(val))))
-            }
-            ServerKeepAlive::PROPERTY_ID => {
-                let result = u16::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ServerKeepAlive::PROPERTY_ID => match u16::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ServerKeepAlive(ServerKeepAlive(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ServerKeepAlive(ServerKeepAlive(val))))
-            }
-
-            TopicAliasMaximum::PROPERTY_ID => {
-                let result = u16::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            TopicAliasMaximum::PROPERTY_ID => match u16::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::TopicAliasMaximum(TopicAliasMaximum(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::TopicAliasMaximum(TopicAliasMaximum(val))))
-            }
-            ReceiveMaximum::PROPERTY_ID => {
-                let result = NonZero::<u16>::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ReceiveMaximum::PROPERTY_ID => match NonZero::<u16>::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ReceiveMaximum(ReceiveMaximum(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ReceiveMaximum(ReceiveMaximum(val))))
-            }
-            TopicAlias::PROPERTY_ID => {
-                let result = NonZero::<u16>::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            TopicAlias::PROPERTY_ID => match NonZero::<u16>::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::TopicAlias(TopicAlias(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::TopicAlias(TopicAlias(val))))
-            }
-            MessageExpiryInterval::PROPERTY_ID => {
-                let result = u32::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            MessageExpiryInterval::PROPERTY_ID => match u32::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::MessageExpiryInterval(MessageExpiryInterval(
+                        val,
+                    ))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::MessageExpiryInterval(MessageExpiryInterval(
-                    val,
-                ))))
-            }
-            SessionExpiryInterval::PROPERTY_ID => {
-                let result = u32::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            SessionExpiryInterval::PROPERTY_ID => match u32::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::SessionExpiryInterval(SessionExpiryInterval(
+                        val,
+                    ))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::SessionExpiryInterval(SessionExpiryInterval(
-                    val,
-                ))))
-            }
-            WillDelayInterval::PROPERTY_ID => {
-                let result = u32::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            WillDelayInterval::PROPERTY_ID => match u32::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::WillDelayInterval(WillDelayInterval(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::WillDelayInterval(WillDelayInterval(val))))
-            }
-            MaximumPacketSize::PROPERTY_ID => {
-                let result = NonZero::<u32>::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            MaximumPacketSize::PROPERTY_ID => match NonZero::<u32>::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::MaximumPacketSize(MaximumPacketSize(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::MaximumPacketSize(MaximumPacketSize(val))))
-            }
+                Err(err) => Some(Err(err.into())),
+            },
             SubscriptionIdentifier::PROPERTY_ID => {
-                let result = NonZero::<VarSizeInt>::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                match NonZero::<VarSizeInt>::try_from_bytes(self.buf) {
+                    Ok(val) => {
+                        self.buf = self.buf.get(val.property_len()..)?;
+                        Some(Ok(Property::SubscriptionIdentifier(
+                            SubscriptionIdentifier(val),
+                        )))
+                    }
+                    Err(err) => Some(Err(err.into())),
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::SubscriptionIdentifier(
-                    SubscriptionIdentifier(val),
-                )))
             }
-            CorrelationData::PROPERTY_ID => {
-                let result = Binary::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+            CorrelationData::PROPERTY_ID => match Binary::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::CorrelationData(CorrelationData(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::CorrelationData(CorrelationData(val))))
-            }
-            AuthenticationData::PROPERTY_ID => {
-                let result = Binary::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            AuthenticationData::PROPERTY_ID => match Binary::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::AuthenticationData(AuthenticationData(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::AuthenticationData(AuthenticationData(val))))
-            }
-            ContentType::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ContentType::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ContentType(ContentType(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ContentType(ContentType(val))))
-            }
-            ResponseTopic::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ResponseTopic::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ResponseTopic(ResponseTopic(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ResponseTopic(ResponseTopic(val))))
-            }
-            AssignedClientIdentifier::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            AssignedClientIdentifier::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::AssignedClientIdentifier(
+                        AssignedClientIdentifier(val),
+                    )))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::AssignedClientIdentifier(
-                    AssignedClientIdentifier(val),
-                )))
-            }
-            AuthenticationMethod::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            AuthenticationMethod::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::AuthenticationMethod(AuthenticationMethod(
+                        val,
+                    ))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::AuthenticationMethod(AuthenticationMethod(
-                    val,
-                ))))
-            }
-            ResponseInformation::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ResponseInformation::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ResponseInformation(ResponseInformation(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ResponseInformation(ResponseInformation(val))))
-            }
-            ServerReference::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ServerReference::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ServerReference(ServerReference(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ServerReference(ServerReference(val))))
-            }
-            ReasonString::PROPERTY_ID => {
-                let result = String::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            ReasonString::PROPERTY_ID => match String::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::ReasonString(ReasonString(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::ReasonString(ReasonString(val))))
-            }
-            UserProperty::PROPERTY_ID => {
-                let result = StringPair::try_from_bytes(self.buf);
-                if result.is_err() {
-                    return Some(Err(result.unwrap_err().into()));
+                Err(err) => Some(Err(err.into())),
+            },
+            UserProperty::PROPERTY_ID => match StringPair::try_from_bytes(self.buf) {
+                Ok(val) => {
+                    self.buf = self.buf.get(val.property_len()..)?;
+                    Some(Ok(Property::UserProperty(UserProperty(val))))
                 }
-
-                let val = result.unwrap();
-                self.buf = self.buf.get(val.property_len()..)?;
-
-                Some(Ok(Property::UserProperty(UserProperty(val))))
-            }
+                Err(err) => Some(Err(err.into())),
+            },
             _ => Some(Err(InvalidPropertyId.into())),
-        };
+        }
     }
 }
 

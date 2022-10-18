@@ -354,11 +354,6 @@ impl Connect {
                 + payload_len,
         )
     }
-
-    pub(crate) fn is_extended_auth(&self) -> bool {
-        self.properties.authentication_method.is_some()
-            && self.properties.authentication_data.is_some()
-    }
 }
 
 impl PacketID for Connect {

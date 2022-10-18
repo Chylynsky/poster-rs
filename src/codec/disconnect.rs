@@ -13,8 +13,8 @@ use crate::core::{
 };
 use core::mem;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum DisconnectReason {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DisconnectReason {
     Success = 0x00,
     DisconnectWithWillMessage = 0x04,
     UnspecifiedError = 0x80,
@@ -126,7 +126,7 @@ impl SizedProperty for DisconnectProperties {
                     return 0;
                 }
 
-                return val.property_len();
+                val.property_len()
             })
             .unwrap();
 
@@ -241,8 +241,8 @@ impl TryFromBytes for Disconnect {
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            if property.is_err() {
-                return Err(property.unwrap_err().into());
+            if let Err(err) = property {
+                return Err(err.into());
             }
 
             match property.unwrap() {

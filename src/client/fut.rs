@@ -21,7 +21,7 @@ impl Stream for SubscribeStream {
                     return Poll::Ready(Some(PublishData::from(publish)));
                 }
 
-                return Poll::Ready(None);
+                Poll::Ready(None)
             }
         }
     }

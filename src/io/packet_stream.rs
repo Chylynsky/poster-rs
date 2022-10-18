@@ -19,7 +19,7 @@ pub(crate) struct PacketStream<StreamT> {
     stream: StreamT,
 }
 
-impl<'a, StreamT> From<StreamT> for PacketStream<StreamT> {
+impl<StreamT> From<StreamT> for PacketStream<StreamT> {
     fn from(stream: StreamT) -> Self {
         Self {
             state: PacketStreamState::ReadPacketSize,
@@ -28,7 +28,7 @@ impl<'a, StreamT> From<StreamT> for PacketStream<StreamT> {
     }
 }
 
-impl<'a, StreamT> PacketStream<StreamT> {
+impl<StreamT> PacketStream<StreamT> {
     fn split_borrows_mut(&mut self) -> (&mut PacketStreamState, &mut StreamT) {
         (&mut self.state, &mut self.stream)
     }

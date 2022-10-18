@@ -63,10 +63,6 @@ impl<'a> ByteReader<'a> {
         self.buf.len() - self.offset
     }
 
-    pub(crate) fn offset(&self) -> usize {
-        self.offset
-    }
-
     pub(crate) fn try_read<T>(&mut self) -> Result<T, T::Error>
     where
         T: Sized + TryFromBytes + SizedProperty,
@@ -101,10 +97,6 @@ impl<'a> ByteWriter<'a> {
         self.buf.len() - self.offset
     }
 
-    pub(crate) fn offset(&self) -> usize {
-        self.offset
-    }
-
     pub(crate) fn write<T>(&mut self, val: &T)
     where
         T: ToByteBuffer,
@@ -112,16 +104,6 @@ impl<'a> ByteWriter<'a> {
         let buf = &mut self.buf[self.offset..];
         let written_bytes = val.to_byte_buffer(buf).len();
         self.advance_by(written_bytes);
-    }
-
-    pub(crate) fn try_write<T>(&mut self, val: &T) -> Result<(), T::Error>
-    where
-        T: TryToByteBuffer,
-    {
-        let buf = &mut self.buf[self.offset..];
-        let written_bytes = val.try_to_byte_buffer(buf)?.len();
-        self.advance_by(written_bytes);
-        Ok(())
     }
 }
 
@@ -140,7 +122,7 @@ mod test {
             let mut writer = ByteWriter::from(&mut buf);
             writer.write(&INPUT);
 
-            assert_eq!(writer.offset(), std::mem::size_of::<u32>());
+            assert_eq!(writer.offset, std::mem::size_of::<u32>());
             assert_eq!(writer.remaining(), buf.len() - std::mem::size_of::<u32>());
             assert_eq!(&buf[0..std::mem::size_of::<u32>()], INPUT.to_be_bytes());
         }
@@ -153,31 +135,6 @@ mod test {
             let mut buf = [0u8; 0];
             let mut writer = ByteWriter::from(&mut buf);
             writer.write(&INPUT);
-        }
-
-        #[test]
-        fn try_write() {
-            const INPUT: u32 = 0x12345678;
-
-            let mut buf = [0u8; 32];
-            let mut writer = ByteWriter::from(&mut buf);
-            let result = writer.try_write(&INPUT);
-
-            assert!(result.is_ok());
-            assert_eq!(writer.offset(), std::mem::size_of::<u32>());
-            assert_eq!(writer.remaining(), buf.len() - std::mem::size_of::<u32>());
-            assert_eq!(&buf[0..std::mem::size_of::<u32>()], INPUT.to_be_bytes());
-        }
-
-        #[test]
-        fn try_write_out_of_bounds() {
-            const INPUT: u32 = 0x12345678;
-
-            let mut buf = [0u8; 0];
-            let mut writer = ByteWriter::from(&mut buf);
-            let result = writer.try_write(&INPUT);
-
-            assert!(result.is_err());
         }
     }
 
@@ -193,7 +150,7 @@ mod test {
 
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), 45);
-            assert_eq!(reader.offset(), 1);
+            assert_eq!(reader.offset, 1);
             assert_eq!(reader.remaining(), 0);
         }
 

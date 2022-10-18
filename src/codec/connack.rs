@@ -9,7 +9,7 @@ use crate::core::{
 };
 use core::mem;
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ConnectReason {
     Success = 0x00,
     UnspecifiedError = 0x80,
@@ -139,7 +139,7 @@ impl TryFromBytes for Connack {
                     return Err(InvalidPacketHeader.into());
                 }
 
-                return Ok(val);
+                Ok(val)
             })?;
 
         let remaining_len = reader.try_read::<VarSizeInt>()?;
@@ -161,8 +161,8 @@ impl TryFromBytes for Connack {
         }
 
         for property in PropertyIterator::from(reader.get_buf()) {
-            if property.is_err() {
-                return Err(property.unwrap_err().into());
+            if let Err(err) = property {
+                return Err(err.into());
             }
 
             match property.unwrap() {

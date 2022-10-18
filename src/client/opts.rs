@@ -319,7 +319,7 @@ impl PublishOpts {
     }
 
     pub fn data(mut self, val: &[u8]) -> Self {
-        self.builder.payload(Vec::from(val).into());
+        self.builder.payload(Vec::from(val));
         self
     }
 

@@ -15,7 +15,6 @@ use crate::{
 };
 use core::{
     fmt, mem,
-    str::FromStr,
     sync::atomic::{AtomicU16, AtomicU32, Ordering},
 };
 use either::{Either, Left, Right};
@@ -88,7 +87,7 @@ impl From<TrySendError<ContextMessage>> for ContextExited {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Disconnected {
-    reason: DisconnectReason,
+    pub reason: DisconnectReason,
 }
 
 impl fmt::Display for Disconnected {
@@ -356,7 +355,7 @@ where
                 message_queue: receiver,
             },
             ContextHandle {
-                sender: sender,
+                sender,
                 packet_id: Arc::new(AtomicU16::from(1)),
                 sub_id: Arc::new(AtomicU32::from(1)),
             },
@@ -622,7 +621,7 @@ where
                             if let Some(subscription) =  ctx.active_subscriptions.get_mut(&sub_id) {
                                 // User may drop the receiving stream,
                                 // in that case remove it from the active subscriptions map.
-                                if let Err(_) =  subscription.send(RxPacket::Publish(publish)).await {
+                                if (subscription.send(RxPacket::Publish(publish)).await).is_err() {
                                     ctx.active_subscriptions.remove(&sub_id);
                                 }
                             }

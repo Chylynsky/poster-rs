@@ -6,8 +6,8 @@ use crate::{
     },
 };
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) enum PubrecReason {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PubrecReason {
     Success = 0x00,
     NoMatchingSubscribers = 0x10,
     UnspecifiedError = 0x80,
