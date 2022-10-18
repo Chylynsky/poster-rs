@@ -111,11 +111,11 @@ impl ToByteBuffer for DisconnectReason {
     }
 }
 
-struct DisconnectProperties {
-    session_expiry_interval: SessionExpiryInterval,
-    reason_string: Option<ReasonString>,
-    server_reference: Option<ServerReference>,
-    user_property: Vec<UserProperty>,
+pub(crate) struct DisconnectProperties {
+    pub(crate) session_expiry_interval: SessionExpiryInterval,
+    pub(crate) reason_string: Option<ReasonString>,
+    pub(crate) server_reference: Option<ServerReference>,
+    pub(crate) user_property: Vec<UserProperty>,
 }
 
 impl SizedProperty for DisconnectProperties {
@@ -183,8 +183,8 @@ impl ToByteBuffer for DisconnectProperties {
 }
 
 pub(crate) struct Disconnect {
-    reason: DisconnectReason,
-    properties: DisconnectProperties,
+    pub(crate) reason: DisconnectReason,
+    pub(crate) properties: DisconnectProperties,
 }
 
 impl Disconnect {
@@ -230,6 +230,10 @@ impl TryFromBytes for Disconnect {
 
         let reason = reader.try_read::<DisconnectReason>()?;
         builder.reason(reason);
+
+        if reader.remaining() == 0 {
+            return builder.build();
+        }
 
         let property_len = reader.try_read::<VarSizeInt>()?;
         if property_len.value() as usize > reader.remaining() {

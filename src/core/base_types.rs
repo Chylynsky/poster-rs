@@ -56,20 +56,34 @@ impl VarSizeInt {
 
         match self.0 {
             VarSizeIntState::SingleByte(val) => result.copy_from_slice(&[val]),
-            VarSizeIntState::TwoByte(val) => {
-                result.copy_from_slice(&[((val >> 7) | 0x80) as u8, (val & 0x7f) as u8])
+            VarSizeIntState::TwoByte(mut val) => {
+                let byte0 = (val % 0x80) as u8 | 0x80;
+                val = val / 0x80;
+                let byte1 = (val % 0x80) as u8;
+
+                result.copy_from_slice(&[byte0, byte1]);
             }
-            VarSizeIntState::ThreeByte(val) => result.copy_from_slice(&[
-                (((val >> 14) & 0x7f) | 0x80) as u8,
-                (((val >> 7) & 0x7f) | 0x80) as u8,
-                (val & 0x7f) as u8,
-            ]),
-            VarSizeIntState::FourByte(val) => result.copy_from_slice(&[
-                (((val >> 21) & 0x7f) | 0x80) as u8,
-                (((val >> 14) & 0x7f) | 0x80) as u8,
-                (((val >> 7) & 0x7f) | 0x80) as u8,
-                (val & 0x7f) as u8,
-            ]),
+            VarSizeIntState::ThreeByte(mut val) => {
+                let byte0 = (val % 0x80) as u8 | 0x80;
+                val = val / 0x80;
+                let byte1 = (val % 0x80) as u8 | 0x80;
+                val = val / 0x80;
+                let byte2 = (val % 0x80) as u8;
+
+                result.copy_from_slice(&[byte0, byte1, byte2])
+            }
+
+            VarSizeIntState::FourByte(mut val) => {
+                let byte0 = (val % 0x80) as u8 | 0x80;
+                val = val / 0x80;
+                let byte1 = (val % 0x80) as u8 | 0x80;
+                val = val / 0x80;
+                let byte2 = (val % 0x80) as u8 | 0x80;
+                val = val / 0x80;
+                let byte3 = (val % 0x80) as u8;
+
+                result.copy_from_slice(&[byte0, byte1, byte2, byte3])
+            }
         }
 
         result
@@ -95,40 +109,30 @@ impl TryFromIterator<u8> for VarSizeInt {
     where
         Iter: Iterator<Item = u8>,
     {
-        let mut size = 0usize;
-        let mut end = false;
+        let mut mult = 1u32;
+        let mut val = 0u32;
 
-        let result = iter
-            .enumerate()
-            .take_while(|(idx, byte)| {
-                if end || *idx == 4 {
-                    return false;
-                } else if (byte >> 0x7) == 0x0 {
-                    end = true;
-                }
-                true
-            })
-            .map(|(idx, byte)| {
-                size = idx + 1;
-                byte as u32
-            })
-            .fold(0u32, |acc, val| (acc << 7) | (val & 0x7f));
+        for (idx, byte) in iter.enumerate() {
+            val += (byte as u32 & 127) * mult;
 
-        if !end {
-            return Err(InvalidEncoding.into());
+            if mult as usize > Self::MAX {
+                return Err(ValueExceedesMaximum.into());
+            }
+
+            mult *= 128;
+
+            if byte & 128 == 0 {
+                return match idx {
+                    0 => Ok(Self(VarSizeIntState::SingleByte(val as u8))),
+                    1 => Ok(Self(VarSizeIntState::TwoByte(val as u16))),
+                    2 => Ok(Self(VarSizeIntState::ThreeByte(val as u32))),
+                    3 => Ok(Self(VarSizeIntState::FourByte(val as u32))),
+                    _ => Err(InvalidEncoding.into()),
+                };
+            }
         }
 
-        if result as usize > Self::MAX {
-            return Err(ValueExceedesMaximum.into());
-        }
-
-        match size {
-            1 => Ok(Self(VarSizeIntState::SingleByte(result as u8))),
-            2 => Ok(Self(VarSizeIntState::TwoByte(result as u16))),
-            3 => Ok(Self(VarSizeIntState::ThreeByte(result as u32))),
-            4 => Ok(Self(VarSizeIntState::FourByte(result as u32))),
-            _ => Err(InvalidEncoding.into()),
-        }
+        Err(InsufficientBufferSize.into())
     }
 }
 
@@ -702,11 +706,24 @@ impl TryFromBytes for NonZero<VarSizeInt> {
     }
 }
 
-pub(crate) type Binary = Vec<u8>;
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Binary(Vec<u8>);
+
+impl From<Vec<u8>> for Binary {
+    fn from(val: Vec<u8>) -> Self {
+        Self { 0: val }
+    }
+}
+
+impl From<Binary> for Vec<u8> {
+    fn from(val: Binary) -> Self {
+        val.0
+    }
+}
 
 impl SizedProperty for Binary {
     fn property_len(&self) -> usize {
-        self.len() + mem::size_of::<u16>()
+        self.0.len() + mem::size_of::<u16>()
     }
 }
 
@@ -731,14 +748,14 @@ impl TryFromBytes for Binary {
         remaining
             .get(0..size)
             .ok_or(InsufficientBufferSize.into())
-            .map(|val| Vec::from(val))
+            .map(|val| Self { 0: Vec::from(val) })
     }
 }
 
 impl ToByteBuffer for Binary {
     fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
         let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self].concat());
+        result.copy_from_slice(&[&(self.0.len() as u16).to_be_bytes()[..], &self.0].concat());
         result
     }
 }
@@ -750,7 +767,7 @@ impl TryToByteBuffer for Binary {
         let result = buf
             .get_mut(0..self.property_len())
             .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self].concat());
+        result.copy_from_slice(&[&(self.0.len() as u16).to_be_bytes()[..], &self.0].concat());
         Ok(result)
     }
 }
@@ -779,6 +796,42 @@ impl<'a> TryToByteBuffer for BinaryRef<'a> {
             .get_mut(0..self.property_len())
             .ok_or(InsufficientBufferSize)?;
         result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self].concat());
+        Ok(result)
+    }
+}
+
+pub(crate) type Payload = Vec<u8>;
+
+impl SizedProperty for Payload {
+    fn property_len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl TryFromBytes for Payload {
+    type Error = ConversionError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Ok(Vec::from(bytes))
+    }
+}
+
+impl ToByteBuffer for Payload {
+    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        let result = &mut buf[0..self.property_len()];
+        result.copy_from_slice(&self);
+        result
+    }
+}
+
+impl TryToByteBuffer for Payload {
+    type Error = ConversionError;
+
+    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
+        let result = buf
+            .get_mut(0..self.property_len())
+            .ok_or(InsufficientBufferSize)?;
+        result.copy_from_slice(&self);
         Ok(result)
     }
 }
@@ -1038,7 +1091,7 @@ mod test {
         fn binary() {
             const INPUT: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
             let val = Binary::try_from_bytes(&INPUT).unwrap();
-            assert_eq!(val, [0x03, 0x76, 0x61, 0x6c]);
+            assert_eq!(val.0, [0x03, 0x76, 0x61, 0x6c]);
         }
 
         #[test]
@@ -1169,8 +1222,9 @@ mod test {
 
         #[test]
         fn to_byte_buffer() {
-            let input: [(VarSizeInt, &[u8]); 4] = [
+            let input: [(VarSizeInt, &[u8]); 5] = [
                 (VarSizeInt::from(127u8), &[0x7f]),
+                (VarSizeInt::from(128u8), &[0x80, 0x01]),
                 (VarSizeInt::from(16383u16), &[0xff, 0x7f]),
                 (VarSizeInt::from(2097151u32), &[0xff, 0xff, 0x7f]),
                 (VarSizeInt::from(268435455u32), &[0xff, 0xff, 0xff, 0x7f]),

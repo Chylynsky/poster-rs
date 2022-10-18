@@ -28,7 +28,7 @@ pub(crate) struct Publish {
     pub(crate) content_type: Option<ContentType>,
     pub(crate) user_property: Vec<UserProperty>,
 
-    pub(crate) payload: Binary,
+    pub(crate) payload: Payload,
 }
 
 impl Publish {
@@ -190,7 +190,7 @@ impl TryFromBytes for Publish {
 
         reader.advance_by(property_len);
 
-        builder.payload(reader.try_read::<Binary>()?);
+        builder.payload(reader.try_read::<Payload>()?);
         builder.build()
     }
 }
@@ -274,7 +274,7 @@ pub(crate) struct PublishBuilder {
     content_type: Option<ContentType>,
     user_property: Vec<UserProperty>,
 
-    payload: Option<Binary>,
+    payload: Option<Payload>,
 }
 
 impl PublishBuilder {
@@ -343,7 +343,7 @@ impl PublishBuilder {
         self
     }
 
-    pub(crate) fn payload(&mut self, val: Binary) -> &mut Self {
+    pub(crate) fn payload(&mut self, val: Payload) -> &mut Self {
         self.payload = Some(val);
         self
     }
@@ -391,14 +391,14 @@ mod test {
     use super::*;
 
     const FIXED_HDR: u8 = (((Publish::PACKET_ID as u8) << 4) | 0x0b) as u8; // DUP: 1, QoS: 1, RETAIN: 1
-    const PACKET: [u8; 17] = [
-        FIXED_HDR, 15, // Remaining length
+    const PACKET: [u8; 15] = [
+        FIXED_HDR, 13, // Remaining length
         0,  // Topic length MSB
         4,  // Topic length LSB
         b't', b'e', b's', b't', 0, 13, // Packet ID
         0,  // Property length
         // Payload
-        0, 4, b't', b'e', b's', b't',
+        b't', b'e', b's', b't',
     ];
 
     #[test]
@@ -409,7 +409,7 @@ mod test {
         assert!(packet.retain);
         assert_eq!(packet.qos, QoS::AtLeastOnce);
         assert_eq!(packet.packet_identifier.unwrap(), 13.into());
-        assert_eq!(std::str::from_utf8(&packet.payload).unwrap(), "test");
+        assert_eq!(String::from_utf8(packet.payload.into()).unwrap(), "test");
     }
 
     #[test]
@@ -420,7 +420,7 @@ mod test {
         builder.retain(true);
         builder.packet_identifier(NonZero::from(13));
         builder.topic_name(String::from("test"));
-        builder.payload(Vec::from([b't', b'e', b's', b't']));
+        builder.payload(Vec::from([b't', b'e', b's', b't']).into());
 
         let packet = builder.build().unwrap();
         let mut buf = [0u8; PACKET.len()];

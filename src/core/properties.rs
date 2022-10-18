@@ -695,7 +695,7 @@ mod test {
                     ]
                     .concat(),
                     CorrelationData::PROPERTY_ID,
-                    Property::CorrelationData(CorrelationData(Vec::from(EXPECTED_VAL))),
+                    Property::CorrelationData(CorrelationData(Vec::from(EXPECTED_VAL).into())),
                 ),
                 (
                     &[
@@ -704,7 +704,9 @@ mod test {
                     ]
                     .concat(),
                     AuthenticationData::PROPERTY_ID,
-                    Property::AuthenticationData(AuthenticationData(Vec::from(EXPECTED_VAL))),
+                    Property::AuthenticationData(AuthenticationData(
+                        Vec::from(EXPECTED_VAL).into(),
+                    )),
                 ),
             ];
 

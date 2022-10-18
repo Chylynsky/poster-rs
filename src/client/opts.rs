@@ -21,8 +21,8 @@ impl ConnectOpts {
     }
 
     /// Mandatory field.
-    pub fn client_identifier(mut self, val: String) -> Self {
-        self.builder.client_identifier(val);
+    pub fn client_identifier(mut self, val: &str) -> Self {
+        self.builder.client_identifier(String::from(val));
         self
     }
 
@@ -61,13 +61,14 @@ impl ConnectOpts {
         self
     }
 
-    pub fn authentication_method(mut self, val: String) -> Self {
-        self.builder.authentication_method(val);
+    pub fn authentication_method(mut self, val: &str) -> Self {
+        self.builder.authentication_method(String::from(val));
         self
     }
 
-    pub fn user_property(mut self, val: (String, String)) -> Self {
-        self.builder.user_property(val);
+    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+        self.builder
+            .user_property((String::from(key), String::from(val)));
         self
     }
 
@@ -101,43 +102,44 @@ impl ConnectOpts {
         self
     }
 
-    pub fn will_content_type(mut self, val: String) -> Self {
-        self.builder.will_content_type(val);
+    pub fn will_content_type(mut self, val: &str) -> Self {
+        self.builder.will_content_type(String::from(val));
         self
     }
 
-    pub fn will_reponse_topic(mut self, val: String) -> Self {
-        self.builder.will_reponse_topic(val);
+    pub fn will_reponse_topic(mut self, val: &str) -> Self {
+        self.builder.will_reponse_topic(String::from(val));
         self
     }
 
-    pub fn will_correlation_data(mut self, val: Vec<u8>) -> Self {
-        self.builder.will_correlation_data(val);
+    pub fn will_correlation_data(mut self, val: &[u8]) -> Self {
+        self.builder.will_correlation_data(Vec::from(val).into());
         self
     }
 
-    pub fn will_user_property(mut self, val: (String, String)) -> Self {
-        self.builder.will_user_property(val);
+    pub fn will_user_property(mut self, (key, val): (&str, &str)) -> Self {
+        self.builder
+            .will_user_property((String::from(key), String::from(val)));
         self
     }
 
-    pub fn will_topic(mut self, val: String) -> Self {
-        self.builder.will_topic(val);
+    pub fn will_topic(mut self, val: &str) -> Self {
+        self.builder.will_topic(String::from(val));
         self
     }
 
-    pub fn will_payload(mut self, val: Vec<u8>) -> Self {
-        self.builder.will_payload(val);
+    pub fn will_payload(mut self, val: &[u8]) -> Self {
+        self.builder.will_payload(Vec::from(val).into());
         self
     }
 
-    pub fn username(mut self, val: String) -> Self {
-        self.builder.username(val);
+    pub fn username(mut self, val: &str) -> Self {
+        self.builder.username(String::from(val));
         self
     }
 
-    pub fn password(mut self, val: Vec<u8>) -> Self {
-        self.builder.password(val);
+    pub fn password(mut self, val: &[u8]) -> Self {
+        self.builder.password(Vec::from(val).into());
         self
     }
 
@@ -161,23 +163,24 @@ impl AuthOpts {
         self
     }
 
-    pub fn authentication_data(mut self, val: Vec<u8>) -> Self {
-        self.builder.authentication_data(val);
+    pub fn authentication_data(mut self, val: &[u8]) -> Self {
+        self.builder.authentication_data(Vec::from(val).into());
         self
     }
 
-    pub fn authentication_method(mut self, val: String) -> Self {
-        self.builder.authentication_method(val);
+    pub fn authentication_method(mut self, val: &str) -> Self {
+        self.builder.authentication_method(String::from(val));
         self
     }
 
-    pub fn reason_string(mut self, val: String) -> Self {
-        self.builder.reason_string(val);
+    pub fn reason_string(mut self, val: &str) -> Self {
+        self.builder.reason_string(String::from(val));
         self
     }
 
-    pub fn user_property(mut self, val: (String, String)) -> Self {
-        self.builder.user_property(val);
+    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+        self.builder
+            .user_property((String::from(key), String::from(val)));
         self
     }
 
@@ -199,8 +202,8 @@ impl SubscribeOpts {
         Self::default()
     }
 
-    pub fn topic(mut self, val: String) -> Self {
-        self.topic = val;
+    pub fn topic(mut self, val: &str) -> Self {
+        self.topic = String::from(val);
         self
     }
 
@@ -219,8 +222,9 @@ impl SubscribeOpts {
         self
     }
 
-    pub fn user_property(mut self, val: (String, String)) -> Self {
-        self.builder.user_property(val);
+    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+        self.builder
+            .user_property((String::from(key), String::from(val)));
         self
     }
 
@@ -262,8 +266,8 @@ impl PublishOpts {
         self
     }
 
-    pub fn topic(mut self, val: String) -> Self {
-        self.builder.topic_name(val);
+    pub fn topic(mut self, val: &str) -> Self {
+        self.builder.topic_name(String::from(val));
         self
     }
 
@@ -293,28 +297,29 @@ impl PublishOpts {
         self
     }
 
-    pub fn correlation_data(mut self, val: Vec<u8>) -> Self {
-        self.builder.correlation_data(val);
+    pub fn correlation_data(mut self, val: &[u8]) -> Self {
+        self.builder.correlation_data(Vec::from(val).into());
         self
     }
 
-    pub fn response_topic(mut self, val: String) -> Self {
-        self.builder.response_topic(val);
+    pub fn response_topic(mut self, val: &str) -> Self {
+        self.builder.response_topic(String::from(val));
         self
     }
 
-    pub fn content_type(mut self, val: String) -> Self {
-        self.builder.content_type(val);
+    pub fn content_type(mut self, val: &str) -> Self {
+        self.builder.content_type(String::from(val));
         self
     }
 
-    pub fn user_property(mut self, val: (String, String)) -> Self {
-        self.builder.user_property(val);
+    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+        self.builder
+            .user_property((String::from(key), String::from(val)));
         self
     }
 
-    pub fn data(mut self, val: Vec<u8>) -> Self {
-        self.builder.payload(val);
+    pub fn data(mut self, val: &[u8]) -> Self {
+        self.builder.payload(Vec::from(val).into());
         self
     }
 
@@ -333,13 +338,14 @@ impl UnsubscribeOpts {
         Self::default()
     }
 
-    pub fn user_property(mut self, val: (String, String)) -> Self {
-        self.builder.user_property(val);
+    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+        self.builder
+            .user_property((String::from(key), String::from(val)));
         self
     }
 
-    pub fn topic(mut self, val: String) -> Self {
-        self.builder.payload(val);
+    pub fn topic(mut self, val: &str) -> Self {
+        self.builder.payload(String::from(val));
         self
     }
 

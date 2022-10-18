@@ -35,11 +35,16 @@ impl<TxStreamT> TxPacketStream<TxStreamT> {
         PacketT: SizedPacket + TryToByteBuffer,
         <PacketT as TryToByteBuffer>::Error: core::fmt::Debug,
     {
-        self.buf.resize(packet.packet_len(), 0u8);
+        let packet_len = packet.packet_len();
+
+        self.buf.resize(packet_len, 0u8);
         let raw = packet.try_to_byte_buffer(&mut self.buf).unwrap();
 
-        println!("[TX] Sending packet: {:?}", &raw);
+        let mut remaining = packet_len;
+        while remaining != 0 {
+            remaining -= self.stream.write(&raw[(raw.len() - remaining)..]).await?;
+        }
 
-        self.stream.write(raw).await
+        Ok(packet_len)
     }
 }

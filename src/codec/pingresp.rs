@@ -1,5 +1,5 @@
 use crate::core::{
-    error::CodecError,
+    error::{CodecError, InvalidPacketHeader},
     utils::{ByteReader, PacketID, TryFromBytes},
 };
 
@@ -28,8 +28,17 @@ impl TryFromBytes for Pingresp {
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
         let builder = PingrespBuilder::default();
         let mut reader = ByteReader::from(bytes);
-        let _fixed_hdr = reader.try_read::<u8>()?;
-        debug_assert!(_fixed_hdr >> 4 == Self::PACKET_ID as u8);
+
+        reader
+            .try_read::<u8>()
+            .map_err(CodecError::from)
+            .and_then(|val| {
+                if val != Self::FIXED_HDR {
+                    return Err(InvalidPacketHeader.into());
+                }
+
+                return Ok(val);
+            })?;
 
         builder.build()
     }

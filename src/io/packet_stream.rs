@@ -42,7 +42,13 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let (state, mut stream) = self.split_borrows_mut();
-        if let Poll::Ready(Ok(buf)) = Pin::new(&mut stream).poll_fill_buf(cx) {
+
+        if let Poll::Ready(result) = Pin::new(&mut stream).poll_fill_buf(cx) {
+            if result.is_err() {
+                return Poll::Ready(None);
+            }
+
+            let buf = result.unwrap();
             if buf.is_empty() {
                 return Poll::Ready(None); // EOF
             }
@@ -51,11 +57,11 @@ where
                 PacketStreamState::ReadPacketSize => {
                     let mut reader = ByteReader::from(&buf[1..]);
                     if let Ok(remaining_len) = reader.try_read::<VarSizeInt>() {
-                        *state = PacketStreamState::ReadPacket(
-                            1 + remaining_len.len() + remaining_len.value() as usize,
-                        );
-                        return self.poll_next(cx);
+                        let packet_size = 1 + remaining_len.len() + remaining_len.value() as usize;
+                        *state = PacketStreamState::ReadPacket(packet_size);
                     }
+
+                    return self.poll_next(cx);
                 }
                 PacketStreamState::ReadPacket(packet_size) => {
                     if buf.len() >= *packet_size {
@@ -65,6 +71,8 @@ where
 
                         Pin::new(&mut stream).consume(*packet_size); // Consume the packet
                         *state = PacketStreamState::ReadPacketSize;
+
+                        cx.waker().wake_by_ref();
                         return Poll::Ready(Some(result));
                     }
                 }

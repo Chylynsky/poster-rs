@@ -9,6 +9,7 @@ use crate::{
     core::{
         base_types::{NonZero, VarSizeInt},
         error::CodecError,
+        properties::SubscriptionIdentifier,
         utils::PacketID,
     },
 };
@@ -85,6 +86,37 @@ impl From<TrySendError<ContextMessage>> for ContextExited {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Disconnected {
+    reason: DisconnectReason,
+}
+
+impl fmt::Display for Disconnected {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Disconnected with reason: {} [{:?}]",
+            self.reason as u8, self.reason
+        )
+    }
+}
+
+impl Error for Disconnected {}
+
+impl From<Disconnect> for Disconnected {
+    fn from(packet: Disconnect) -> Self {
+        Self {
+            reason: packet.reason,
+        }
+    }
+}
+
+impl From<DisconnectReason> for Disconnected {
+    fn from(reason: DisconnectReason) -> Self {
+        Self { reason }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InternalError {
     msg: String,
@@ -113,6 +145,7 @@ pub enum MqttError {
     HandleClosed(HandleClosed),
     ContextExited(ContextExited),
     CodecError(CodecError),
+    Disconnected(Disconnected),
 }
 
 impl fmt::Display for MqttError {
@@ -123,6 +156,7 @@ impl fmt::Display for MqttError {
             Self::HandleClosed(err) => write!(f, "MqttError: {}", err),
             Self::ContextExited(err) => write!(f, "MqttError: {}", err),
             Self::CodecError(err) => write!(f, "MqttError: {}", err),
+            Self::Disconnected(err) => write!(f, "MqttError: {}", err),
         }
     }
 }
@@ -180,6 +214,24 @@ impl From<TrySendError<ContextMessage>> for MqttError {
 impl From<CodecError> for MqttError {
     fn from(err: CodecError) -> Self {
         Self::CodecError(err)
+    }
+}
+
+impl From<Disconnected> for MqttError {
+    fn from(err: Disconnected) -> Self {
+        Self::Disconnected(err)
+    }
+}
+
+impl From<Disconnect> for MqttError {
+    fn from(packet: Disconnect) -> Self {
+        Self::Disconnected(packet.into())
+    }
+}
+
+impl From<DisconnectReason> for MqttError {
+    fn from(reason: DisconnectReason) -> Self {
+        Self::Disconnected(reason.into())
     }
 }
 
@@ -293,7 +345,7 @@ where
     /// User is responsible for making sure that at the point of calling this method,
     /// both the `rx` and `tx` are connected to the broker and ready for communication.
     pub fn new(rx: RxStreamT, tx: TxStreamT) -> (Self, ContextHandle) {
-        let (sender, receiver) = mpsc::channel(16 * mem::size_of::<ContextMessage>());
+        let (sender, receiver) = mpsc::channel(mem::size_of::<ContextMessage>());
 
         (
             Self {
@@ -529,7 +581,9 @@ impl ContextHandle {
 }
 
 /// Makes [Context] object start processing MQTT traffic, blocking the current task/thread until
-/// graceful disconnection or critical error.
+/// graceful disconnection or error. Successful disconnection via [disconnect] method or
+/// receiving a [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205)
+/// packet with reason a code equal to 0 (success) is considered a graceful disconnection.
 ///
 /// # Tokio example
 /// ```
@@ -544,6 +598,12 @@ where
     RxStreamT: AsyncRead + Unpin,
     TxStreamT: AsyncWrite + Unpin,
 {
+    let unwrap_sub_id = |property: SubscriptionIdentifier| -> u32 {
+        let tmp: NonZero<VarSizeInt> = property.into();
+        let sub_id: VarSizeInt = tmp.into();
+        sub_id.into()
+    };
+
     let mut pck_fut = ctx.rx.next().fuse();
     let mut msg_fut = ctx.message_queue.next().fuse();
 
@@ -555,64 +615,79 @@ where
                 }
 
                 let rx_packet = rx_packet_result.unwrap()?;
-
                 match rx_packet {
                     RxPacket::Publish(publish) => {
                         if  publish.subscription_identifier.is_some() {
-                            let sub_id: NonZero<VarSizeInt> = publish.subscription_identifier.clone().unwrap().into();
-                            let subscription = ctx.active_subscriptions.get_mut(&sub_id.value().into()).ok_or(InternalError::from("subscription identifier not found"))?;
-
-                            subscription.send(RxPacket::Publish(publish)).await?;
+                            let sub_id = unwrap_sub_id(publish.subscription_identifier.clone().unwrap());
+                            if let Some(subscription) =  ctx.active_subscriptions.get_mut(&sub_id) {
+                                // User may drop the receiving stream,
+                                // in that case remove it from the active subscriptions map.
+                                if let Err(_) =  subscription.send(RxPacket::Publish(publish)).await {
+                                    ctx.active_subscriptions.remove(&sub_id);
+                                }
+                            }
                         }
+                    },
+                    RxPacket::Disconnect(disconnect) => {
+                        if disconnect.reason == DisconnectReason::Success  {
+                            return Ok(()); // Graceful disconnection.
+                        }
+
+                        return Err(disconnect.into());
                     },
                     _ => {
                         let id = rx_packet_to_action_id(&rx_packet);
                         if let Some(sender) = ctx.active_requests.remove(&id) {
+                            // Error here indicates internal error, the receiver
+                            // end is inside one of the ContextHandle method.
                             sender.send(rx_packet).map_err(|_| HandleClosed)?;
                         }
-
-                        pck_fut = ctx.rx.next().fuse();
                     }
                 }
 
+                pck_fut = ctx.rx.next().fuse();
                 continue;
             },
             message_result = msg_fut => {
-                if let Some(msg_type) = message_result {
-                    match msg_type {
-                        ContextMessage::FireAndForget(msg) => {
-                            ctx.tx.write(msg.packet).await?;
-                        },
-                        ContextMessage::AwaitAck(msg) => {
-                            ctx.active_requests.insert(msg.action_id, msg.response_channel);
-                            ctx.tx.write(msg.packet).await?;
-                        },
-                        ContextMessage::AwaitStream(msg) => {
-                            match msg.packet {
-                                TxPacket::Subscribe(sub) => {
-                                    let sub_id_var_size: NonZero<VarSizeInt> = sub.properties.subscription_identifier
-                                        .clone()
-                                        .unwrap()
-                                        .into();
-                                    let sub_id: VarSizeInt = sub_id_var_size.value();
-
-                                    ctx.active_requests.insert(msg.action_id, msg.response_channel);
-                                    ctx.active_subscriptions.insert(sub_id.into(), msg.stream);
-                                    ctx.tx.write(TxPacket::Subscribe(sub)).await?;
-                                },
-                                _ => {
-                                    return Err(InternalError::from("unexpected packet type").into());
-                                }
-                            }
-
-                        },
-                    }
-
-                    msg_fut = ctx.message_queue.next().fuse();
-                    continue;
+                if message_result.is_none() {
+                    return Err(HandleClosed.into());
                 }
 
-               return Err(HandleClosed.into());
+                match message_result.unwrap() {
+                    ContextMessage::FireAndForget(msg) => {
+                        match msg.packet {
+                            TxPacket::Disconnect(_) => {
+                                ctx.tx.write(msg.packet).await?;
+                                return Ok(()) // Graceful disconnection.
+                            }
+                            _ => {
+                                ctx.tx.write(msg.packet).await?;
+                            }
+                        }
+
+                    },
+                    ContextMessage::AwaitAck(msg) => {
+                        ctx.active_requests.insert(msg.action_id, msg.response_channel);
+                        ctx.tx.write(msg.packet).await?;
+                    },
+                    ContextMessage::AwaitStream(msg) => {
+                        match msg.packet {
+                            TxPacket::Subscribe(sub) => {
+                                let sub_id = unwrap_sub_id(sub.properties.subscription_identifier.clone().unwrap());
+
+                                ctx.active_requests.insert(msg.action_id, msg.response_channel);
+                                ctx.active_subscriptions.insert(sub_id, msg.stream);
+                                ctx.tx.write(TxPacket::Subscribe(sub)).await?;
+                            },
+                            _ => {
+                                return Err(InternalError::from("unexpected packet type").into());
+                            }
+                        }
+                    },
+                }
+
+                msg_fut = ctx.message_queue.next().fuse();
+                continue;
             }
         }
     }

@@ -3,7 +3,7 @@ use crate::{
         Auth, AuthReason, Connack, ConnectReason, Puback, PubackReason, Publish, Suback,
         SubackReason, Unsuback, UnsubackReason,
     },
-    core::base_types::{NonZero, QoS, VarSizeInt},
+    core::base_types::{Binary, NonZero, QoS, VarSizeInt},
 };
 
 pub struct ConnectRsp {
@@ -43,7 +43,9 @@ impl From<Connack> for ConnectRsp {
             topic_alias_maximum: pck.topic_alias_maximum.into(),
             session_expiry_interval: pck.session_expiry_interval.into(),
             maximum_packet_size: pck.maximum_packet_size.map(|val| NonZero::from(val).into()),
-            authentication_data: pck.authentication_data.map(|val| val.into()),
+            authentication_data: pck
+                .authentication_data
+                .map(|val| -> Vec<u8> { Binary::from(val).into() }),
             assigned_client_identifier: pck.assigned_client_identifier.map(|val| val.into()),
             reason_string: pck.reason_string.map(|val| val.into()),
             response_information: pck.response_information.map(|val| val.into()),
@@ -71,7 +73,7 @@ impl From<Auth> for AuthRsp {
         Self {
             reason: pck.reason,
             authentication_method: pck.authentication_method.map(|val| val.into()),
-            authentication_data: pck.authentication_data.map(|val| val.into()),
+            authentication_data: pck.authentication_data.map(|val| Binary::from(val).into()),
             reason_string: pck.reason_string.map(|val| val.into()),
             user_property: pck
                 .user_property
@@ -178,7 +180,7 @@ impl From<Publish> for PublishData {
                 let sub_id: NonZero<VarSizeInt> = val.into();
                 sub_id.value().into()
             }),
-            correlation_data: pck.correlation_data.map(|val| val.into()),
+            correlation_data: pck.correlation_data.map(|val| Binary::from(val).into()),
             response_topic: pck.response_topic.map(|val| val.into()),
             content_type: pck.content_type.map(|val| val.into()),
             user_property: pck
