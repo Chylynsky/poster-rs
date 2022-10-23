@@ -1,3 +1,5 @@
+use bytes::Bytes;
+
 pub(crate) trait SizedProperty {
     fn property_len(&self) -> usize;
 }
@@ -42,6 +44,19 @@ where
     fn try_from_iter<Iter>(iter: Iter) -> Result<Self, Self::Error>
     where
         Iter: Iterator<Item = T> + Clone;
+}
+
+pub(crate) trait Decode {
+    fn decode(buf: Bytes) -> Self;
+}
+
+pub(crate) trait TryDecode
+where
+    Self: Sized,
+{
+    type Error;
+
+    fn try_decode(buf: Bytes) -> Result<Self, Self::Error>;
 }
 
 pub(crate) struct ByteReader<'a> {

@@ -2,10 +2,10 @@ use crate::{
     core::utils::{SizedPacket, TryToByteBuffer},
     io::PacketStream,
 };
-use futures::{io::BufReader, AsyncWrite, AsyncWriteExt};
+use futures::{AsyncWrite, AsyncWriteExt};
 use std::io;
 
-pub(crate) type RxPacketStream<RxStreamT> = PacketStream<BufReader<RxStreamT>>;
+pub(crate) type RxPacketStream<RxStreamT> = PacketStream<RxStreamT>;
 
 pub(crate) struct TxPacketStream<TxStreamT> {
     stream: TxStreamT,

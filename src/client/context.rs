@@ -14,7 +14,7 @@ use crate::{
     },
 };
 use core::{
-    fmt, mem,
+    fmt,
     sync::atomic::{AtomicU16, AtomicU32, Ordering},
 };
 use either::{Either, Left, Right};
@@ -23,7 +23,6 @@ use futures::{
         mpsc::{self, SendError, TrySendError},
         oneshot::{self, Canceled},
     },
-    io::BufReader,
     AsyncRead, AsyncWrite, FutureExt, SinkExt, StreamExt,
 };
 use std::{collections::HashMap, error::Error, io, sync::Arc};
@@ -322,11 +321,11 @@ pub struct Context<RxStreamT, TxStreamT> {
     active_requests: HashMap<u32, oneshot::Sender<RxPacket>>,
     active_subscriptions: HashMap<u32, mpsc::UnboundedSender<RxPacket>>,
 
-    message_queue: mpsc::Receiver<ContextMessage>,
+    message_queue: mpsc::UnboundedReceiver<ContextMessage>,
 }
 
 impl<RxStreamT, TxStreamT> Context<RxStreamT, TxStreamT> {
-    pub const DEFAULT_BUF_SIZE: usize = 1024;
+    pub const DEFAULT_BUF_SIZE: usize = 2048;
 }
 
 impl<RxStreamT, TxStreamT> Context<RxStreamT, TxStreamT>
@@ -344,11 +343,11 @@ where
     /// User is responsible for making sure that at the point of calling this method,
     /// both the `rx` and `tx` are connected to the broker and ready for communication.
     pub fn new(rx: RxStreamT, tx: TxStreamT) -> (Self, ContextHandle) {
-        let (sender, receiver) = mpsc::channel(mem::size_of::<ContextMessage>());
+        let (sender, receiver) = mpsc::unbounded();
 
         (
             Self {
-                rx: RxPacketStream::from(BufReader::with_capacity(Self::DEFAULT_BUF_SIZE, rx)),
+                rx: RxPacketStream::with_capacity(Self::DEFAULT_BUF_SIZE, rx),
                 tx: TxPacketStream::with_capacity(Self::DEFAULT_BUF_SIZE, tx),
                 active_requests: HashMap::new(),
                 active_subscriptions: HashMap::new(),
@@ -366,7 +365,7 @@ where
 /// Cloneable handle to the client [Context]. This handle is needed to perform MQTT operations.
 #[derive(Clone)]
 pub struct ContextHandle {
-    sender: mpsc::Sender<ContextMessage>,
+    sender: mpsc::UnboundedSender<ContextMessage>,
     packet_id: Arc<AtomicU16>,
     sub_id: Arc<AtomicU32>,
 }
@@ -401,9 +400,7 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender
-            .try_send(message)
-            .expect("Error sending connect request to the context.");
+        self.sender.send(message).await?;
 
         match receiver.await? {
             RxPacket::Connack(connack) => Ok(Left(ConnectRsp::from(connack))),
@@ -438,9 +435,7 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender
-            .try_send(message)
-            .expect("Error sending connect request to the context.");
+        self.sender.send(message).await?;
 
         match receiver.await? {
             RxPacket::Connack(connack) => Ok(Left(ConnectRsp::from(connack))),
@@ -463,7 +458,7 @@ impl ContextHandle {
             packet: TxPacket::Disconnect(packet),
         });
 
-        self.sender.try_send(message)?;
+        self.sender.send(message).await?;
         Ok(())
     }
 
@@ -482,7 +477,7 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender.try_send(message)?;
+        self.sender.send(message).await?;
 
         if let RxPacket::Pingresp(_) = receiver.await? {
             return Ok(());
@@ -499,9 +494,7 @@ impl ContextHandle {
             packet: TxPacket::Publish(packet),
         });
 
-        self.sender
-            .try_send(message)
-            .map_err(|_| MqttError::from(ContextExited))?;
+        self.sender.send(message).await?;
 
         Ok(None)
     }
@@ -532,7 +525,7 @@ impl ContextHandle {
             stream: str_sender,
         });
 
-        self.sender.try_send(message)?;
+        self.sender.send(message).await?;
 
         if let RxPacket::Suback(suback) = receiver.await? {
             return Ok((
@@ -569,7 +562,7 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender.try_send(message)?;
+        self.sender.send(message).await?;
 
         if let RxPacket::Unsuback(unsuback) = receiver.await? {
             return Ok(UnsubscribeRsp::from(unsuback));
@@ -679,7 +672,7 @@ where
                                 ctx.tx.write(TxPacket::Subscribe(sub)).await?;
                             },
                             _ => {
-                                return Err(InternalError::from("unexpected packet type").into());
+                               unreachable!("Unexpected packet type.")
                             }
                         }
                     },

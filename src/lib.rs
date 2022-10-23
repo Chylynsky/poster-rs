@@ -1,4 +1,3 @@
-#[forbid(unsafe_code)]
 mod client;
 mod codec;
 mod core;

@@ -1,82 +1,168 @@
 use crate::{
     codec::RxPacket,
-    core::utils::{ByteReader, TryFromBytes},
     core::{base_types::VarSizeInt, error::CodecError},
+    core::{
+        error::ConversionError,
+        utils::{ByteReader, TryFromBytes},
+    },
 };
+use bytes::{Bytes, BytesMut};
 use core::{
+    ops::Range,
     pin::Pin,
     task::{Context, Poll},
 };
-use futures::{AsyncBufRead, Stream};
+use futures::{AsyncRead, Stream};
 
 enum PacketStreamState {
-    ReadPacketSize,
-    ReadPacket(usize),
+    Idle,
+    ReadPacketLen,
+    ReadPacketData,
 }
 
 pub(crate) struct PacketStream<StreamT> {
-    state: PacketStreamState,
     stream: StreamT,
+    buf: BytesMut,
+    offset: usize,
+
+    packet: Range<usize>,
+
+    state: PacketStreamState,
 }
 
 impl<StreamT> From<StreamT> for PacketStream<StreamT> {
     fn from(stream: StreamT) -> Self {
         Self {
-            state: PacketStreamState::ReadPacketSize,
             stream,
+            buf: BytesMut::with_capacity(2048),
+            offset: 0,
+            packet: 0..0,
+            state: PacketStreamState::Idle,
         }
     }
 }
 
 impl<StreamT> PacketStream<StreamT> {
-    fn split_borrows_mut(&mut self) -> (&mut PacketStreamState, &mut StreamT) {
-        (&mut self.state, &mut self.stream)
+    pub(crate) fn with_capacity(capacity: usize, inner: StreamT) -> Self {
+        Self {
+            stream: inner,
+            buf: BytesMut::with_capacity(capacity),
+            offset: 0,
+            packet: 0..0,
+            state: PacketStreamState::Idle,
+        }
+    }
+
+    fn split_borrows_mut(
+        &mut self,
+    ) -> (
+        &mut StreamT,
+        &mut BytesMut,
+        &mut usize,
+        &mut Range<usize>,
+        &mut PacketStreamState,
+    ) {
+        (
+            &mut self.stream,
+            &mut self.buf,
+            &mut self.offset,
+            &mut self.packet,
+            &mut self.state,
+        )
+    }
+
+    fn step(&mut self, size: usize) -> Option<Result<Bytes, CodecError>> {
+        match self.state {
+            PacketStreamState::Idle => {
+                self.offset = size;
+                self.state = PacketStreamState::ReadPacketLen;
+                return self.step(0); // Size is already consumed for setting the offset
+            }
+            PacketStreamState::ReadPacketLen => {
+                self.offset += size;
+                if self.offset < 2 {
+                    return None;
+                }
+
+                // Omit packet ID, try to read the remaining length.
+                let mut reader = ByteReader::from(&self.buf[1..self.offset]);
+                let maybe_remaining_len = reader
+                    .try_read::<VarSizeInt>()
+                    .map(|val| Some(val))
+                    .or_else(|err| {
+                        if let ConversionError::InsufficientBufferSize(_) = err {
+                            return Ok(None); // Need to read more data
+                        }
+                        return Err(err);
+                    });
+
+                if let Err(err) = maybe_remaining_len {
+                    return Some(Err(err.into()));
+                }
+
+                if let Some(remaining_len) = maybe_remaining_len.unwrap() {
+                    // Packet ID (1 byte), size of Variable Byte Integer
+                    // encoding the remaining length and its value.
+                    self.packet.end = 1 + remaining_len.len() + remaining_len.value() as usize;
+                    self.state = PacketStreamState::ReadPacketData;
+                    return self.step(0);
+                }
+
+                return None;
+            }
+            PacketStreamState::ReadPacketData => {
+                self.offset += size;
+
+                if self.offset < self.packet.end {
+                    return None;
+                }
+
+                self.offset = 0;
+                self.state = PacketStreamState::Idle;
+                Some(Ok(self.buf.split_to(self.packet.end).freeze()))
+            }
+        }
     }
 }
 
 impl<StreamT> Stream for PacketStream<StreamT>
 where
-    StreamT: AsyncBufRead + Unpin,
+    StreamT: AsyncRead + Unpin,
 {
     type Item = Result<RxPacket, CodecError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let (state, mut stream) = self.split_borrows_mut();
+        const CHUNK_SIZE: usize = 2048;
 
-        if let Poll::Ready(result) = Pin::new(&mut stream).poll_fill_buf(cx) {
+        let (mut stream, buf, offset, _, _) = self.split_borrows_mut();
+
+        if buf.capacity() - *offset < CHUNK_SIZE {
+            buf.reserve(CHUNK_SIZE);
+        }
+
+        unsafe {
+            // We do not care about initialization.
+            buf.set_len(*offset + CHUNK_SIZE);
+        }
+
+        if let Poll::Ready(result) =
+            Pin::new(&mut stream).poll_read(cx, &mut buf[*offset..*offset + CHUNK_SIZE])
+        {
             if result.is_err() {
                 return Poll::Ready(None);
             }
 
-            let buf = result.unwrap();
-            if buf.is_empty() {
-                return Poll::Ready(None); // EOF
+            let size = result.unwrap();
+
+            if let Some(packet) = self
+                .step(size)
+                .map(|maybe_buf| maybe_buf.and_then(|buf| RxPacket::try_from_bytes(&buf)))
+            {
+                cx.waker().wake_by_ref();
+                return Poll::Ready(Some(packet));
             }
 
-            match state {
-                PacketStreamState::ReadPacketSize => {
-                    let mut reader = ByteReader::from(&buf[1..]);
-                    if let Ok(remaining_len) = reader.try_read::<VarSizeInt>() {
-                        let packet_size = 1 + remaining_len.len() + remaining_len.value() as usize;
-                        *state = PacketStreamState::ReadPacket(packet_size);
-                    }
-
-                    return self.poll_next(cx);
-                }
-                PacketStreamState::ReadPacket(packet_size) => {
-                    if buf.len() >= *packet_size {
-                        let result = RxPacket::try_from_bytes(buf);
-
-                        println!("[RX] Got packet: {:?}", &buf);
-
-                        Pin::new(&mut stream).consume(*packet_size); // Consume the packet
-                        *state = PacketStreamState::ReadPacketSize;
-
-                        cx.waker().wake_by_ref();
-                        return Poll::Ready(Some(result));
-                    }
-                }
-            }
+            cx.waker().wake_by_ref();
         }
 
         Poll::Pending
