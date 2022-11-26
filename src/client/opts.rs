@@ -1,28 +1,21 @@
 use crate::{
-    codec::{
-        Auth, AuthBuilder, AuthReason, Connect, ConnectBuilder, Publish, PublishBuilder,
-        RetainHandling, Subscribe, SubscribeBuilder, SubscriptionOptions, Unsubscribe,
-        UnsubscribeBuilder,
-    },
-    core::{
-        base_types::{NonZero, QoS, VarSizeInt},
-        error::CodecError,
-    },
+    codec::*,
+    core::{base_types::*, error::CodecError, properties::*},
 };
 
 #[derive(Default)]
-pub struct ConnectOpts {
-    builder: ConnectBuilder,
+pub struct ConnectOpts<'a> {
+    builder: ConnectTxBuilder<'a>,
 }
 
-impl ConnectOpts {
+impl<'a> ConnectOpts<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Mandatory field.
-    pub fn client_identifier(mut self, val: &str) -> Self {
-        self.builder.client_identifier(String::from(val));
+    pub fn client_identifier(mut self, val: &'a str) -> Self {
+        self.builder.client_identifier(UTF8StringRef(val));
         self
     }
 
@@ -32,43 +25,50 @@ impl ConnectOpts {
     }
 
     pub fn session_expiry_interval(mut self, val: u32) -> Self {
-        self.builder.session_expiry_interval(val);
+        self.builder
+            .session_expiry_interval(SessionExpiryInterval::from(val));
         self
     }
 
     pub fn receive_maximum(mut self, val: u16) -> Self {
-        self.builder.receive_maximum(val.into());
+        self.builder
+            .receive_maximum(ReceiveMaximum::from(NonZero::try_from(val).unwrap()));
         self
     }
 
     pub fn maximum_packet_size(mut self, val: u32) -> Self {
-        self.builder.maximum_packet_size(val.into());
+        self.builder
+            .maximum_packet_size(MaximumPacketSize::from(NonZero::try_from(val).unwrap()));
         self
     }
 
     pub fn topic_alias_maximum(mut self, val: u16) -> Self {
-        self.builder.topic_alias_maximum(val);
+        self.builder
+            .topic_alias_maximum(TopicAliasMaximum::from(val));
         self
     }
 
     pub fn request_response_information(mut self, val: bool) -> Self {
-        self.builder.request_response_information(val);
+        self.builder
+            .request_response_information(RequestResponseInformation::from(val));
         self
     }
 
     pub fn request_problem_information(mut self, val: bool) -> Self {
-        self.builder.request_problem_information(val);
-        self
-    }
-
-    pub fn authentication_method(mut self, val: &str) -> Self {
-        self.builder.authentication_method(String::from(val));
-        self
-    }
-
-    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
         self.builder
-            .user_property((String::from(key), String::from(val)));
+            .request_problem_information(RequestProblemInformation::from(val));
+        self
+    }
+
+    pub fn authentication_method(mut self, val: &'a str) -> Self {
+        self.builder
+            .authentication_method(AuthenticationMethodRef::from(UTF8StringRef(val)));
+        self
+    }
+
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
+        self.builder
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
         self
     }
 
@@ -88,72 +88,78 @@ impl ConnectOpts {
     }
 
     pub fn will_delay_interval(mut self, val: u32) -> Self {
-        self.builder.will_delay_interval(val);
+        self.builder
+            .will_delay_interval(WillDelayInterval::from(val));
         self
     }
 
     pub fn will_payload_format_indicator(mut self, val: bool) -> Self {
-        self.builder.will_payload_format_indicator(val);
+        self.builder
+            .will_payload_format_indicator(PayloadFormatIndicator::from(val));
         self
     }
 
     pub fn will_message_expiry_interval(mut self, val: u32) -> Self {
-        self.builder.will_message_expiry_interval(val);
-        self
-    }
-
-    pub fn will_content_type(mut self, val: &str) -> Self {
-        self.builder.will_content_type(String::from(val));
-        self
-    }
-
-    pub fn will_reponse_topic(mut self, val: &str) -> Self {
-        self.builder.will_reponse_topic(String::from(val));
-        self
-    }
-
-    pub fn will_correlation_data(mut self, val: &[u8]) -> Self {
-        self.builder.will_correlation_data(Vec::from(val).into());
-        self
-    }
-
-    pub fn will_user_property(mut self, (key, val): (&str, &str)) -> Self {
         self.builder
-            .will_user_property((String::from(key), String::from(val)));
+            .will_message_expiry_interval(MessageExpiryInterval::from(val));
         self
     }
 
-    pub fn will_topic(mut self, val: &str) -> Self {
-        self.builder.will_topic(String::from(val));
+    pub fn will_content_type(mut self, val: &'a str) -> Self {
+        self.builder
+            .will_content_type(ContentTypeRef::from(UTF8StringRef(val)));
         self
     }
 
-    pub fn will_payload(mut self, val: &[u8]) -> Self {
-        self.builder.will_payload(Vec::from(val).into());
+    pub fn will_reponse_topic(mut self, val: &'a str) -> Self {
+        self.builder
+            .will_reponse_topic(ResponseTopicRef::from(UTF8StringRef(val)));
         self
     }
 
-    pub fn username(mut self, val: &str) -> Self {
-        self.builder.username(String::from(val));
+    pub fn will_correlation_data(mut self, val: &'a [u8]) -> Self {
+        self.builder
+            .will_correlation_data(CorrelationDataRef::from(BinaryRef(val)));
         self
     }
 
-    pub fn password(mut self, val: &[u8]) -> Self {
-        self.builder.password(Vec::from(val).into());
+    pub fn will_user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
+        self.builder
+            .will_user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
         self
     }
 
-    pub(crate) fn build(self) -> Option<Connect> {
+    pub fn will_topic(mut self, val: &'a str) -> Self {
+        self.builder.will_topic(UTF8StringRef(val));
+        self
+    }
+
+    pub fn will_payload(mut self, val: &'a [u8]) -> Self {
+        self.builder.will_payload(BinaryRef(val));
+        self
+    }
+
+    pub fn username(mut self, val: &'a str) -> Self {
+        self.builder.username(UTF8StringRef(val));
+        self
+    }
+
+    pub fn password(mut self, val: &'a [u8]) -> Self {
+        self.builder.password(BinaryRef(val));
+        self
+    }
+
+    pub(crate) fn build(self) -> Result<ConnectTx<'a>, CodecError> {
         self.builder.build()
     }
 }
 
 #[derive(Default)]
-pub struct AuthOpts {
-    builder: AuthBuilder,
+pub struct AuthOpts<'a> {
+    builder: AuthTxBuilder<'a>,
 }
 
-impl AuthOpts {
+impl<'a> AuthOpts<'a> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -163,47 +169,50 @@ impl AuthOpts {
         self
     }
 
-    pub fn authentication_data(mut self, val: &[u8]) -> Self {
-        self.builder.authentication_data(Vec::from(val).into());
-        self
-    }
-
-    pub fn authentication_method(mut self, val: &str) -> Self {
-        self.builder.authentication_method(String::from(val));
-        self
-    }
-
-    pub fn reason_string(mut self, val: &str) -> Self {
-        self.builder.reason_string(String::from(val));
-        self
-    }
-
-    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+    pub fn authentication_data(mut self, val: &'a [u8]) -> Self {
         self.builder
-            .user_property((String::from(key), String::from(val)));
+            .authentication_data(AuthenticationDataRef::from(BinaryRef(val)));
         self
     }
 
-    pub(crate) fn build(self) -> Result<Auth, CodecError> {
+    pub fn authentication_method(mut self, val: &'a str) -> Self {
+        self.builder
+            .authentication_method(AuthenticationMethodRef::from(UTF8StringRef(val)));
+        self
+    }
+
+    pub fn reason_string(mut self, val: &'a str) -> Self {
+        self.builder
+            .reason_string(ReasonStringRef::from(UTF8StringRef(val)));
+        self
+    }
+
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
+        self.builder
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
+        self
+    }
+
+    pub(crate) fn build(self) -> Result<AuthTx<'a>, CodecError> {
         self.builder.build()
     }
 }
 
 #[derive(Default)]
-pub struct SubscribeOpts {
-    builder: SubscribeBuilder,
+pub struct SubscribeOpts<'a> {
+    builder: SubscribeTxBuilder<'a>,
 
-    topic: String,
+    topic: UTF8StringRef<'a>,
     opts: SubscriptionOptions,
 }
 
-impl SubscribeOpts {
+impl<'a> SubscribeOpts<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn topic(mut self, val: &str) -> Self {
-        self.topic = String::from(val);
+    pub fn topic(mut self, val: &'a str) -> Self {
+        self.topic = UTF8StringRef(val);
         self
     }
 
@@ -222,24 +231,29 @@ impl SubscribeOpts {
         self
     }
 
-    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
         self.builder
-            .user_property((String::from(key), String::from(val)));
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
         self
     }
 
     pub(crate) fn packet_identifier(mut self, val: u16) -> Self {
-        self.builder.packet_identifier(NonZero::from(val));
+        self.builder
+            .packet_identifier(NonZero::try_from(val).unwrap());
         self
     }
 
     pub(crate) fn subscription_identifier(mut self, val: u32) -> Self {
-        self.builder
-            .subscription_identifier(NonZero::from(VarSizeInt::from(val)));
+        self.builder.subscription_identifier(
+            VarSizeInt::try_from(val)
+                .and_then(NonZero::try_from)
+                .map(SubscriptionIdentifier::from)
+                .unwrap(),
+        );
         self
     }
 
-    pub(crate) fn build(self) -> Option<Subscribe> {
+    pub(crate) fn build(self) -> Result<SubscribeTx<'a>, CodecError> {
         let mut opts = self;
         opts.builder.payload((opts.topic, opts.opts));
         opts.builder.build()
@@ -247,11 +261,11 @@ impl SubscribeOpts {
 }
 
 #[derive(Default)]
-pub struct PublishOpts {
-    builder: PublishBuilder,
+pub struct PublishOpts<'a> {
+    builder: PublishTxBuilder<'a>,
 }
 
-impl PublishOpts {
+impl<'a> PublishOpts<'a> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -266,95 +280,107 @@ impl PublishOpts {
         self
     }
 
-    pub fn topic(mut self, val: &str) -> Self {
-        self.builder.topic_name(String::from(val));
+    pub fn topic(mut self, val: &'a str) -> Self {
+        self.builder.topic_name(UTF8StringRef(val));
         self
     }
 
     pub fn packet_identifier(mut self, val: u16) -> Self {
-        self.builder.packet_identifier(NonZero::from(val));
+        self.builder
+            .packet_identifier(NonZero::try_from(val).unwrap());
         self
     }
 
     pub fn payload_format_indicator(mut self, val: bool) -> Self {
-        self.builder.payload_format_indicator(val);
+        self.builder
+            .payload_format_indicator(PayloadFormatIndicator::from(val));
         self
     }
 
     pub fn topic_alias(mut self, val: u16) -> Self {
-        self.builder.topic_alias(NonZero::from(val));
+        self.builder
+            .topic_alias(TopicAlias::from(NonZero::try_from(val).unwrap()));
         self
     }
 
     pub fn message_expiry_interval(mut self, val: u32) -> Self {
-        self.builder.message_expiry_interval(val);
+        self.builder
+            .message_expiry_interval(MessageExpiryInterval::from(val));
         self
     }
 
     pub fn subscription_identifier(mut self, val: u32) -> Self {
+        self.builder.subscription_identifier(
+            VarSizeInt::try_from(val)
+                .and_then(NonZero::try_from)
+                .map(SubscriptionIdentifier::from)
+                .unwrap(),
+        );
+        self
+    }
+
+    pub fn correlation_data(mut self, val: &'a [u8]) -> Self {
         self.builder
-            .subscription_identifier(NonZero::from(VarSizeInt::from(val)));
+            .correlation_data(CorrelationDataRef::from(BinaryRef(val)));
         self
     }
 
-    pub fn correlation_data(mut self, val: &[u8]) -> Self {
-        self.builder.correlation_data(Vec::from(val).into());
-        self
-    }
-
-    pub fn response_topic(mut self, val: &str) -> Self {
-        self.builder.response_topic(String::from(val));
-        self
-    }
-
-    pub fn content_type(mut self, val: &str) -> Self {
-        self.builder.content_type(String::from(val));
-        self
-    }
-
-    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+    pub fn response_topic(mut self, val: &'a str) -> Self {
         self.builder
-            .user_property((String::from(key), String::from(val)));
+            .response_topic(ResponseTopicRef::from(UTF8StringRef(val)));
         self
     }
 
-    pub fn data(mut self, val: &[u8]) -> Self {
-        self.builder.payload(Vec::from(val));
+    pub fn content_type(mut self, val: &'a str) -> Self {
+        self.builder
+            .content_type(ContentTypeRef::from(UTF8StringRef(val)));
         self
     }
 
-    pub(crate) fn build(self) -> Result<Publish, CodecError> {
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
+        self.builder
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
+        self
+    }
+
+    pub fn data(mut self, val: &'a [u8]) -> Self {
+        self.builder.payload(PayloadRef(val));
+        self
+    }
+
+    pub(crate) fn build(self) -> Result<PublishTx<'a>, CodecError> {
         self.builder.build()
     }
 }
 
 #[derive(Default)]
-pub struct UnsubscribeOpts {
-    builder: UnsubscribeBuilder,
+pub struct UnsubscribeOpts<'a> {
+    builder: UnsubscribeTxBuilder<'a>,
 }
 
-impl UnsubscribeOpts {
+impl<'a> UnsubscribeOpts<'a> {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn user_property(mut self, (key, val): (&str, &str)) -> Self {
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
         self.builder
-            .user_property((String::from(key), String::from(val)));
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
         self
     }
 
-    pub fn topic(mut self, val: &str) -> Self {
-        self.builder.payload(String::from(val));
+    pub fn topic(mut self, val: &'a str) -> Self {
+        self.builder.payload(UTF8StringRef(val));
         self
     }
 
     pub(crate) fn packet_identifier(mut self, val: u16) -> Self {
-        self.builder.packet_identifier(NonZero::from(val));
+        self.builder
+            .packet_identifier(NonZero::try_from(val).unwrap());
         self
     }
 
-    pub(crate) fn build(self) -> Option<Unsubscribe> {
+    pub(crate) fn build(self) -> Result<UnsubscribeTx<'a>, CodecError> {
         self.builder.build()
     }
 }

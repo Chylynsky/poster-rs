@@ -1,13 +1,16 @@
+use bytes::Bytes;
+
 use crate::core::{
     base_types::*,
     error::{
         CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
-        InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
+        InvalidValue, UnexpectedProperty,
     },
     properties::*,
-    utils::{ByteReader, PacketID, SizedProperty, TryFromBytes},
+    utils::{ByteLen, Decoder, PacketID, TryDecode},
 };
 use core::mem;
+use derive_builder::Builder;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ConnectReason {
@@ -73,66 +76,94 @@ impl Default for ConnectReason {
     }
 }
 
-impl SizedProperty for ConnectReason {
-    fn property_len(&self) -> usize {
-        (*self as u8).property_len()
+impl ByteLen for ConnectReason {
+    fn byte_len(&self) -> usize {
+        (*self as u8).byte_len()
     }
 }
 
-impl TryFromBytes for ConnectReason {
+impl TryDecode for ConnectReason {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(u8::try_from_bytes(bytes)?)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(u8::try_decode(bytes)?)
     }
 }
 
-pub(crate) struct Connack {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct ConnackRx {
     // Connack variable header
     pub(crate) session_present: bool,
     pub(crate) reason: ConnectReason,
 
     // Connack properties
+    #[builder(default)]
     pub(crate) wildcard_subscription_available: WildcardSubscriptionAvailable,
+    #[builder(default)]
     pub(crate) subscription_identifier_available: SubscriptionIdentifierAvailable,
+    #[builder(default)]
     pub(crate) shared_subscription_available: SharedSubscriptionAvailable,
+    #[builder(default)]
     pub(crate) maximum_qos: MaximumQoS,
+    #[builder(default)]
     pub(crate) retain_available: RetainAvailable,
-
+    #[builder(setter(strip_option), default)]
     pub(crate) server_keep_alive: Option<ServerKeepAlive>,
+    #[builder(default)]
     pub(crate) receive_maximum: ReceiveMaximum,
+    #[builder(default)]
     pub(crate) topic_alias_maximum: TopicAliasMaximum,
-
+    #[builder(default)]
     pub(crate) session_expiry_interval: SessionExpiryInterval,
+    #[builder(setter(strip_option), default)]
     pub(crate) maximum_packet_size: Option<MaximumPacketSize>,
-
+    #[builder(setter(strip_option), default)]
     pub(crate) authentication_data: Option<AuthenticationData>,
-
+    #[builder(setter(strip_option), default)]
     pub(crate) assigned_client_identifier: Option<AssignedClientIdentifier>,
+    #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonString>,
+    #[builder(setter(strip_option), default)]
     pub(crate) response_information: Option<ResponseInformation>,
+    #[builder(setter(strip_option), default)]
     pub(crate) server_reference: Option<ServerReference>,
+    #[builder(setter(strip_option), default)]
     pub(crate) authentication_method: Option<AuthenticationMethod>,
-
+    #[builder(setter(custom), default)]
     pub(crate) user_property: Vec<UserProperty>,
 }
 
-impl PacketID for Connack {
+impl ConnackRxBuilder {
+    fn user_property(&mut self, value: UserProperty) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+}
+
+impl PacketID for ConnackRx {
     const PACKET_ID: u8 = 2;
 }
 
-impl TryFromBytes for Connack {
+impl TryDecode for ConnackRx {
     type Error = CodecError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        let mut builder = ConnackBuilder::default();
-        let mut reader = ByteReader::from(bytes);
+        let mut builder = ConnackRxBuilder::default();
+        let mut decoder = Decoder::from(bytes.clone());
 
-        let fixed_hdr = reader
-            .try_read::<u8>()
+        let fixed_hdr = decoder
+            .try_decode::<u8>()
             .map_err(CodecError::from)
             .and_then(|val| {
                 if val >> 4 != Self::PACKET_ID {
@@ -142,239 +173,87 @@ impl TryFromBytes for Connack {
                 Ok(val)
             })?;
 
-        let remaining_len = reader.try_read::<VarSizeInt>()?;
+        let remaining_len = decoder.try_decode::<VarSizeInt>()?;
         let packet_size =
             mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
         if packet_size > bytes.len() {
             return Err(InvalidPacketSize.into());
         }
 
-        let session_present = reader.try_read::<bool>()?;
+        let session_present = decoder.try_decode::<bool>()?;
         builder.session_present(session_present);
 
-        let reason = reader.try_read::<ConnectReason>()?;
+        let reason = decoder.try_decode::<ConnectReason>()?;
         builder.reason(reason);
 
-        let property_len = reader.try_read::<VarSizeInt>()?;
-        if property_len.value() as usize > reader.remaining() {
+        let byte_len = decoder.try_decode::<VarSizeInt>()?;
+        if byte_len.value() as usize > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
-        for property in PropertyIterator::from(reader.get_buf()) {
-            if let Err(err) = property {
-                return Err(err.into());
-            }
-
-            match property.unwrap() {
-                Property::WildcardSubscriptionAvailable(val) => {
-                    builder.wildcard_subscription_available(val.into());
-                }
-                Property::SubscriptionIdentifierAvailable(val) => {
-                    builder.subscription_identifier_available(val.into());
-                }
-                Property::SharedSubscriptionAvailable(val) => {
-                    builder.shared_subscription_available(val.into());
-                }
-                Property::MaximumQoS(val) => {
-                    builder.maximum_qos(val.into());
-                }
-                Property::RetainAvailable(val) => {
-                    builder.retain_available(val.into());
-                }
-                Property::ServerKeepAlive(val) => {
-                    builder.server_keep_alive(val.into());
-                }
-                Property::ReceiveMaximum(val) => {
-                    builder.receive_maximum(val.into());
-                }
-                Property::TopicAliasMaximum(val) => {
-                    builder.topic_alias_maximum(val.into());
-                }
-                Property::SessionExpiryInterval(val) => {
-                    builder.session_expiry_interval(val.into());
-                }
-                Property::MaximumPacketSize(val) => {
-                    builder.maximum_packet_size(val.into());
-                }
-                Property::AuthenticationData(val) => {
-                    builder.authentication_data(val.into());
-                }
-                Property::AssignedClientIdentifier(val) => {
-                    builder.assigned_client_identifier(val.into());
-                }
-                Property::ReasonString(val) => {
-                    builder.reason_string(val.into());
-                }
-                Property::ResponseInformation(val) => {
-                    builder.response_information(val.into());
-                }
-                Property::ServerReference(val) => {
-                    builder.server_reference(val.into());
-                }
-                Property::AuthenticationMethod(val) => {
-                    builder.authentication_method(val.into());
-                }
-                Property::UserProperty(val) => {
-                    builder.user_property(val.into());
-                }
-                _ => {
-                    return Err(UnexpectedProperty.into());
-                }
+        for maybe_property in decoder.iter::<Property>() {
+            match maybe_property {
+                Ok(property) => match property {
+                    Property::WildcardSubscriptionAvailable(val) => {
+                        builder.wildcard_subscription_available(val);
+                    }
+                    Property::SubscriptionIdentifierAvailable(val) => {
+                        builder.subscription_identifier_available(val);
+                    }
+                    Property::SharedSubscriptionAvailable(val) => {
+                        builder.shared_subscription_available(val);
+                    }
+                    Property::MaximumQoS(val) => {
+                        builder.maximum_qos(val);
+                    }
+                    Property::RetainAvailable(val) => {
+                        builder.retain_available(val);
+                    }
+                    Property::ServerKeepAlive(val) => {
+                        builder.server_keep_alive(val);
+                    }
+                    Property::ReceiveMaximum(val) => {
+                        builder.receive_maximum(val);
+                    }
+                    Property::TopicAliasMaximum(val) => {
+                        builder.topic_alias_maximum(val);
+                    }
+                    Property::SessionExpiryInterval(val) => {
+                        builder.session_expiry_interval(val);
+                    }
+                    Property::MaximumPacketSize(val) => {
+                        builder.maximum_packet_size(val);
+                    }
+                    Property::AuthenticationData(val) => {
+                        builder.authentication_data(val);
+                    }
+                    Property::AssignedClientIdentifier(val) => {
+                        builder.assigned_client_identifier(val);
+                    }
+                    Property::ReasonString(val) => {
+                        builder.reason_string(val);
+                    }
+                    Property::ResponseInformation(val) => {
+                        builder.response_information(val);
+                    }
+                    Property::ServerReference(val) => {
+                        builder.server_reference(val);
+                    }
+                    Property::AuthenticationMethod(val) => {
+                        builder.authentication_method(val);
+                    }
+                    Property::UserProperty(val) => {
+                        builder.user_property(val);
+                    }
+                    _ => {
+                        return Err(UnexpectedProperty.into());
+                    }
+                },
+                Err(err) => return Err(err.into()),
             }
         }
 
         builder.build()
-    }
-}
-
-#[derive(Default)]
-struct ConnackBuilder {
-    // Connack variable header
-    session_present: Option<bool>,
-    reason: Option<ConnectReason>,
-
-    // Connack properties
-    wildcard_subscription_available: WildcardSubscriptionAvailable,
-    subscription_identifier_available: SubscriptionIdentifierAvailable,
-    shared_subscription_available: SharedSubscriptionAvailable,
-    maximum_qos: MaximumQoS,
-    retain_available: RetainAvailable,
-
-    server_keep_alive: Option<ServerKeepAlive>,
-    receive_maximum: ReceiveMaximum,
-    topic_alias_maximum: TopicAliasMaximum,
-
-    session_expiry_interval: SessionExpiryInterval,
-    maximum_packet_size: Option<MaximumPacketSize>,
-
-    authentication_data: Option<AuthenticationData>,
-
-    assigned_client_identifier: Option<AssignedClientIdentifier>,
-    reason_string: Option<ReasonString>,
-    response_information: Option<ResponseInformation>,
-    server_reference: Option<ServerReference>,
-    authentication_method: Option<AuthenticationMethod>,
-
-    user_property: Vec<UserProperty>,
-}
-
-impl ConnackBuilder {
-    fn session_present(&mut self, val: bool) -> &mut Self {
-        self.session_present = Some(val);
-        self
-    }
-
-    fn reason(&mut self, val: ConnectReason) -> &mut Self {
-        self.reason = Some(val);
-        self
-    }
-
-    fn wildcard_subscription_available(&mut self, val: bool) -> &mut Self {
-        self.wildcard_subscription_available = val.into();
-        self
-    }
-
-    fn subscription_identifier_available(&mut self, val: bool) -> &mut Self {
-        self.subscription_identifier_available = val.into();
-        self
-    }
-
-    fn shared_subscription_available(&mut self, val: bool) -> &mut Self {
-        self.shared_subscription_available = val.into();
-        self
-    }
-
-    fn maximum_qos(&mut self, val: QoS) -> &mut Self {
-        self.maximum_qos = val.into();
-        self
-    }
-
-    fn retain_available(&mut self, val: bool) -> &mut Self {
-        self.retain_available = val.into();
-        self
-    }
-
-    fn server_keep_alive(&mut self, val: u16) -> &mut Self {
-        self.server_keep_alive = Some(val.into());
-        self
-    }
-
-    fn receive_maximum(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.receive_maximum = val.into();
-        self
-    }
-
-    fn topic_alias_maximum(&mut self, val: u16) -> &mut Self {
-        self.topic_alias_maximum = val.into();
-        self
-    }
-
-    fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.session_expiry_interval = val.into();
-        self
-    }
-
-    fn maximum_packet_size(&mut self, val: NonZero<u32>) -> &mut Self {
-        self.maximum_packet_size = Some(val.into());
-        self
-    }
-
-    fn authentication_data(&mut self, val: Binary) -> &mut Self {
-        self.authentication_data = Some(val.into());
-        self
-    }
-
-    fn assigned_client_identifier(&mut self, val: String) -> &mut Self {
-        self.assigned_client_identifier = Some(val.into());
-        self
-    }
-
-    fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(val.into());
-        self
-    }
-
-    fn response_information(&mut self, val: String) -> &mut Self {
-        self.response_information = Some(val.into());
-        self
-    }
-    fn server_reference(&mut self, val: String) -> &mut Self {
-        self.server_reference = Some(val.into());
-        self
-    }
-
-    fn authentication_method(&mut self, val: String) -> &mut Self {
-        self.authentication_method = Some(val.into());
-        self
-    }
-
-    fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
-
-    fn build(self) -> Result<Connack, CodecError> {
-        Ok(Connack {
-            session_present: self.session_present.ok_or(MandatoryPropertyMissing)?,
-            reason: self.reason.ok_or(MandatoryPropertyMissing)?,
-            wildcard_subscription_available: self.wildcard_subscription_available,
-            subscription_identifier_available: self.subscription_identifier_available,
-            shared_subscription_available: self.shared_subscription_available,
-            maximum_qos: self.maximum_qos,
-            retain_available: self.retain_available,
-            server_keep_alive: self.server_keep_alive,
-            receive_maximum: self.receive_maximum,
-            topic_alias_maximum: self.topic_alias_maximum,
-            session_expiry_interval: self.session_expiry_interval,
-            maximum_packet_size: self.maximum_packet_size,
-            authentication_data: self.authentication_data,
-            assigned_client_identifier: self.assigned_client_identifier,
-            reason_string: self.reason_string,
-            response_information: self.response_information,
-            server_reference: self.server_reference,
-            authentication_method: self.authentication_method,
-            user_property: self.user_property,
-        })
     }
 }
 
@@ -385,14 +264,14 @@ mod test {
     #[test]
     fn from_bytes_0() {
         const PACKET: [u8; 5] = [
-            Connack::PACKET_ID << 4, // Fixed header
-            3,                       // Remaining length
-            0,                       // Connect Acknowledge Flags (No session present)
-            0,                       // Reason (Success)
-            0,                       // Property length
+            ConnackRx::PACKET_ID << 4, // Fixed header
+            3,                         // Remaining length
+            0,                         // Connect Acknowledge Flags (No session present)
+            0,                         // Reason (Success)
+            0,                         // Property length
         ];
 
-        let result = Connack::try_from_bytes(&PACKET).unwrap();
+        let result = ConnackRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
 
         assert!(!result.session_present);
         assert_eq!(result.reason, ConnectReason::Success);
@@ -419,7 +298,7 @@ mod test {
     #[test]
     fn from_bytes_1() {
         const PACKET: [u8; 14] = [
-            Connack::PACKET_ID << 4,
+            ConnackRx::PACKET_ID << 4,
             12,
             0,
             0,
@@ -435,14 +314,14 @@ mod test {
             20,
         ];
 
-        let result = Connack::try_from_bytes(&PACKET).unwrap();
+        let result = ConnackRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
 
         assert!(!result.session_present);
         assert!(result.maximum_packet_size.is_none());
         assert_eq!(result.reason, ConnectReason::Success);
         assert_eq!(
             result.receive_maximum,
-            ReceiveMaximum::from(NonZero::from(20))
+            ReceiveMaximum::from(NonZero::try_from(20).unwrap())
         );
         assert_eq!(result.topic_alias_maximum, TopicAliasMaximum::from(10));
         assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::ExactlyOnce));
@@ -469,12 +348,12 @@ mod test {
     #[test]
     fn from_bytes_2() {
         const PACKET: [u8; 65] = [
-            Connack::PACKET_ID << 4, // Fixed header
-            63,                      // Remaining length
-            0x00,                    // Connect Acknowledge Flags (No session present)
-            0x00,                    // Reason (Success)
-            60,                      // Property length
-            0x11,                    // Session Expiry Interval
+            ConnackRx::PACKET_ID << 4, // Fixed header
+            63,                        // Remaining length
+            0x00,                      // Connect Acknowledge Flags (No session present)
+            0x00,                      // Reason (Success)
+            60,                        // Property length
+            0x11,                      // Session Expiry Interval
             0x00,
             0x00,
             0x03,
@@ -538,7 +417,7 @@ mod test {
 
         // User property, authentication method and authentication data properties are not present.
 
-        let result = Connack::try_from_bytes(&PACKET).unwrap();
+        let result = ConnackRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
 
         assert!(result.user_property.is_empty());
         assert!(result.authentication_data.is_none());
@@ -551,22 +430,26 @@ mod test {
         );
         assert_eq!(
             result.receive_maximum,
-            ReceiveMaximum::from(NonZero::from(20000))
+            ReceiveMaximum::from(NonZero::try_from(20000).unwrap())
         );
         assert_eq!(result.maximum_qos, MaximumQoS::from(QoS::AtLeastOnce));
         assert_eq!(result.retain_available, RetainAvailable::from(true));
         assert_eq!(
             result.maximum_packet_size,
-            Some(MaximumPacketSize::from(NonZero::from(256)))
+            Some(MaximumPacketSize::from(NonZero::try_from(256).unwrap()))
         );
         assert_eq!(
             result.assigned_client_identifier,
-            Some(AssignedClientIdentifier::from(String::from("test")))
+            Some(AssignedClientIdentifier::from(UTF8String(
+                Bytes::from_static("test".as_bytes())
+            )))
         );
         assert_eq!(result.topic_alias_maximum, TopicAliasMaximum::from(10));
         assert_eq!(
             result.reason_string,
-            Some(ReasonString::from(String::from("success")))
+            Some(ReasonString::from(UTF8String(Bytes::from_static(
+                "success".as_bytes()
+            ))))
         );
         assert_eq!(
             result.wildcard_subscription_available,
@@ -583,11 +466,15 @@ mod test {
         assert_eq!(result.server_keep_alive, Some(ServerKeepAlive::from(100)));
         assert_eq!(
             result.response_information,
-            Some(ResponseInformation::from(String::from("test")))
+            Some(ResponseInformation::from(UTF8String(Bytes::from_static(
+                "test".as_bytes()
+            ))))
         );
         assert_eq!(
             result.server_reference,
-            Some(ServerReference::from(String::from("test")))
+            Some(ServerReference::from(UTF8String(Bytes::from_static(
+                "test".as_bytes()
+            ))))
         );
     }
 }

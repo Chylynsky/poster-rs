@@ -1,9 +1,9 @@
 use crate::{
     codec::RxPacket,
-    core::{base_types::VarSizeInt, error::CodecError},
     core::{
-        error::ConversionError,
-        utils::{ByteReader, TryFromBytes},
+        base_types::VarSizeInt,
+        error::{CodecError, ConversionError},
+        utils::{Decoder, TryDecode},
     },
 };
 use bytes::{Bytes, BytesMut};
@@ -80,14 +80,14 @@ impl<StreamT> PacketStream<StreamT> {
             }
             PacketStreamState::ReadPacketLen => {
                 self.offset += size;
+
+                // We need a packet ID and at least one byte encoding the remaiing length.
                 if self.offset < 2 {
                     return None;
                 }
 
                 // Omit packet ID, try to read the remaining length.
-                let mut reader = ByteReader::from(&self.buf[1..self.offset]);
-                let maybe_remaining_len = reader
-                    .try_read::<VarSizeInt>()
+                let maybe_remaining_len = VarSizeInt::try_from(&self.buf[1..self.offset])
                     .map(|val| Some(val))
                     .or_else(|err| {
                         if let ConversionError::InsufficientBufferSize(_) = err {
@@ -156,7 +156,7 @@ where
 
             if let Some(packet) = self
                 .step(size)
-                .map(|maybe_buf| maybe_buf.and_then(|buf| RxPacket::try_from_bytes(&buf)))
+                .map(|maybe_buf| maybe_buf.and_then(|buf| RxPacket::try_decode(buf)))
             {
                 cx.waker().wake_by_ref();
                 return Poll::Ready(Some(packet));

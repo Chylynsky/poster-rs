@@ -1,10 +1,12 @@
 use crate::core::{
     base_types::*,
-    error::{CodecError, InsufficientBufferSize},
+    error::{CodecError, MandatoryPropertyMissing},
     properties::*,
-    utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
+    utils::{ByteLen, Encode, Encoder, PacketID, SizedPacket},
 };
+use bytes::BytesMut;
 use core::mem;
+use derive_builder::Builder;
 
 #[derive(Clone, Copy)]
 pub enum RetainHandling {
@@ -13,8 +15,9 @@ pub enum RetainHandling {
     NoSendOnSubscribe = 2,
 }
 
+#[derive(Copy, Clone)]
 pub(crate) struct SubscriptionOptions {
-    pub(crate) maximum_qos: MaximumQoS,
+    pub(crate) maximum_qos: QoS,
     pub(crate) no_local: bool,
     pub(crate) retain_as_published: bool,
     pub(crate) retain_handling: RetainHandling,
@@ -23,7 +26,7 @@ pub(crate) struct SubscriptionOptions {
 impl Default for SubscriptionOptions {
     fn default() -> Self {
         Self {
-            maximum_qos: MaximumQoS::from(QoS::ExactlyOnce),
+            maximum_qos: QoS::ExactlyOnce,
             no_local: false,
             retain_as_published: false,
             retain_handling: RetainHandling::SendOnSubscribe,
@@ -31,183 +34,139 @@ impl Default for SubscriptionOptions {
     }
 }
 
-impl SizedProperty for SubscriptionOptions {
-    fn property_len(&self) -> usize {
+impl ByteLen for SubscriptionOptions {
+    fn byte_len(&self) -> usize {
         mem::size_of::<u8>()
     }
 }
 
-impl ToByteBuffer for SubscriptionOptions {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let property_len = self.property_len();
-
-        debug_assert!(property_len <= buf.len());
-
-        let result = &mut buf[0..property_len];
-        let mut writer = ByteWriter::from(result);
-
-        {
-            let qos: QoS = self.maximum_qos.clone().into();
-            let val = (qos as u8)
-                | ((self.no_local as u8) << 3)
-                | ((self.retain_as_published as u8) << 4)
-                | ((self.retain_handling as u8) << 5);
-            writer.write(&val);
-        }
-
-        result
+impl Encode for SubscriptionOptions {
+    fn encode(&self, buf: &mut BytesMut) {
+        let mut encoder = Encoder::from(buf);
+        let qos = QoS::from(self.maximum_qos);
+        let val = (qos as u8)
+            | ((self.no_local as u8) << 3)
+            | ((self.retain_as_published as u8) << 4)
+            | ((self.retain_handling as u8) << 5);
+        encoder.encode(val);
     }
 }
 
-pub(crate) struct SubscribeProperties {
-    pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
-    pub(crate) user_property: Vec<UserProperty>,
-}
-
-impl SizedProperty for SubscribeProperties {
-    fn property_len(&self) -> usize {
-        self.subscription_identifier
-            .as_ref()
-            .map(|val| val.property_len())
-            .unwrap_or(0)
-            + self
-                .user_property
-                .iter()
-                .map(|val| val.property_len())
-                .sum::<usize>()
-    }
-}
-
-impl ToByteBuffer for SubscribeProperties {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let property_len = VarSizeInt::from(self.property_len());
-        let len = property_len.len() + property_len.value() as usize;
-
-        debug_assert!(len <= buf.len());
-
-        let result = &mut buf[0..len];
-        let mut writer = ByteWriter::from(result);
-
-        writer.write(&property_len);
-
-        if let Some(val) = self.subscription_identifier.as_ref() {
-            writer.write(val);
-        }
-
-        for val in self.user_property.iter() {
-            writer.write(val);
-        }
-
-        result
-    }
-}
-
-pub(crate) struct Subscribe {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
+pub(crate) struct SubscribeTx<'a> {
     pub(crate) packet_identifier: NonZero<u16>,
-    pub(crate) properties: SubscribeProperties,
-    pub(crate) payload: Vec<(String, SubscriptionOptions)>,
+
+    #[builder(setter(strip_option), default)]
+    pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
+
+    #[builder(setter(custom))]
+    pub(crate) payload: Vec<(UTF8StringRef<'a>, SubscriptionOptions)>,
 }
 
-impl Subscribe {
+impl<'a> SubscribeTxBuilder<'a> {
+    fn validate(&self) -> Result<(), CodecError> {
+        if self.payload.is_none() {
+            Err(MandatoryPropertyMissing.into()) // Empty payload is a protocol error
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn user_property(&mut self, value: UserPropertyRef<'a>) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+
+    pub(crate) fn payload(&mut self, (topic, opts): (UTF8StringRef<'a>, SubscriptionOptions)) {
+        match self.payload.as_mut() {
+            Some(payload) => {
+                payload.push((topic, opts));
+            }
+            None => {
+                self.payload = Some(Vec::new());
+                self.payload.as_mut().unwrap().push((topic, opts));
+            }
+        }
+    }
+}
+
+impl<'a> SubscribeTx<'a> {
     const FIXED_HDR: u8 = (Self::PACKET_ID << 4) | 0b0010;
 
+    fn property_len(&self) -> VarSizeInt {
+        VarSizeInt::try_from(
+            self.subscription_identifier
+                .as_ref()
+                .map(|val| val.byte_len())
+                .unwrap_or(0)
+                + self
+                    .user_property
+                    .iter()
+                    .map(|val| val.byte_len())
+                    .sum::<usize>(),
+        )
+        .unwrap()
+    }
+
     fn remaining_len(&self) -> VarSizeInt {
-        let property_len = VarSizeInt::from(self.properties.property_len());
-        VarSizeInt::from(
-            self.packet_identifier.property_len()
+        let property_len = self.property_len();
+        VarSizeInt::try_from(
+            self.packet_identifier.byte_len()
                 + property_len.len()
                 + property_len.value() as usize
                 + self
                     .payload
                     .iter()
-                    .map(|(topic, opts)| topic.property_len() + opts.property_len())
+                    .map(|(topic, opts)| topic.byte_len() + opts.byte_len())
                     .sum::<usize>(),
         )
+        .unwrap()
     }
 }
 
-impl PacketID for Subscribe {
+impl<'a> PacketID for SubscribeTx<'a> {
     const PACKET_ID: u8 = 8;
 }
 
-impl SizedPacket for Subscribe {
+impl<'a> SizedPacket for SubscribeTx<'a> {
     fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
         mem::size_of_val(&Self::FIXED_HDR) + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
-impl TryToByteBuffer for Subscribe {
-    type Error = CodecError;
+impl<'a> Encode for SubscribeTx<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        let mut encoder = Encoder::from(buf);
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
+        encoder.encode(Self::FIXED_HDR);
+        encoder.encode(self.remaining_len());
+        encoder.encode(self.packet_identifier);
 
-        writer.write(&Self::FIXED_HDR);
+        encoder.encode(self.property_len());
 
-        let remaining_len = self.remaining_len();
-        debug_assert!(remaining_len.value() as usize <= writer.remaining());
-        writer.write(&remaining_len);
-
-        writer.write(&self.packet_identifier);
-        writer.write(&self.properties);
-
-        for (topic, opts) in self.payload.iter() {
-            writer.write(topic);
-            writer.write(opts);
+        if let Some(val) = self.subscription_identifier.clone() {
+            encoder.encode(val);
         }
 
-        Ok(result)
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct SubscribeBuilder {
-    packet_identifier: Option<NonZero<u16>>,
-    subscription_identifier: Option<SubscriptionIdentifier>,
-    user_property: Vec<UserProperty>,
-    payload: Vec<(String, SubscriptionOptions)>,
-}
-
-impl SubscribeBuilder {
-    pub(crate) fn packet_identifier(&mut self, packet_identifier: NonZero<u16>) -> &mut Self {
-        self.packet_identifier = Some(packet_identifier);
-        self
-    }
-
-    pub(crate) fn subscription_identifier(&mut self, val: NonZero<VarSizeInt>) -> &mut Self {
-        self.subscription_identifier = Some(val.into());
-        self
-    }
-
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
-
-    pub(crate) fn payload(&mut self, payload: (String, SubscriptionOptions)) -> &mut Self {
-        self.payload.push(payload);
-        self
-    }
-
-    pub(crate) fn build(self) -> Option<Subscribe> {
-        if self.payload.is_empty() {
-            return None; // Subscribe packet with no payload is a Protocol Error
+        for val in self.user_property.iter().copied() {
+            encoder.encode(val);
         }
 
-        let properties = SubscribeProperties {
-            subscription_identifier: self.subscription_identifier,
-            user_property: self.user_property,
-        };
-
-        Some(Subscribe {
-            packet_identifier: self.packet_identifier?,
-            properties,
-            payload: self.payload,
-        })
+        for (topic, opts) in self.payload.iter().copied() {
+            encoder.encode(topic);
+            encoder.encode(opts);
+        }
     }
 }
 
@@ -218,7 +177,7 @@ mod test {
     #[test]
     fn to_bytes_0() {
         const EXPECTED: [u8; 11] = [
-            Subscribe::FIXED_HDR,
+            SubscribeTx::FIXED_HDR,
             9,
             0,
             32,
@@ -230,12 +189,12 @@ mod test {
             b'b',
             0b10,
         ];
-        let mut builder = SubscribeBuilder::default();
-        builder.packet_identifier(NonZero::from(32));
+        let mut builder = SubscribeTxBuilder::default();
+        builder.packet_identifier(NonZero::try_from(32).unwrap());
         builder.payload((
-            String::from("a/b"),
+            UTF8StringRef("a/b"),
             SubscriptionOptions {
-                maximum_qos: MaximumQoS::from(QoS::ExactlyOnce),
+                maximum_qos: QoS::ExactlyOnce,
                 no_local: false,
                 retain_as_published: false,
                 retain_handling: RetainHandling::SendOnSubscribe,
@@ -243,9 +202,9 @@ mod test {
         ));
         let packet = builder.build().unwrap();
 
-        let mut buf = [0u8; 11];
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
 
-        assert_eq!(result, EXPECTED);
+        assert_eq!(&buf.split().freeze()[..], &EXPECTED);
     }
 }

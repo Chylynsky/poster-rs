@@ -1,4 +1,5 @@
 mod context;
+mod error;
 mod fut;
 mod opts;
 mod rsp;

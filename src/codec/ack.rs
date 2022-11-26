@@ -1,87 +1,72 @@
+use bytes::{Bytes, BytesMut};
+
 use crate::core::{
     base_types::*,
     error::{
-        CodecError, InsufficientBufferSize, InvalidPacketHeader, InvalidPacketSize,
-        InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
+        CodecError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
+        UnexpectedProperty,
     },
     properties::*,
-    utils::{
-        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
-        TryToByteBuffer,
-    },
+    utils::{ByteLen, Decoder, Encode, Encoder, PacketID, SizedPacket, TryDecode},
 };
 use core::{cmp::PartialEq, mem};
+use derive_builder::Builder;
 
-pub(crate) struct Ack<ReasonT> {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct AckRx<ReasonT>
+where
+    ReasonT: Default,
+{
     pub(crate) packet_identifier: NonZero<u16>,
+    #[builder(default)]
     pub(crate) reason: ReasonT,
 
+    #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonString>,
+    #[builder(setter(custom), default)]
     pub(crate) user_property: Vec<UserProperty>,
 }
 
-impl<ReasonT> Ack<ReasonT>
+impl<ReasonT> AckRxBuilder<ReasonT>
+where
+    ReasonT: Default,
+{
+    fn user_property(&mut self, value: UserProperty) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+}
+
+impl<ReasonT> AckRx<ReasonT>
 where
     Self: PacketID,
-    ReasonT: Default + PartialEq + SizedProperty,
+    ReasonT: Default + PartialEq + ByteLen,
 {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
-
-    fn property_len(&self) -> VarSizeInt {
-        VarSizeInt::from(
-            self.reason_string
-                .as_ref()
-                .map(|val| val.property_len())
-                .unwrap_or(0)
-                + self
-                    .user_property
-                    .iter()
-                    .map(|val| val.property_len())
-                    .sum::<usize>(),
-        )
-    }
-
-    fn remaining_len(&self) -> VarSizeInt {
-        let property_len = self.property_len();
-        let is_shortened = self.reason == ReasonT::default() && property_len.value() == 0;
-        if is_shortened {
-            return VarSizeInt::from(self.packet_identifier.property_len());
-        }
-
-        VarSizeInt::from(
-            self.packet_identifier.property_len()
-                + self.reason.property_len()
-                + property_len.len()
-                + property_len.value() as usize,
-        )
-    }
 }
 
-impl<ReasonT> SizedPacket for Ack<ReasonT>
+impl<ReasonT> TryDecode for AckRx<ReasonT>
 where
     Self: PacketID,
-    ReasonT: Default + PartialEq + SizedProperty,
-{
-    fn packet_len(&self) -> usize {
-        let remaining_len = self.remaining_len();
-        mem::size_of_val(&Self::FIXED_HDR) + remaining_len.len() + remaining_len.value() as usize
-    }
-}
-
-impl<ReasonT> TryFromBytes for Ack<ReasonT>
-where
-    Self: PacketID,
-    ReasonT: Default + PartialEq + TryFromBytes + SizedProperty,
-    <ReasonT as TryFromBytes>::Error: Into<CodecError>,
+    ReasonT: Default + PartialEq + TryDecode + ByteLen + Clone,
+    <ReasonT as TryDecode>::Error: Into<CodecError>,
 {
     type Error = CodecError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let mut builder = AckBuilder::<ReasonT>::default();
-        let mut reader = ByteReader::from(bytes);
+    fn try_decode(buf: Bytes) -> Result<Self, Self::Error> {
+        let mut builder = AckRxBuilder::<ReasonT>::default();
+        let mut decoder = Decoder::from(buf);
 
-        let fixed_hdr = reader
-            .try_read::<u8>()
+        let _fixed_hdr = decoder
+            .try_decode::<u8>()
             .map_err(CodecError::from)
             .and_then(|val| {
                 if val != Self::FIXED_HDR {
@@ -91,14 +76,12 @@ where
                 Ok(val)
             })?;
 
-        let remaining_len = reader.try_read::<VarSizeInt>()?;
-        let packet_size =
-            mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
-        if packet_size > bytes.len() {
+        let remaining_len = decoder.try_decode::<VarSizeInt>()?;
+        if remaining_len > decoder.remaining() {
             return Err(InvalidPacketSize.into());
         }
 
-        let packet_id = reader.try_read::<NonZero<u16>>()?;
+        let packet_id = decoder.try_decode::<NonZero<u16>>()?;
         builder.packet_identifier(packet_id);
 
         // When remaining length is 2, the Reason is 0x00 and there are no properties.
@@ -106,28 +89,29 @@ where
             return builder.build();
         }
 
-        let reason = reader.try_read::<ReasonT>().map_err(|err| err.into())?;
+        let reason = decoder.try_decode::<ReasonT>().map_err(|err| err.into())?;
         builder.reason(reason);
 
-        let property_len = reader.try_read::<VarSizeInt>()?;
-        if property_len.value() as usize > reader.remaining() {
+        let byte_len = decoder.try_decode::<VarSizeInt>()?;
+        if byte_len > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
-        for property in PropertyIterator::from(reader.get_buf()) {
-            if let Err(err) = property {
-                return Err(err.into());
-            }
-
-            match property.unwrap() {
-                Property::ReasonString(val) => {
-                    builder.reason_string(val.into());
-                }
-                Property::UserProperty(val) => {
-                    builder.user_property(val.into());
-                }
-                _ => {
-                    return Err(UnexpectedProperty.into());
+        for maybe_property in decoder.iter::<Property>() {
+            match maybe_property {
+                Ok(property) => match property {
+                    Property::ReasonString(val) => {
+                        builder.reason_string(val);
+                    }
+                    Property::UserProperty(val) => {
+                        builder.user_property(val);
+                    }
+                    _ => {
+                        return Err(UnexpectedProperty.into());
+                    }
+                },
+                Err(err) => {
+                    return Err(err.into());
                 }
             }
         }
@@ -136,88 +120,117 @@ where
     }
 }
 
-impl<ReasonT> TryToByteBuffer for Ack<ReasonT>
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct AckTx<'a, ReasonT>
+where
+    ReasonT: Default,
+{
+    pub(crate) packet_identifier: NonZero<u16>,
+    #[builder(default)]
+    pub(crate) reason: ReasonT,
+
+    #[builder(setter(strip_option), default)]
+    pub(crate) reason_string: Option<ReasonStringRef<'a>>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
+}
+
+impl<'a, ReasonT> AckTxBuilder<'a, ReasonT>
+where
+    ReasonT: Default,
+{
+    pub(crate) fn user_property(&mut self, value: UserPropertyRef<'a>) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+}
+
+impl<'a, ReasonT> AckTx<'a, ReasonT>
 where
     Self: PacketID,
-    ReasonT: Default + SizedProperty + PartialEq + ToByteBuffer,
+    ReasonT: Default + PartialEq + ByteLen,
 {
-    type Error = CodecError;
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
+    fn property_len(&self) -> VarSizeInt {
+        VarSizeInt::try_from(
+            self.reason_string
+                .as_ref()
+                .map(ByteLen::byte_len)
+                .unwrap_or(0)
+                + self
+                    .user_property
+                    .iter()
+                    .map(ByteLen::byte_len)
+                    .sum::<usize>(),
+        )
+        .unwrap()
+    }
 
-        writer.write(&Self::FIXED_HDR);
+    fn remaining_len(&self) -> VarSizeInt {
+        let byte_len = self.property_len();
+        let is_shortened = self.reason == ReasonT::default() && byte_len.value() == 0;
+        if is_shortened {
+            return VarSizeInt::try_from(self.packet_identifier.byte_len()).unwrap();
+        }
 
+        VarSizeInt::try_from(
+            self.packet_identifier.byte_len()
+                + self.reason.byte_len()
+                + byte_len.len()
+                + byte_len.value() as usize,
+        )
+        .unwrap()
+    }
+}
+
+impl<'a, ReasonT> SizedPacket for AckTx<'a, ReasonT>
+where
+    Self: PacketID,
+    ReasonT: Default + PartialEq + ByteLen,
+{
+    fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
-        debug_assert!(remaining_len.value() as usize <= writer.remaining());
-
-        writer.write(&remaining_len);
-        writer.write(&self.packet_identifier);
-
-        if remaining_len.value() == 2 {
-            return Ok(result);
-        }
-
-        writer.write(&self.reason);
-        writer.write(&self.property_len());
-
-        if let Some(val) = self.reason_string.as_ref() {
-            writer.write(val);
-        }
-
-        for val in self.user_property.iter() {
-            writer.write(val);
-        }
-
-        Ok(result)
+        mem::size_of_val(&Self::FIXED_HDR) + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
-#[derive(Default)]
-pub(crate) struct AckBuilder<ReasonT>
+impl<'a, ReasonT> Encode for AckTx<'a, ReasonT>
 where
-    ReasonT: Default,
+    AckTx<'a, ReasonT>: PacketID,
+    ReasonT: Default + Encode + PartialEq + ByteLen + Copy,
 {
-    packet_identifier: Option<NonZero<u16>>,
-    reason: Option<ReasonT>,
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
-}
+    fn encode(&self, buf: &mut BytesMut) {
+        let rem_len = self.remaining_len();
+        let mut encoder = Encoder::from(buf);
 
-impl<ReasonT> AckBuilder<ReasonT>
-where
-    ReasonT: Default,
-{
-    pub(crate) fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.packet_identifier = Some(val);
-        self
-    }
+        encoder.encode(Self::FIXED_HDR);
 
-    pub(crate) fn reason(&mut self, val: ReasonT) -> &mut Self {
-        self.reason = Some(val);
-        self
-    }
+        encoder.encode(rem_len);
+        encoder.encode(self.packet_identifier);
 
-    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(val.into());
-        self
-    }
+        if rem_len.value() == 2 {
+            return;
+        }
 
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
+        encoder.encode(self.reason);
+        encoder.encode(self.property_len());
 
-    pub(crate) fn build(self) -> Result<Ack<ReasonT>, CodecError> {
-        Ok(Ack {
-            packet_identifier: self.packet_identifier.ok_or(MandatoryPropertyMissing)?,
-            reason: self.reason.unwrap_or_default(),
-            reason_string: self.reason_string,
-            user_property: self.user_property,
-        })
+        if self.reason_string.is_some() {
+            encoder.encode(self.reason_string.unwrap());
+        }
+
+        for property in self.user_property.iter().copied() {
+            encoder.encode(property);
+        }
     }
 }
 
@@ -229,11 +242,11 @@ pub(crate) mod test {
 
     pub(crate) fn from_bytes_impl<ReasonT>()
     where
-        ReasonT: Debug + PartialEq + Default + TryFromBytes + SizedProperty,
-        Ack<ReasonT>: PacketID,
-        <ReasonT as TryFromBytes>::Error: Debug + Into<CodecError>,
+        ReasonT: Debug + PartialEq + Default + TryDecode + ByteLen + Clone,
+        AckRx<ReasonT>: PacketID,
+        <ReasonT as TryDecode>::Error: Debug + Into<CodecError>,
     {
-        let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
+        let fixed_hdr = ((AckRx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let input_packet = [
             fixed_hdr,
             25,   // Remaining length
@@ -264,46 +277,48 @@ pub(crate) mod test {
             b'l',
         ];
 
-        let packet = Ack::<ReasonT>::try_from_bytes(&input_packet).unwrap();
+        let packet = AckRx::<ReasonT>::try_decode(Bytes::copy_from_slice(&input_packet)).unwrap();
 
-        assert_eq!(packet.packet_identifier, NonZero::from(0x4573));
+        assert_eq!(packet.packet_identifier, NonZero::try_from(0x4573).unwrap());
         assert_eq!(packet.reason, ReasonT::default());
         assert_eq!(
-            String::from(packet.reason_string.unwrap()),
-            String::from("Success")
+            UTF8String::from(packet.reason_string.unwrap()).0,
+            "Success".as_bytes()
         );
         assert_eq!(packet.user_property.len(), 1);
         assert_eq!(
             packet.user_property[0],
-            UserProperty::from((String::from("key"), String::from("val")))
+            UserProperty::from(UTF8StringPair(
+                Bytes::from_static("key".as_bytes()),
+                Bytes::from_static("val".as_bytes())
+            ))
         );
     }
 
     pub(crate) fn from_bytes_short_impl<ReasonT>()
     where
-        ReasonT: Debug + PartialEq + Default + TryFromBytes + SizedProperty,
-        Ack<ReasonT>: PacketID,
-        <ReasonT as TryFromBytes>::Error: Debug + Into<CodecError>,
+        ReasonT: Debug + PartialEq + Default + TryDecode + ByteLen + Clone,
+        AckRx<ReasonT>: PacketID,
+        <ReasonT as TryDecode>::Error: Debug + Into<CodecError>,
     {
-        let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
+        let fixed_hdr = ((AckRx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let input_packet = [
             fixed_hdr, 2,    // Remaining length
             0x45, // Packet ID MSB
             0x73, // Packet ID LSB
         ];
 
-        let packet = Ack::<ReasonT>::try_from_bytes(&input_packet).unwrap();
+        let packet = AckRx::<ReasonT>::try_decode(Bytes::copy_from_slice(&input_packet)).unwrap();
 
-        assert_eq!(packet.packet_identifier, 0x4573.into());
+        assert_eq!(packet.packet_identifier, 0x4573);
     }
 
-    pub(crate) fn to_bytes_impl<ReasonT>()
+    pub(crate) fn to_bytes_impl<'a, ReasonT>()
     where
-        ReasonT: PartialEq + Default + TryFromBytes,
-        Ack<ReasonT>: PacketID + TryToByteBuffer,
-        <Ack<ReasonT> as TryToByteBuffer>::Error: Debug + Into<CodecError>,
+        ReasonT: Copy + PartialEq + Default + Encode + ByteLen,
+        AckTx<'a, ReasonT>: PacketID,
     {
-        let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
+        let fixed_hdr = ((AckTx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let expected_packet = [
             fixed_hdr,
             25,   // Remaining length
@@ -334,41 +349,36 @@ pub(crate) mod test {
             b'l',
         ];
 
-        let mut builder = AckBuilder::<ReasonT>::default();
-        builder.packet_identifier(NonZero::from(0x4573));
+        let mut builder = AckTxBuilder::<ReasonT>::default();
+        builder.packet_identifier(NonZero::try_from(0x4573).unwrap());
         builder.reason(ReasonT::default());
-        builder.reason_string(String::from("Success"));
-        builder.user_property((String::from("key"), String::from("val")));
+        builder.reason_string(ReasonStringRef::from(UTF8StringRef("Success")));
+        builder.user_property(UserPropertyRef::from(UTF8StringPairRef("key", "val")));
 
         let packet = builder.build().unwrap();
-        let mut buf = vec![0; expected_packet.len()];
-
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
-
-        assert_eq!(result, expected_packet);
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
+        assert_eq!(buf.split().freeze(), &expected_packet[..]);
     }
 
-    pub(crate) fn to_bytes_short_impl<ReasonT>()
+    pub(crate) fn to_bytes_short_impl<'a, ReasonT>()
     where
-        ReasonT: PartialEq + Default + TryFromBytes,
-        Ack<ReasonT>: PacketID + TryToByteBuffer,
-        <Ack<ReasonT> as TryToByteBuffer>::Error: Debug,
+        ReasonT: Copy + PartialEq + Default + Encode + ByteLen,
+        AckTx<'a, ReasonT>: PacketID,
     {
-        let fixed_hdr = ((Ack::<ReasonT>::PACKET_ID as u8) << 4) as u8;
+        let fixed_hdr = ((AckTx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let expected_packet = [
             fixed_hdr, 2,    // Remaining length
             0x45, // Packet ID MSB
             0x73, // Packet ID LSB
         ];
 
-        let mut builder = AckBuilder::<ReasonT>::default();
-        builder.packet_identifier(NonZero::from(0x4573));
+        let mut builder = AckTxBuilder::<ReasonT>::default();
+        builder.packet_identifier(NonZero::try_from(0x4573).unwrap());
 
         let packet = builder.build().unwrap();
-        let mut buf = vec![0; expected_packet.len()];
-
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
-
-        assert_eq!(result, expected_packet);
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
+        assert_eq!(buf.split().freeze(), &expected_packet[..]);
     }
 }

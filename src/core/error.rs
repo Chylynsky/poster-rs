@@ -1,5 +1,6 @@
 use core::fmt;
-use std::{error::Error, string::FromUtf8Error};
+use derive_builder::UninitializedFieldError;
+use std::{error::Error, str::Utf8Error};
 
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidValue;
@@ -62,19 +63,43 @@ pub enum ConversionError {
     ValueIsZero(ValueIsZero),
     ValueExceedesMaximum(ValueExceedesMaximum),
     InvalidEncoding(InvalidEncoding),
-    Utf8Error(FromUtf8Error),
+    Utf8Error(Utf8Error),
     InsufficientBufferSize(InsufficientBufferSize),
 }
 
 impl fmt::Display for ConversionError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::InvalidValue(err) => write!(f, "ConversionError: {}", err),
-            Self::ValueIsZero(err) => write!(f, "ConversionError: {}", err),
-            Self::ValueExceedesMaximum(err) => write!(f, "ConversionError: {}", err),
-            Self::InvalidEncoding(err) => write!(f, "ConversionError: {}", err),
-            Self::Utf8Error(err) => write!(f, "ConversionError: {}", err),
-            Self::InsufficientBufferSize(err) => write!(f, "ConversionError: {}", err),
+            Self::InvalidValue(err) => write!(
+                f,
+                "{{ \"type\": \"ConversionError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::ValueIsZero(err) => write!(
+                f,
+                "{{ \"type\": \"ConversionError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::ValueExceedesMaximum(err) => write!(
+                f,
+                "{{ \"type\": \"ConversionError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::InvalidEncoding(err) => write!(
+                f,
+                "{{ \"type\": \"ConversionError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::Utf8Error(err) => write!(
+                f,
+                "{{ \"type\": \"ConversionError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::InsufficientBufferSize(err) => write!(
+                f,
+                "{{ \"type\": \"ConversionError\", \"message\": \"{}\" }}",
+                err
+            ),
         }
     }
 }
@@ -105,8 +130,8 @@ impl From<InvalidEncoding> for ConversionError {
     }
 }
 
-impl From<FromUtf8Error> for ConversionError {
-    fn from(err: FromUtf8Error) -> Self {
+impl From<Utf8Error> for ConversionError {
+    fn from(err: Utf8Error) -> Self {
         Self::Utf8Error(err)
     }
 }
@@ -137,8 +162,12 @@ pub enum PropertyError {
 impl fmt::Display for PropertyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::ConversionError(err) => write!(f, "PropertyError: {}", err),
-            Self::InvalidPropertyId(err) => write!(f, "PropertyError: {}", err),
+            Self::ConversionError(err) => write!(f, "{}", err),
+            Self::InvalidPropertyId(err) => write!(
+                f,
+                "{{ \"type\": \"PropertyError\", \"message\": \"{}\" }}",
+                err
+            ),
         }
     }
 }
@@ -227,14 +256,38 @@ pub enum CodecError {
 impl fmt::Display for CodecError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::ConversionError(err) => write!(f, "CodecError: {}", err),
-            Self::PropertyError(err) => write!(f, "CodecError: {}", err),
-            Self::UnexpectedProperty(err) => write!(f, "CodecError: {}", err),
-            Self::InvalidPacketHeader(err) => write!(f, "CodecError: {}", err),
-            Self::InvalidPacketSize(err) => write!(f, "CodecError: {}", err),
-            Self::InvalidPropertyLength(err) => write!(f, "CodecError: {}", err),
-            Self::InsufficientBufferSize(err) => write!(f, "CodecError: {}", err),
-            Self::MandatoryPropertyMissing(err) => write!(f, "CodecError: {}", err),
+            Self::ConversionError(err) => write!(f, "{}", err),
+            Self::PropertyError(err) => write!(f, " {}", err),
+            Self::UnexpectedProperty(err) => write!(
+                f,
+                "{{ \"type\": \"CodecError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::InvalidPacketHeader(err) => write!(
+                f,
+                "{{ \"type\": \"CodecError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::InvalidPacketSize(err) => write!(
+                f,
+                "{{ \"type\": \"CodecError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::InvalidPropertyLength(err) => write!(
+                f,
+                "{{ \"type\": \"CodecError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::InsufficientBufferSize(err) => write!(
+                f,
+                "{{ \"type\": \"CodecError\", \"message\": \"{}\" }}",
+                err
+            ),
+            Self::MandatoryPropertyMissing(err) => write!(
+                f,
+                "{{ \"type\": \"CodecError\", \"message\": \"{}\" }}",
+                err
+            ),
         }
     }
 }
@@ -286,5 +339,11 @@ impl From<InsufficientBufferSize> for CodecError {
 impl From<MandatoryPropertyMissing> for CodecError {
     fn from(err: MandatoryPropertyMissing) -> Self {
         Self::MandatoryPropertyMissing(err)
+    }
+}
+
+impl From<UninitializedFieldError> for CodecError {
+    fn from(_: UninitializedFieldError) -> CodecError {
+        MandatoryPropertyMissing.into()
     }
 }

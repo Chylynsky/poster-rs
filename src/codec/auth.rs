@@ -1,17 +1,15 @@
 use crate::core::{
     base_types::*,
     error::{
-        CodecError, ConversionError, InsufficientBufferSize, InvalidPacketHeader,
-        InvalidPacketSize, InvalidPropertyLength, InvalidValue, MandatoryPropertyMissing,
-        UnexpectedProperty,
+        CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
+        InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
     },
     properties::*,
-    utils::{
-        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
-        TryToByteBuffer,
-    },
+    utils::{ByteLen, Decoder, Encode, Encoder, PacketID, SizedPacket, TryDecode},
 };
+use bytes::{BufMut, Bytes, BytesMut};
 use core::mem;
+use derive_builder::Builder;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AuthReason {
@@ -39,96 +37,271 @@ impl Default for AuthReason {
     }
 }
 
-impl SizedProperty for AuthReason {
-    fn property_len(&self) -> usize {
-        (*self as u8).property_len()
+impl ByteLen for AuthReason {
+    fn byte_len(&self) -> usize {
+        (*self as u8).byte_len()
     }
 }
 
-impl TryFromBytes for AuthReason {
+impl TryDecode for AuthReason {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(u8::try_from_bytes(bytes)?)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(u8::try_decode(bytes)?)
     }
 }
 
-impl ToByteBuffer for AuthReason {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as u8).to_byte_buffer(buf)
+impl Encode for AuthReason {
+    fn encode(&self, buf: &mut BytesMut) {
+        (*self as u8).encode(buf)
     }
 }
 
-#[derive(Default)]
-pub(crate) struct Auth {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
+pub(crate) struct AuthTx<'a> {
+    #[builder(default)]
     pub(crate) reason: AuthReason,
 
-    pub(crate) authentication_method: Option<AuthenticationMethod>,
-    pub(crate) authentication_data: Option<AuthenticationData>,
-    pub(crate) reason_string: Option<ReasonString>,
-    pub(crate) user_property: Vec<UserProperty>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) authentication_method: Option<AuthenticationMethodRef<'a>>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) authentication_data: Option<AuthenticationDataRef<'a>>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) reason_string: Option<ReasonStringRef<'a>>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
 }
 
-impl Auth {
+impl<'a> AuthTxBuilder<'a> {
+    pub(crate) fn user_property(&mut self, value: UserPropertyRef<'a>) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+
+    fn validate(&self) -> Result<(), CodecError> {
+        let shortened = self
+            .reason
+            .filter(|&reason| reason != AuthReason::Success)
+            .is_none()
+            && self.authentication_method.is_none()
+            && self.authentication_data.is_none()
+            && self.reason_string.is_none()
+            && self.user_property.is_none();
+
+        if !shortened
+            && (self.authentication_method.is_none() || self.authentication_data.is_none())
+        {
+            Err(MandatoryPropertyMissing.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<'a> AuthTx<'a> {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 
+    fn is_shortened(&self) -> bool {
+        self.reason == AuthReason::Success
+            && self.authentication_method.is_none()
+            && self.authentication_data.is_none()
+            && self.reason_string.is_none()
+            && self.user_property.is_empty()
+    }
+
     fn property_len(&self) -> VarSizeInt {
-        VarSizeInt::from(
+        VarSizeInt::try_from(
             self.authentication_method
                 .as_ref()
-                .map(|val| val.property_len())
+                .map(|val| val.byte_len())
                 .unwrap_or(0)
                 + self
                     .authentication_data
                     .as_ref()
-                    .map(|val| val.property_len())
+                    .map(|val| val.byte_len())
                     .unwrap_or(0)
                 + self
                     .reason_string
                     .as_ref()
-                    .map(|val| val.property_len())
+                    .map(|val| val.byte_len())
                     .unwrap_or(0)
                 + self
                     .user_property
                     .iter()
-                    .map(|val| val.property_len())
+                    .map(|val| val.byte_len())
                     .sum::<usize>(),
         )
+        .unwrap()
     }
 
     fn remaining_len(&self) -> VarSizeInt {
-        let property_len = self.property_len();
-        let is_shortened = self.reason == AuthReason::default() && property_len.value() == 0;
-        if is_shortened {
-            return VarSizeInt::default();
+        if self.is_shortened() {
+            return VarSizeInt::from(0u8);
         }
 
-        VarSizeInt::from(
-            self.reason.property_len() + property_len.len() + property_len.value() as usize,
+        let property_len = self.property_len();
+        VarSizeInt::try_from(
+            self.reason.byte_len() + property_len.len() + property_len.value() as usize,
         )
+        .unwrap()
     }
 }
 
-impl PacketID for Auth {
+impl<'a> PacketID for AuthTx<'a> {
     const PACKET_ID: u8 = 15;
 }
 
-impl SizedPacket for Auth {
+impl<'a> SizedPacket for AuthTx<'a> {
     fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
         mem::size_of_val(&Self::FIXED_HDR) + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
-impl TryFromBytes for Auth {
+impl<'a> Encode for AuthTx<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        if self.is_shortened() {
+            const AUTH_RAW_DEFAULT: [u8; 2] = [AuthTx::FIXED_HDR, 0];
+            buf.put(&AUTH_RAW_DEFAULT[..]);
+            return;
+        }
+
+        let remaining_len = self.remaining_len();
+        let mut encoder = Encoder::from(buf);
+
+        encoder.encode(AuthTx::FIXED_HDR);
+        encoder.encode(remaining_len);
+        encoder.encode(self.reason);
+        encoder.encode(self.authentication_method.unwrap());
+        encoder.encode(self.authentication_data.unwrap());
+
+        if self.reason_string.is_some() {
+            encoder.encode(self.reason_string.unwrap());
+        }
+
+        for val in self.user_property.iter().copied() {
+            encoder.encode(val);
+        }
+    }
+}
+
+#[derive(Builder, Default)]
+#[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
+pub(crate) struct AuthRx {
+    #[builder(default)]
+    pub(crate) reason: AuthReason,
+
+    #[builder(setter(strip_option), default)]
+    pub(crate) authentication_method: Option<AuthenticationMethod>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) authentication_data: Option<AuthenticationData>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) reason_string: Option<ReasonString>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserProperty>,
+}
+
+impl AuthRxBuilder {
+    fn user_property(&mut self, value: UserProperty) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+
+    fn validate(&self) -> Result<(), CodecError> {
+        let shortened = self
+            .reason
+            .filter(|&reason| reason != AuthReason::Success)
+            .is_none()
+            && self.authentication_method.is_none()
+            && self.authentication_data.is_none()
+            && self.reason_string.is_none()
+            && self.user_property.is_none();
+
+        if !shortened
+            && (self.authentication_method.is_none() || self.authentication_data.is_none())
+        {
+            Err(MandatoryPropertyMissing.into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl AuthRx {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
+
+    fn property_len(&self) -> VarSizeInt {
+        VarSizeInt::try_from(
+            self.authentication_method
+                .as_ref()
+                .map(|val| val.byte_len())
+                .unwrap_or(0)
+                + self
+                    .authentication_data
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .reason_string
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .user_property
+                    .iter()
+                    .map(|val| val.byte_len())
+                    .sum::<usize>(),
+        )
+        .unwrap()
+    }
+
+    fn remaining_len(&self) -> VarSizeInt {
+        let byte_len = self.property_len();
+        let is_shortened = self.reason == AuthReason::default() && byte_len.value() == 0;
+        if is_shortened {
+            return VarSizeInt::default();
+        }
+
+        VarSizeInt::try_from(self.reason.byte_len() + byte_len.len() + byte_len.value() as usize)
+            .unwrap()
+    }
+}
+
+impl PacketID for AuthRx {
+    const PACKET_ID: u8 = 15;
+}
+
+impl SizedPacket for AuthRx {
+    fn packet_len(&self) -> usize {
+        let remaining_len = self.remaining_len();
+        mem::size_of_val(&Self::FIXED_HDR) + remaining_len.len() + remaining_len.value() as usize
+    }
+}
+
+impl TryDecode for AuthRx {
     type Error = CodecError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let mut builder = AuthBuilder::default();
-        let mut reader = ByteReader::from(bytes);
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        let mut builder = AuthRxBuilder::default();
+        let mut decoder = Decoder::from(bytes.clone());
 
-        let fixed_hdr = reader
-            .try_read::<u8>()
+        let _fixed_hdr = decoder
+            .try_decode::<u8>()
             .map_err(CodecError::from)
             .and_then(|val| {
                 if val != Self::FIXED_HDR {
@@ -138,156 +311,49 @@ impl TryFromBytes for Auth {
                 Ok(val)
             })?;
 
-        let remaining_len = reader.try_read::<VarSizeInt>()?;
+        let remaining_len = decoder.try_decode::<VarSizeInt>()?;
 
         // When remaining length is 0, the Reason is 0x00
         if remaining_len.value() == 0 {
-            return Ok(Auth::default());
+            return Ok(AuthRx::default());
         }
 
-        let packet_size =
-            mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
-        if packet_size > bytes.len() {
+        if remaining_len.value() as usize > bytes.len() {
             return Err(InvalidPacketSize.into());
         }
 
-        let reason = reader.try_read::<AuthReason>()?;
+        let reason = decoder.try_decode::<AuthReason>()?;
         builder.reason(reason);
 
-        let property_len = reader.try_read::<VarSizeInt>()?;
-        if property_len.value() as usize > reader.remaining() {
+        let property_len = decoder.try_decode::<VarSizeInt>()?;
+        if property_len.value() as usize > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
-        for property in PropertyIterator::from(reader.get_buf()) {
-            if let Err(err) = property {
-                return Err(err.into());
-            }
-
-            match property.unwrap() {
-                Property::AuthenticationMethod(val) => {
-                    builder.authentication_method(val.into());
-                }
-                Property::AuthenticationData(val) => {
-                    builder.authentication_data(val.into());
-                }
-                Property::ReasonString(val) => {
-                    builder.reason_string(val.into());
-                }
-                Property::UserProperty(val) => {
-                    builder.user_property(val.into());
-                }
-                _ => {
-                    return Err(UnexpectedProperty.into());
-                }
+        for maybe_property in decoder.iter::<Property>() {
+            match maybe_property {
+                Ok(property) => match property {
+                    Property::AuthenticationMethod(val) => {
+                        builder.authentication_method(val);
+                    }
+                    Property::AuthenticationData(val) => {
+                        builder.authentication_data(val);
+                    }
+                    Property::ReasonString(val) => {
+                        builder.reason_string(val);
+                    }
+                    Property::UserProperty(val) => {
+                        builder.user_property(val);
+                    }
+                    _ => {
+                        return Err(UnexpectedProperty.into());
+                    }
+                },
+                Err(err) => return Err(err.into()),
             }
         }
 
         builder.build()
-    }
-}
-
-impl TryToByteBuffer for Auth {
-    type Error = CodecError;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
-
-        writer.write(&Self::FIXED_HDR);
-
-        let remaining_len = self.remaining_len();
-
-        // When remaining length is 0, the Reason is 0x00
-        if remaining_len.value() == 0 {
-            return Ok(result);
-        }
-
-        debug_assert!(remaining_len.value() as usize <= writer.remaining());
-        writer.write(&remaining_len);
-
-        writer.write(&self.reason);
-        writer.write(
-            self.authentication_method
-                .as_ref()
-                .ok_or(MandatoryPropertyMissing)?,
-        );
-
-        if let Some(val) = self.authentication_data.as_ref() {
-            writer.write(val);
-        }
-
-        if let Some(val) = self.reason_string.as_ref() {
-            writer.write(val);
-        }
-
-        for val in self.user_property.iter() {
-            writer.write(val);
-        }
-
-        Ok(result)
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct AuthBuilder {
-    reason: Option<AuthReason>,
-    authentication_method: Option<AuthenticationMethod>,
-    authentication_data: Option<AuthenticationData>,
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
-}
-
-impl AuthBuilder {
-    pub(crate) fn reason(&mut self, val: AuthReason) -> &mut Self {
-        self.reason = Some(val);
-        self
-    }
-
-    pub(crate) fn authentication_data(&mut self, val: Binary) -> &mut Self {
-        self.authentication_data = Some(val.into());
-        self
-    }
-
-    pub(crate) fn authentication_method(&mut self, val: String) -> &mut Self {
-        self.authentication_method = Some(val.into());
-        self
-    }
-
-    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(val.into());
-        self
-    }
-
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
-
-    fn is_shortened(&self) -> bool {
-        self.reason.is_none()
-            && self.authentication_method.is_none()
-            && self.authentication_data.is_none()
-            && self.reason_string.is_none()
-            && self.user_property.is_empty()
-    }
-
-    pub(crate) fn build(self) -> Result<Auth, CodecError> {
-        if self.is_shortened() {
-            return Ok(Auth::default());
-        }
-
-        Ok(Auth {
-            reason: self.reason.ok_or(MandatoryPropertyMissing)?,
-            authentication_method: Some(
-                self.authentication_method.ok_or(MandatoryPropertyMissing)?,
-            ),
-            authentication_data: self.authentication_data,
-            reason_string: self.reason_string,
-            user_property: self.user_property,
-        })
     }
 }
 
@@ -297,26 +363,28 @@ mod test {
 
     #[test]
     fn from_bytes_1() {
-        const FIXED_HDR: u8 = ((Auth::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = ((AuthRx::PACKET_ID as u8) << 4) as u8;
         const PACKET: [u8; 2] = [
             FIXED_HDR, 0, // Remaining length
         ];
 
-        let packet = Auth::try_from_bytes(&PACKET);
+        let packet = AuthRx::try_decode(Bytes::from_static(&PACKET));
         assert!(packet.is_ok());
     }
 
     #[test]
     fn to_bytes_1() {
-        const FIXED_HDR: u8 = ((Auth::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = ((AuthRx::PACKET_ID as u8) << 4) as u8;
         const EXPECTED: [u8; 2] = [
             FIXED_HDR, 0, // Remaining length
         ];
 
-        let packet = Auth::default();
-        let mut buf = [0u8; EXPECTED.len()];
+        let builder = AuthTxBuilder::default();
+        let packet = builder.build().unwrap();
 
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
-        assert_eq!(result, EXPECTED);
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
+
+        assert_eq!(&buf.split().freeze()[..], EXPECTED);
     }
 }

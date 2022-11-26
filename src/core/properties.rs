@@ -1,57 +1,30 @@
 use crate::core::{
     base_types::*,
-    error::{ConversionError, InsufficientBufferSize, InvalidPropertyId, PropertyError},
-    utils::{ByteWriter, PropertyID, SizedProperty, ToByteBuffer, TryFromBytes, TryToByteBuffer},
+    error::{InvalidPropertyId, PropertyError},
+    utils::{ByteLen, Decoder, Encode, PropertyID, TryDecode},
 };
-use core::{convert::From, iter::Iterator, mem};
-
-fn to_byte_buffer_unchecked<'a, PropertyT, UnderlyingT>(
-    _: &PropertyT,
-    underlying: &UnderlyingT,
-    buf: &'a mut [u8],
-) -> &'a [u8]
-where
-    PropertyT: PropertyID,
-    UnderlyingT: ToByteBuffer,
-{
-    let mut writer = ByteWriter::from(buf);
-
-    writer.write(&PropertyT::PROPERTY_ID);
-    writer.write(underlying);
-
-    buf
-}
+use bytes::{Bytes, BytesMut};
+use core::{convert::From, mem};
 
 macro_rules! declare_property {
     ($property_name:ident, $property_type:ty, $property_id:literal) => {
         #[derive(Clone, Debug, PartialEq)]
-        pub(crate) struct $property_name($property_type);
+        pub(crate) struct $property_name(pub(crate) $property_type);
 
         impl PropertyID for $property_name {
             const PROPERTY_ID: u8 = $property_id;
         }
 
-        impl SizedProperty for $property_name {
-            fn property_len(&self) -> usize {
-                mem::size_of_val(&Self::PROPERTY_ID) + self.0.property_len()
+        impl ByteLen for $property_name {
+            fn byte_len(&self) -> usize {
+                mem::size_of_val(&Self::PROPERTY_ID) + self.0.byte_len()
             }
         }
 
-        impl ToByteBuffer for $property_name {
-            fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-                let result = &mut buf[0..self.property_len()];
-                to_byte_buffer_unchecked(self, &self.0, result)
-            }
-        }
-
-        impl TryToByteBuffer for $property_name {
-            type Error = ConversionError;
-
-            fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-                let result = buf
-                    .get_mut(0..self.property_len())
-                    .ok_or(InsufficientBufferSize)?;
-                Ok(to_byte_buffer_unchecked(self, &self.0, result))
+        impl Encode for $property_name {
+            fn encode(&self, buf: &mut BytesMut) {
+                Self::PROPERTY_ID.encode(buf);
+                self.0.encode(buf);
             }
         }
 
@@ -69,12 +42,60 @@ macro_rules! declare_property {
     };
 }
 
+macro_rules! declare_property_ref {
+    ($property_name:ident, $property_type:ident, $property_id:literal) => {
+        #[derive(Clone, Debug, PartialEq, Copy)]
+        pub(crate) struct $property_name<'a>($property_type<'a>);
+
+        impl<'a> PropertyID for $property_name<'a> {
+            const PROPERTY_ID: u8 = $property_id;
+        }
+
+        impl<'a> ByteLen for $property_name<'a> {
+            fn byte_len(&self) -> usize {
+                mem::size_of_val(&Self::PROPERTY_ID) + self.0.byte_len()
+            }
+        }
+
+        impl<'a> Encode for $property_name<'a> {
+            fn encode(&self, buf: &mut BytesMut) {
+                Self::PROPERTY_ID.encode(buf);
+                self.0.encode(buf);
+            }
+        }
+
+        impl<'a> From<$property_type<'a>> for $property_name<'a> {
+            fn from(val: $property_type<'a>) -> Self {
+                Self { 0: val }
+            }
+        }
+
+        impl<'a> From<$property_name<'a>> for $property_type<'a> {
+            fn from(val: $property_name) -> $property_type {
+                val.0
+            }
+        }
+    };
+}
+
 declare_property!(PayloadFormatIndicator, bool, 1);
+
+impl Copy for PayloadFormatIndicator {}
+
 declare_property!(MessageExpiryInterval, u32, 2);
-declare_property!(ContentType, String, 3);
-declare_property!(ResponseTopic, String, 8);
+
+impl Copy for MessageExpiryInterval {}
+
+declare_property!(ContentType, UTF8String, 3);
+declare_property_ref!(ContentTypeRef, UTF8StringRef, 3);
+declare_property!(ResponseTopic, UTF8String, 8);
+declare_property_ref!(ResponseTopicRef, UTF8StringRef, 8);
 declare_property!(CorrelationData, Binary, 9);
+declare_property_ref!(CorrelationDataRef, BinaryRef, 9);
 declare_property!(SubscriptionIdentifier, NonZero<VarSizeInt>, 11);
+
+impl Copy for SubscriptionIdentifier {}
+
 declare_property!(SessionExpiryInterval, u32, 17);
 
 #[allow(clippy::derivable_impls)]
@@ -84,11 +105,21 @@ impl Default for SessionExpiryInterval {
     }
 }
 
-declare_property!(AssignedClientIdentifier, String, 18);
+impl Copy for SessionExpiryInterval {}
+
+declare_property!(AssignedClientIdentifier, UTF8String, 18);
+declare_property_ref!(AssignedClientIdentifierRef, UTF8StringRef, 18);
 declare_property!(ServerKeepAlive, u16, 19);
-declare_property!(AuthenticationMethod, String, 21);
+
+impl Copy for ServerKeepAlive {}
+
+declare_property!(AuthenticationMethod, UTF8String, 21);
+declare_property_ref!(AuthenticationMethodRef, UTF8StringRef, 21);
 declare_property!(AuthenticationData, Binary, 22);
+declare_property_ref!(AuthenticationDataRef, BinaryRef, 22);
 declare_property!(RequestProblemInformation, bool, 23);
+
+impl Copy for RequestProblemInformation {}
 
 declare_property!(WillDelayInterval, u32, 24);
 
@@ -99,17 +130,27 @@ impl Default for WillDelayInterval {
     }
 }
 
+impl Copy for WillDelayInterval {}
+
 declare_property!(RequestResponseInformation, bool, 25);
-declare_property!(ResponseInformation, String, 26);
-declare_property!(ServerReference, String, 28);
-declare_property!(ReasonString, String, 31);
+
+impl Copy for RequestResponseInformation {}
+
+declare_property!(ResponseInformation, UTF8String, 26);
+declare_property_ref!(ResponseInformationRef, UTF8StringRef, 26);
+declare_property!(ServerReference, UTF8String, 28);
+declare_property_ref!(ServerReferenceRef, UTF8StringRef, 28);
+declare_property!(ReasonString, UTF8String, 31);
+declare_property_ref!(ReasonStringRef, UTF8StringRef, 31);
 declare_property!(ReceiveMaximum, NonZero<u16>, 33);
 
 impl Default for ReceiveMaximum {
     fn default() -> Self {
-        Self(NonZero::from(65535))
+        Self(NonZero::try_from(65535).unwrap())
     }
 }
+
+impl Copy for ReceiveMaximum {}
 
 declare_property!(TopicAliasMaximum, u16, 34);
 
@@ -120,7 +161,12 @@ impl Default for TopicAliasMaximum {
     }
 }
 
+impl Copy for TopicAliasMaximum {}
+
 declare_property!(TopicAlias, NonZero<u16>, 35);
+
+impl Copy for TopicAlias {}
+
 declare_property!(MaximumQoS, QoS, 36);
 
 impl Default for MaximumQoS {
@@ -128,6 +174,8 @@ impl Default for MaximumQoS {
         Self(QoS::ExactlyOnce)
     }
 }
+
+impl Copy for MaximumQoS {}
 
 declare_property!(RetainAvailable, bool, 37);
 
@@ -137,8 +185,14 @@ impl Default for RetainAvailable {
     }
 }
 
-declare_property!(UserProperty, StringPair, 38);
+impl Copy for RetainAvailable {}
+
+declare_property!(UserProperty, UTF8StringPair, 38);
+declare_property_ref!(UserPropertyRef, UTF8StringPairRef, 38);
 declare_property!(MaximumPacketSize, NonZero<u32>, 39);
+
+impl Copy for MaximumPacketSize {}
+
 declare_property!(WildcardSubscriptionAvailable, bool, 40);
 
 impl Default for WildcardSubscriptionAvailable {
@@ -146,6 +200,8 @@ impl Default for WildcardSubscriptionAvailable {
         Self(true)
     }
 }
+
+impl Copy for WildcardSubscriptionAvailable {}
 
 declare_property!(SubscriptionIdentifierAvailable, bool, 41);
 
@@ -155,6 +211,8 @@ impl Default for SubscriptionIdentifierAvailable {
     }
 }
 
+impl Copy for SubscriptionIdentifierAvailable {}
+
 declare_property!(SharedSubscriptionAvailable, bool, 42);
 
 impl Default for SharedSubscriptionAvailable {
@@ -162,6 +220,8 @@ impl Default for SharedSubscriptionAvailable {
         Self(true)
     }
 }
+
+impl Copy for SharedSubscriptionAvailable {}
 
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) enum Property {
@@ -194,241 +254,188 @@ pub(crate) enum Property {
     SharedSubscriptionAvailable(SharedSubscriptionAvailable),
 }
 
-pub(crate) struct PropertyIterator<'a> {
-    buf: &'a [u8],
-}
-
-impl<'a> From<&'a [u8]> for PropertyIterator<'a> {
-    fn from(buf: &'a [u8]) -> Self {
-        Self { buf }
+impl ByteLen for Property {
+    fn byte_len(&self) -> usize {
+        match self {
+            Self::PayloadFormatIndicator(property) => property.byte_len(),
+            Self::MessageExpiryInterval(property) => property.byte_len(),
+            Self::ContentType(property) => property.byte_len(),
+            Self::ResponseTopic(property) => property.byte_len(),
+            Self::CorrelationData(property) => property.byte_len(),
+            Self::SubscriptionIdentifier(property) => property.byte_len(),
+            Self::SessionExpiryInterval(property) => property.byte_len(),
+            Self::AssignedClientIdentifier(property) => property.byte_len(),
+            Self::ServerKeepAlive(property) => property.byte_len(),
+            Self::AuthenticationMethod(property) => property.byte_len(),
+            Self::AuthenticationData(property) => property.byte_len(),
+            Self::RequestProblemInformation(property) => property.byte_len(),
+            Self::WillDelayInterval(property) => property.byte_len(),
+            Self::RequestResponseInformation(property) => property.byte_len(),
+            Self::ResponseInformation(property) => property.byte_len(),
+            Self::ServerReference(property) => property.byte_len(),
+            Self::ReasonString(property) => property.byte_len(),
+            Self::ReceiveMaximum(property) => property.byte_len(),
+            Self::TopicAliasMaximum(property) => property.byte_len(),
+            Self::TopicAlias(property) => property.byte_len(),
+            Self::MaximumQoS(property) => property.byte_len(),
+            Self::RetainAvailable(property) => property.byte_len(),
+            Self::UserProperty(property) => property.byte_len(),
+            Self::MaximumPacketSize(property) => property.byte_len(),
+            Self::WildcardSubscriptionAvailable(property) => property.byte_len(),
+            Self::SubscriptionIdentifierAvailable(property) => property.byte_len(),
+            Self::SharedSubscriptionAvailable(property) => property.byte_len(),
+        }
     }
 }
 
-impl<'a> Iterator for PropertyIterator<'a> {
-    type Item = Result<Property, PropertyError>;
+impl TryDecode for Property {
+    type Error = PropertyError;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // Inability to read the packet ID means the iteration is over.
-        let id = VarSizeInt::try_from_bytes(self.buf)
-            .ok()
-            .filter(|val| val.len() == 1)?;
-        self.buf = self.buf.get(id.len()..)?;
+    fn try_decode(buf: Bytes) -> Result<Self, Self::Error> {
+        let mut decoder = Decoder::from(buf);
+        let id = decoder.try_decode::<u8>()?; // Technically, the ID is Variable Byte Integer
 
         match u8::from(id) {
-            PayloadFormatIndicator::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::PayloadFormatIndicator(
-                        PayloadFormatIndicator(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            RequestResponseInformation::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::RequestResponseInformation(
-                        RequestResponseInformation(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            WildcardSubscriptionAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::WildcardSubscriptionAvailable(
-                        WildcardSubscriptionAvailable(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            SubscriptionIdentifierAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::SubscriptionIdentifierAvailable(
-                        SubscriptionIdentifierAvailable(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            SharedSubscriptionAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::SharedSubscriptionAvailable(
-                        SharedSubscriptionAvailable(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            RetainAvailable::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::RetainAvailable(RetainAvailable(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            RequestProblemInformation::PROPERTY_ID => match bool::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::RequestProblemInformation(
-                        RequestProblemInformation(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            MaximumQoS::PROPERTY_ID => match QoS::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::MaximumQoS(MaximumQoS(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ServerKeepAlive::PROPERTY_ID => match u16::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ServerKeepAlive(ServerKeepAlive(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            TopicAliasMaximum::PROPERTY_ID => match u16::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::TopicAliasMaximum(TopicAliasMaximum(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ReceiveMaximum::PROPERTY_ID => match NonZero::<u16>::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ReceiveMaximum(ReceiveMaximum(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            TopicAlias::PROPERTY_ID => match NonZero::<u16>::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::TopicAlias(TopicAlias(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            MessageExpiryInterval::PROPERTY_ID => match u32::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::MessageExpiryInterval(MessageExpiryInterval(
-                        val,
-                    ))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            SessionExpiryInterval::PROPERTY_ID => match u32::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::SessionExpiryInterval(SessionExpiryInterval(
-                        val,
-                    ))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            WillDelayInterval::PROPERTY_ID => match u32::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::WillDelayInterval(WillDelayInterval(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            MaximumPacketSize::PROPERTY_ID => match NonZero::<u32>::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::MaximumPacketSize(MaximumPacketSize(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            SubscriptionIdentifier::PROPERTY_ID => {
-                match NonZero::<VarSizeInt>::try_from_bytes(self.buf) {
-                    Ok(val) => {
-                        self.buf = self.buf.get(val.property_len()..)?;
-                        Some(Ok(Property::SubscriptionIdentifier(
-                            SubscriptionIdentifier(val),
-                        )))
-                    }
-                    Err(err) => Some(Err(err.into())),
-                }
-            }
-            CorrelationData::PROPERTY_ID => match Binary::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::CorrelationData(CorrelationData(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            AuthenticationData::PROPERTY_ID => match Binary::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::AuthenticationData(AuthenticationData(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ContentType::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ContentType(ContentType(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ResponseTopic::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ResponseTopic(ResponseTopic(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            AssignedClientIdentifier::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::AssignedClientIdentifier(
-                        AssignedClientIdentifier(val),
-                    )))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            AuthenticationMethod::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::AuthenticationMethod(AuthenticationMethod(
-                        val,
-                    ))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ResponseInformation::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ResponseInformation(ResponseInformation(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ServerReference::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ServerReference(ServerReference(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            ReasonString::PROPERTY_ID => match String::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::ReasonString(ReasonString(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            UserProperty::PROPERTY_ID => match StringPair::try_from_bytes(self.buf) {
-                Ok(val) => {
-                    self.buf = self.buf.get(val.property_len()..)?;
-                    Some(Ok(Property::UserProperty(UserProperty(val))))
-                }
-                Err(err) => Some(Err(err.into())),
-            },
-            _ => Some(Err(InvalidPropertyId.into())),
+            PayloadFormatIndicator::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| Property::PayloadFormatIndicator(PayloadFormatIndicator(val)))
+                .map_err(PropertyError::from),
+
+            RequestResponseInformation::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| Property::RequestResponseInformation(RequestResponseInformation(val)))
+                .map_err(PropertyError::from),
+
+            WildcardSubscriptionAvailable::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| {
+                    Property::WildcardSubscriptionAvailable(WildcardSubscriptionAvailable(val))
+                })
+                .map_err(PropertyError::from),
+
+            SubscriptionIdentifierAvailable::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| {
+                    Property::SubscriptionIdentifierAvailable(SubscriptionIdentifierAvailable(val))
+                })
+                .map_err(PropertyError::from),
+
+            SharedSubscriptionAvailable::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| Property::SharedSubscriptionAvailable(SharedSubscriptionAvailable(val)))
+                .map_err(PropertyError::from),
+
+            RetainAvailable::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| Property::RetainAvailable(RetainAvailable(val)))
+                .map_err(PropertyError::from),
+
+            RequestProblemInformation::PROPERTY_ID => decoder
+                .try_decode::<bool>()
+                .map(|val| Property::RequestProblemInformation(RequestProblemInformation(val)))
+                .map_err(PropertyError::from),
+
+            MaximumQoS::PROPERTY_ID => decoder
+                .try_decode::<QoS>()
+                .map(|val| Property::MaximumQoS(MaximumQoS(val)))
+                .map_err(PropertyError::from),
+
+            ServerKeepAlive::PROPERTY_ID => decoder
+                .try_decode::<u16>()
+                .map(|val| Property::ServerKeepAlive(ServerKeepAlive(val)))
+                .map_err(PropertyError::from),
+
+            TopicAliasMaximum::PROPERTY_ID => decoder
+                .try_decode::<u16>()
+                .map(|val| Property::TopicAliasMaximum(TopicAliasMaximum(val)))
+                .map_err(PropertyError::from),
+
+            ReceiveMaximum::PROPERTY_ID => decoder
+                .try_decode::<NonZero<u16>>()
+                .map(|val| Property::ReceiveMaximum(ReceiveMaximum(val)))
+                .map_err(PropertyError::from),
+
+            TopicAlias::PROPERTY_ID => decoder
+                .try_decode::<NonZero<u16>>()
+                .map(|val| Property::TopicAlias(TopicAlias(val)))
+                .map_err(PropertyError::from),
+
+            MessageExpiryInterval::PROPERTY_ID => decoder
+                .try_decode::<u32>()
+                .map(|val| Property::MessageExpiryInterval(MessageExpiryInterval(val)))
+                .map_err(PropertyError::from),
+
+            SessionExpiryInterval::PROPERTY_ID => decoder
+                .try_decode::<u32>()
+                .map(|val| Property::SessionExpiryInterval(SessionExpiryInterval(val)))
+                .map_err(PropertyError::from),
+
+            WillDelayInterval::PROPERTY_ID => decoder
+                .try_decode::<u32>()
+                .map(|val| Property::WillDelayInterval(WillDelayInterval(val)))
+                .map_err(PropertyError::from),
+
+            MaximumPacketSize::PROPERTY_ID => decoder
+                .try_decode::<NonZero<u32>>()
+                .map(|val| Property::MaximumPacketSize(MaximumPacketSize(val)))
+                .map_err(PropertyError::from),
+
+            SubscriptionIdentifier::PROPERTY_ID => decoder
+                .try_decode::<NonZero<VarSizeInt>>()
+                .map(|val| Property::SubscriptionIdentifier(SubscriptionIdentifier(val)))
+                .map_err(PropertyError::from),
+
+            CorrelationData::PROPERTY_ID => decoder
+                .try_decode::<Binary>()
+                .map(|val| Property::CorrelationData(CorrelationData(val)))
+                .map_err(PropertyError::from),
+
+            AuthenticationData::PROPERTY_ID => decoder
+                .try_decode::<Binary>()
+                .map(|val| Property::AuthenticationData(AuthenticationData(val)))
+                .map_err(PropertyError::from),
+
+            ContentType::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::ContentType(ContentType(val)))
+                .map_err(PropertyError::from),
+
+            ResponseTopic::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::ResponseTopic(ResponseTopic(val)))
+                .map_err(PropertyError::from),
+
+            AssignedClientIdentifier::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::AssignedClientIdentifier(AssignedClientIdentifier(val)))
+                .map_err(PropertyError::from),
+
+            AuthenticationMethod::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::AuthenticationMethod(AuthenticationMethod(val)))
+                .map_err(PropertyError::from),
+
+            ResponseInformation::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::ResponseInformation(ResponseInformation(val)))
+                .map_err(PropertyError::from),
+
+            ServerReference::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::ServerReference(ServerReference(val)))
+                .map_err(PropertyError::from),
+
+            ReasonString::PROPERTY_ID => decoder
+                .try_decode::<UTF8String>()
+                .map(|val| Property::ReasonString(ReasonString(val)))
+                .map_err(PropertyError::from),
+
+            UserProperty::PROPERTY_ID => decoder
+                .try_decode::<UTF8StringPair>()
+                .map(|val| Property::UserProperty(UserProperty(val)))
+                .map_err(PropertyError::from),
+
+            _ => Err(InvalidPropertyId.into()),
         }
     }
 }
@@ -437,11 +444,11 @@ impl<'a> Iterator for PropertyIterator<'a> {
 mod test {
     use super::*;
 
-    mod property_iterator {
+    mod try_decode {
         use super::*;
 
         #[test]
-        fn single_byte() {
+        fn u8() {
             const EXPECTED_VAL: u8 = 1;
             let input = [
                 (
@@ -490,14 +497,13 @@ mod test {
 
             for (id, expected) in input {
                 let buf = [id, EXPECTED_VAL];
-                let mut iter = PropertyIterator::from(&buf[..]);
-                let property = iter.next().unwrap();
-                assert_eq!(property.unwrap(), expected);
+                let property = Property::try_decode(Bytes::copy_from_slice(&buf)).unwrap();
+                assert_eq!(property, expected);
             }
         }
 
         #[test]
-        fn two_byte_int() {
+        fn u16() {
             const EXPECTED_VAL: u16 = 965;
             let input = [
                 (
@@ -506,7 +512,9 @@ mod test {
                 ),
                 (
                     ReceiveMaximum::PROPERTY_ID,
-                    Property::ReceiveMaximum(ReceiveMaximum(NonZero::from(EXPECTED_VAL))),
+                    Property::ReceiveMaximum(ReceiveMaximum(
+                        NonZero::try_from(EXPECTED_VAL).unwrap(),
+                    )),
                 ),
                 (
                     TopicAliasMaximum::PROPERTY_ID,
@@ -514,20 +522,19 @@ mod test {
                 ),
                 (
                     TopicAlias::PROPERTY_ID,
-                    Property::TopicAlias(TopicAlias(NonZero::from(EXPECTED_VAL))),
+                    Property::TopicAlias(TopicAlias(NonZero::try_from(EXPECTED_VAL).unwrap())),
                 ),
             ];
 
             for (id, expected) in input {
                 let buf = [id, (EXPECTED_VAL >> 8) as u8, EXPECTED_VAL as u8];
-                let mut iter = PropertyIterator::from(&buf[..]);
-                let property = iter.next().unwrap();
-                assert_eq!(property.unwrap(), expected);
+                let property = Property::try_decode(Bytes::copy_from_slice(&buf)).unwrap();
+                assert_eq!(property, expected);
             }
         }
 
         #[test]
-        fn four_byte_int() {
+        fn u32() {
             const EXPECTED_VAL: u32 = 44568;
             let input = [
                 (
@@ -544,15 +551,16 @@ mod test {
                 ),
                 (
                     MaximumPacketSize::PROPERTY_ID,
-                    Property::MaximumPacketSize(MaximumPacketSize(NonZero::from(EXPECTED_VAL))),
+                    Property::MaximumPacketSize(MaximumPacketSize(
+                        NonZero::try_from(EXPECTED_VAL).unwrap(),
+                    )),
                 ),
             ];
 
             for (id, expected) in input {
                 let buf = [id, 0x00, 0x00, 0xae, 0x18];
-                let mut iter = PropertyIterator::from(&buf[..]);
-                let property = iter.next().unwrap();
-                assert_eq!(property.unwrap(), expected);
+                let property = Property::try_decode(Bytes::copy_from_slice(&buf)).unwrap();
+                assert_eq!(property, expected);
             }
         }
 
@@ -561,141 +569,102 @@ mod test {
             const EXPECTED_VAL: u8 = 64;
             let input = [(
                 SubscriptionIdentifier::PROPERTY_ID,
-                Property::SubscriptionIdentifier(SubscriptionIdentifier(NonZero::from(
-                    VarSizeInt::from(EXPECTED_VAL),
-                ))),
+                Property::SubscriptionIdentifier(SubscriptionIdentifier(
+                    NonZero::try_from(VarSizeInt::from(EXPECTED_VAL)).unwrap(),
+                )),
             )];
 
             for (id, expected) in input {
                 let buf = [id, EXPECTED_VAL];
-                let mut iter = PropertyIterator::from(&buf[..]);
-                let property = iter.next().unwrap();
-                assert_eq!(property.unwrap(), expected);
+                let property = Property::try_decode(Bytes::copy_from_slice(&buf)).unwrap();
+                assert_eq!(property, expected);
             }
         }
 
         #[test]
         fn binary() {
             const EXPECTED_VAL: [u8; 3] = [0x02u8, 0xae, 0x18];
+            let input_bytes = [
+                &((EXPECTED_VAL.len() as u16).to_be_bytes()),
+                &EXPECTED_VAL[..],
+            ]
+            .concat();
+            let expected_binary = Binary(Bytes::from_static(&EXPECTED_VAL));
+
             let input = [
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     CorrelationData::PROPERTY_ID,
-                    Property::CorrelationData(CorrelationData(Vec::from(EXPECTED_VAL).into())),
+                    Property::CorrelationData(CorrelationData(expected_binary.clone())),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     AuthenticationData::PROPERTY_ID,
-                    Property::AuthenticationData(AuthenticationData(
-                        Vec::from(EXPECTED_VAL).into(),
-                    )),
+                    Property::AuthenticationData(AuthenticationData(expected_binary.clone())),
                 ),
             ];
 
             for (buf, id, expected) in input {
                 let buf = [&[id], &buf[..]].concat();
-                let mut iter = PropertyIterator::from(&buf[..]);
-                let property = iter.next().unwrap();
-                assert_eq!(property.unwrap(), expected);
+                let property = Property::try_decode(Bytes::from(buf)).unwrap();
+                assert_eq!(property, expected);
             }
         }
 
         #[test]
         fn utf8_string() {
             const EXPECTED_VAL: [u8; 3] = [b'v', b'a', b'l'];
+            let input_bytes = [
+                &((EXPECTED_VAL.len() as u16).to_be_bytes()),
+                &EXPECTED_VAL[..],
+            ]
+            .concat();
+            let expected_str = UTF8String(Bytes::from_static(&EXPECTED_VAL));
+
             let input = [
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     ContentType::PROPERTY_ID,
-                    Property::ContentType(ContentType(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
-                    )),
+                    Property::ContentType(ContentType(expected_str.clone())),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     ResponseTopic::PROPERTY_ID,
-                    Property::ResponseTopic(ResponseTopic(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
-                    )),
+                    Property::ResponseTopic(ResponseTopic(expected_str.clone())),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     AssignedClientIdentifier::PROPERTY_ID,
                     Property::AssignedClientIdentifier(AssignedClientIdentifier(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
+                        expected_str.clone(),
                     )),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     AuthenticationMethod::PROPERTY_ID,
-                    Property::AuthenticationMethod(AuthenticationMethod(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
-                    )),
+                    Property::AuthenticationMethod(AuthenticationMethod(expected_str.clone())),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     ResponseInformation::PROPERTY_ID,
-                    Property::ResponseInformation(ResponseInformation(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
-                    )),
+                    Property::ResponseInformation(ResponseInformation(expected_str.clone())),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     ServerReference::PROPERTY_ID,
-                    Property::ServerReference(ServerReference(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
-                    )),
+                    Property::ServerReference(ServerReference(expected_str.clone())),
                 ),
                 (
-                    &[
-                        &((EXPECTED_VAL.len() as u16).to_be_bytes()),
-                        &EXPECTED_VAL[..],
-                    ]
-                    .concat(),
+                    &input_bytes,
                     ReasonString::PROPERTY_ID,
-                    Property::ReasonString(ReasonString(
-                        String::from_utf8(Vec::from(EXPECTED_VAL)).unwrap(),
-                    )),
+                    Property::ReasonString(ReasonString(expected_str.clone())),
                 ),
             ];
 
             for (buf, id, expected) in input {
                 let buf = [&[id], &buf[..]].concat();
-                let mut iter = PropertyIterator::from(&buf[..]);
-                let property = iter.next().unwrap();
-                assert_eq!(property.unwrap(), expected);
+                let property = Property::try_decode(Bytes::from(buf)).unwrap();
+                assert_eq!(property, expected);
             }
         }
 
@@ -716,72 +685,68 @@ mod test {
                 b'a',
                 b'l',
             ];
-            let mut iter = PropertyIterator::from(&INPUT[..]);
-            let property = iter.next().unwrap();
+            let property = Property::try_decode(Bytes::from_static(&INPUT)).unwrap();
 
-            match property.unwrap() {
+            match property {
                 Property::UserProperty(result) => {
-                    assert_eq!(result.property_len(), INPUT.len());
-                    let (key, val) = result.0;
-                    assert_eq!(key, EXPECTED_KEY);
-                    assert_eq!(val, EXPECTED_VAL);
+                    assert_eq!(result.byte_len(), INPUT.len());
+
+                    let pair = result.0;
+
+                    assert_eq!(&pair.0, EXPECTED_KEY.as_bytes());
+                    assert_eq!(&pair.1, EXPECTED_VAL.as_bytes());
                 }
                 _ => panic!(),
             }
         }
     }
 
-    mod to_bytes {
+    mod encode {
         use super::*;
 
         fn byte_test<T>(property: T, expected: u8)
         where
-            T: SizedProperty + PropertyID + TryToByteBuffer,
-            <T as TryToByteBuffer>::Error: core::fmt::Debug,
+            T: ByteLen + PropertyID + Encode,
         {
-            let mut buf = [0u8; 2];
-            let result = property.try_to_byte_buffer(&mut buf);
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), [T::PROPERTY_ID, expected]);
+            let mut buf = BytesMut::new();
+            property.encode(&mut buf);
+            assert_eq!(&[T::PROPERTY_ID, expected][..], &buf.split().freeze());
         }
 
         fn two_byte_int_test<T>(property: T, expected: u16)
         where
-            T: SizedProperty + PropertyID + TryToByteBuffer,
-            <T as TryToByteBuffer>::Error: core::fmt::Debug,
+            T: ByteLen + PropertyID + Encode,
         {
-            let mut buf = [0u8; 3];
-            let result = property.try_to_byte_buffer(&mut buf);
-            assert!(result.is_ok());
+            let mut buf = BytesMut::new();
+            property.encode(&mut buf);
             assert_eq!(
-                result.unwrap(),
-                [&[T::PROPERTY_ID], &expected.to_be_bytes()[..]].concat()
+                &[&[T::PROPERTY_ID], &expected.to_be_bytes()[..]].concat(),
+                &buf.split().freeze()
             );
         }
 
         fn four_byte_int_test<T>(property: T, expected: u32)
         where
-            T: SizedProperty + PropertyID + TryToByteBuffer,
-            <T as TryToByteBuffer>::Error: core::fmt::Debug,
+            T: ByteLen + PropertyID + Encode,
         {
-            let mut buf = [0u8; 5];
-            let result = property.try_to_byte_buffer(&mut buf);
-            assert!(result.is_ok());
+            let mut buf = BytesMut::new();
+            property.encode(&mut buf);
             assert_eq!(
-                result.unwrap(),
-                [&[T::PROPERTY_ID], &expected.to_be_bytes()[..]].concat()
+                &[&[T::PROPERTY_ID], &expected.to_be_bytes()[..]].concat(),
+                &buf.split().freeze()
             );
         }
 
         fn utf8_string_test<T>(property: T, expected: Vec<u8>)
         where
-            T: SizedProperty + PropertyID + TryToByteBuffer,
-            <T as TryToByteBuffer>::Error: core::fmt::Debug,
+            T: ByteLen + PropertyID + Encode,
         {
-            let mut buf = [0u8; 6];
-            let result = property.try_to_byte_buffer(&mut buf);
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), [&[T::PROPERTY_ID], &expected[..]].concat());
+            let mut buf = BytesMut::new();
+            property.encode(&mut buf);
+            assert_eq!(
+                &[&[T::PROPERTY_ID], &expected[..]].concat(),
+                &buf.split().freeze()
+            );
         }
 
         #[test]
@@ -812,9 +777,15 @@ mod test {
             const EXPECTED_VAL: u16 = 0x1234;
 
             two_byte_int_test(ServerKeepAlive(EXPECTED_VAL), EXPECTED_VAL);
-            two_byte_int_test(ReceiveMaximum(NonZero::from(EXPECTED_VAL)), EXPECTED_VAL);
+            two_byte_int_test(
+                ReceiveMaximum(NonZero::try_from(EXPECTED_VAL).unwrap()),
+                EXPECTED_VAL,
+            );
             two_byte_int_test(TopicAliasMaximum(EXPECTED_VAL), EXPECTED_VAL);
-            two_byte_int_test(TopicAlias(NonZero::from(EXPECTED_VAL)), EXPECTED_VAL);
+            two_byte_int_test(
+                TopicAlias(NonZero::try_from(EXPECTED_VAL).unwrap()),
+                EXPECTED_VAL,
+            );
         }
 
         #[test]
@@ -824,7 +795,10 @@ mod test {
             four_byte_int_test(MessageExpiryInterval(EXPECTED_VAL), EXPECTED_VAL);
             four_byte_int_test(SessionExpiryInterval(EXPECTED_VAL), EXPECTED_VAL);
             four_byte_int_test(WillDelayInterval(EXPECTED_VAL), EXPECTED_VAL);
-            four_byte_int_test(MaximumPacketSize(NonZero::from(EXPECTED_VAL)), EXPECTED_VAL);
+            four_byte_int_test(
+                MaximumPacketSize(NonZero::try_from(EXPECTED_VAL).unwrap()),
+                EXPECTED_VAL,
+            );
         }
 
         #[test]
@@ -832,13 +806,12 @@ mod test {
             const INPUT_VAL: u16 = 16383;
             const EXPECTED_BUF: &[u8] = &[0xff, 0x7f];
 
-            let mut buf = [0u8; 5];
-            let result = SubscriptionIdentifier(NonZero::from(VarSizeInt::from(INPUT_VAL)))
-                .try_to_byte_buffer(&mut buf);
-            assert!(result.is_ok());
+            let mut buf = BytesMut::new();
+            SubscriptionIdentifier(NonZero::try_from(VarSizeInt::from(INPUT_VAL)).unwrap())
+                .encode(&mut buf);
             assert_eq!(
-                result.unwrap(),
-                [&[SubscriptionIdentifier::PROPERTY_ID], EXPECTED_BUF].concat()
+                &[&[SubscriptionIdentifier::PROPERTY_ID], EXPECTED_BUF].concat(),
+                &buf.split().freeze()
             );
         }
 
@@ -846,35 +819,24 @@ mod test {
         fn utf8_string() {
             const INPUT_VAL: &str = "val";
             const EXPECTED_BUF: [u8; 5] = [0, 3, b'v', b'a', b'l'];
+            let input_str = UTF8String(Bytes::from_static(INPUT_VAL.as_bytes()));
 
+            utf8_string_test(ContentType(input_str.clone()), Vec::from(EXPECTED_BUF));
+            utf8_string_test(ResponseTopic(input_str.clone()), Vec::from(EXPECTED_BUF));
             utf8_string_test(
-                ContentType(String::from(INPUT_VAL)),
+                AssignedClientIdentifier(input_str.clone()),
                 Vec::from(EXPECTED_BUF),
             );
             utf8_string_test(
-                ResponseTopic(String::from(INPUT_VAL)),
+                AuthenticationMethod(input_str.clone()),
                 Vec::from(EXPECTED_BUF),
             );
             utf8_string_test(
-                AssignedClientIdentifier(String::from(INPUT_VAL)),
+                ResponseInformation(input_str.clone()),
                 Vec::from(EXPECTED_BUF),
             );
-            utf8_string_test(
-                AuthenticationMethod(String::from(INPUT_VAL)),
-                Vec::from(EXPECTED_BUF),
-            );
-            utf8_string_test(
-                ResponseInformation(String::from(INPUT_VAL)),
-                Vec::from(EXPECTED_BUF),
-            );
-            utf8_string_test(
-                ServerReference(String::from(INPUT_VAL)),
-                Vec::from(EXPECTED_BUF),
-            );
-            utf8_string_test(
-                ReasonString(String::from(INPUT_VAL)),
-                Vec::from(EXPECTED_BUF),
-            );
+            utf8_string_test(ServerReference(input_str.clone()), Vec::from(EXPECTED_BUF));
+            utf8_string_test(ReasonString(input_str.clone()), Vec::from(EXPECTED_BUF));
         }
 
         #[test]
@@ -895,10 +857,15 @@ mod test {
                 b'l',
             ];
 
-            let mut buf = [0u8; 11];
-            let property = UserProperty((String::from(INPUT_KEY), String::from(INPUT_VAL)));
+            let input_pair = UTF8StringPair(
+                Bytes::from_static(INPUT_KEY.as_bytes()),
+                Bytes::from_static(INPUT_VAL.as_bytes()),
+            );
+            let mut buf = BytesMut::new();
+            let property = UserProperty(input_pair);
+            property.encode(&mut buf);
 
-            assert_eq!(property.try_to_byte_buffer(&mut buf).unwrap(), EXPECTED_BUF);
+            assert_eq!(&EXPECTED_BUF[..], buf.split().freeze());
         }
     }
 }

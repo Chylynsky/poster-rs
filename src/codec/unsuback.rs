@@ -2,12 +2,14 @@ use crate::core::{
     base_types::*,
     error::{
         CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
-        InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
+        InvalidValue, UnexpectedProperty,
     },
     properties::*,
-    utils::{ByteReader, PacketID, TryFromBytes},
+    utils::{ByteLen, Decoder, PacketID, TryDecode},
 };
+use bytes::Bytes;
 use core::mem;
+use derive_builder::Builder;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum UnsubackReason {
@@ -37,32 +39,82 @@ impl TryFrom<u8> for UnsubackReason {
     }
 }
 
-pub(crate) struct Unsuback {
+impl ByteLen for UnsubackReason {
+    fn byte_len(&self) -> usize {
+        (*self as u8).byte_len()
+    }
+}
+
+impl Default for UnsubackReason {
+    fn default() -> Self {
+        Self::Success
+    }
+}
+
+impl TryDecode for UnsubackReason {
+    type Error = ConversionError;
+
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(u8::try_decode(bytes)?)
+    }
+}
+
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct UnsubackRx {
     pub(crate) packet_identifier: NonZero<u16>,
 
+    #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonString>,
+    #[builder(setter(custom), default)]
     pub(crate) user_property: Vec<UserProperty>,
-
+    #[builder(setter(custom), default)]
     pub(crate) payload: Vec<UnsubackReason>,
 }
 
-impl Unsuback {
+impl UnsubackRxBuilder {
+    fn user_property(&mut self, value: UserProperty) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+
+    fn payload(&mut self, value: UnsubackReason) {
+        match self.payload.as_mut() {
+            Some(payload) => {
+                payload.push(value);
+            }
+            None => {
+                self.payload = Some(Vec::new());
+                self.payload.as_mut().unwrap().push(value);
+            }
+        }
+    }
+}
+
+impl UnsubackRx {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 }
 
-impl PacketID for Unsuback {
+impl PacketID for UnsubackRx {
     const PACKET_ID: u8 = 11;
 }
 
-impl TryFromBytes for Unsuback {
+impl TryDecode for UnsubackRx {
     type Error = CodecError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let mut builder = UnsubackBuilder::default();
-        let mut reader = ByteReader::from(bytes);
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        let mut builder = UnsubackRxBuilder::default();
+        let mut decoder = Decoder::from(bytes);
 
-        let fixed_hdr = reader
-            .try_read::<u8>()
+        let _fixed_hdr = decoder
+            .try_decode::<u8>()
             .map_err(CodecError::from)
             .and_then(|val| {
                 if val != Self::FIXED_HDR {
@@ -72,87 +124,43 @@ impl TryFromBytes for Unsuback {
                 Ok(val)
             })?;
 
-        let remaining_len = reader.try_read::<VarSizeInt>()?;
-        let packet_size =
-            mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
-        if packet_size > bytes.len() {
+        let remaining_len = decoder.try_decode::<VarSizeInt>()?;
+        if remaining_len > decoder.remaining() {
             return Err(InvalidPacketSize.into());
         }
 
-        let packet_id = reader.try_read::<NonZero<u16>>()?;
+        let packet_id = decoder.try_decode::<NonZero<u16>>()?;
         builder.packet_identifier(packet_id);
 
-        let property_len = reader.try_read::<VarSizeInt>()?;
-        if property_len.value() as usize > reader.remaining() {
+        let property_len = decoder.try_decode::<VarSizeInt>()?;
+        if property_len > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
-        let (property_buf, payload) = reader.get_buf().split_at(property_len.into());
-
-        for property in PropertyIterator::from(property_buf) {
-            if let Err(err) = property {
-                return Err(err.into());
-            }
-
-            match property.unwrap() {
-                Property::ReasonString(val) => {
-                    builder.reason_string(val.into());
-                }
-                Property::UserProperty(val) => {
-                    builder.user_property(val.into());
-                }
-                _ => {
-                    return Err(UnexpectedProperty.into());
-                }
+        let property_iterator =
+            Decoder::from(decoder.get_buf().split_to(property_len.value() as usize))
+                .iter::<Property>();
+        for maybe_property in property_iterator {
+            match maybe_property {
+                Ok(property) => match property {
+                    Property::ReasonString(val) => {
+                        builder.reason_string(val.into());
+                    }
+                    Property::UserProperty(val) => {
+                        builder.user_property(val.into());
+                    }
+                    _ => return Err(UnexpectedProperty.into()),
+                },
+                Err(err) => return Err(err.into()),
             }
         }
 
-        builder.payload(
-            payload
-                .iter()
-                .map(|&val| UnsubackReason::try_from(val))
-                .collect::<Result<Vec<UnsubackReason>, ConversionError>>()?,
-        );
+        decoder.advance_by(usize::from(property_len));
+        for reason in decoder.iter::<UnsubackReason>() {
+            builder.payload(reason?);
+        }
+
         builder.build()
-    }
-}
-
-#[derive(Default)]
-struct UnsubackBuilder {
-    packet_identifier: Option<NonZero<u16>>,
-    reason_string: Option<ReasonString>,
-    user_property: Vec<UserProperty>,
-    payload: Vec<UnsubackReason>,
-}
-
-impl UnsubackBuilder {
-    fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.packet_identifier = Some(val);
-        self
-    }
-
-    fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(val.into());
-        self
-    }
-
-    fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
-
-    fn payload(&mut self, val: Vec<UnsubackReason>) -> &mut Self {
-        self.payload = val;
-        self
-    }
-
-    fn build(self) -> Result<Unsuback, CodecError> {
-        Ok(Unsuback {
-            packet_identifier: self.packet_identifier.ok_or(MandatoryPropertyMissing)?,
-            reason_string: self.reason_string,
-            user_property: self.user_property,
-            payload: self.payload,
-        })
     }
 }
 
@@ -163,7 +171,7 @@ mod test {
 
     #[test]
     fn from_bytes_0() {
-        const FIXED_HDR: u8 = ((Unsuback::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = ((UnsubackRx::PACKET_ID as u8) << 4) as u8;
         const PACKET: [u8; 24] = [
             FIXED_HDR,
             22,   // Remaining length
@@ -191,17 +199,22 @@ mod test {
             (UnsubackReason::Success as u8),
         ];
 
-        let packet = Unsuback::try_from_bytes(&PACKET).unwrap();
+        let packet = UnsubackRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
 
-        assert_eq!(packet.packet_identifier, NonZero::from(0x4573));
+        assert_eq!(packet.packet_identifier, NonZero::try_from(0x4573).unwrap());
         assert_eq!(
-            String::from(packet.reason_string.unwrap()),
-            String::from("test")
+            packet.reason_string,
+            Some(ReasonString::from(UTF8String(Bytes::from_static(
+                "test".as_bytes()
+            ))))
         );
         assert_eq!(packet.user_property.len(), 1);
         assert_eq!(
             packet.user_property[0],
-            UserProperty::from((String::from("key"), String::from("val")))
+            UserProperty::from(UTF8StringPair(
+                Bytes::from_static("key".as_bytes()),
+                Bytes::from_static("val".as_bytes())
+            ))
         );
         assert_eq!(packet.payload.len(), 1);
         assert_eq!(packet.payload[0], UnsubackReason::Success)

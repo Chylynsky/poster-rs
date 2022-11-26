@@ -1,47 +1,35 @@
 use crate::core::{
-    error::{CodecError, InsufficientBufferSize},
-    utils::{ByteWriter, PacketID, SizedPacket, TryToByteBuffer},
+    error::CodecError,
+    utils::{Encode, Encoder, PacketID, SizedPacket},
 };
+use bytes::BytesMut;
 use core::mem;
+use derive_builder::Builder;
 
-pub(crate) struct Pingreq {}
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct PingreqTx {}
 
-impl Pingreq {
+impl PingreqTx {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 }
 
-impl PacketID for Pingreq {
+impl PacketID for PingreqTx {
     const PACKET_ID: u8 = 12;
 }
 
-impl SizedPacket for Pingreq {
+impl SizedPacket for PingreqTx {
     fn packet_len(&self) -> usize {
         2 * mem::size_of::<u8>()
     }
 }
 
-impl TryToByteBuffer for Pingreq {
-    type Error = CodecError;
+impl Encode for PingreqTx {
+    fn encode(&self, buf: &mut BytesMut) {
+        let mut encoder = Encoder::from(buf);
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
-
-        writer.write(&Self::FIXED_HDR);
-        writer.write(&0u8);
-
-        Ok(result)
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct PingreqBuilder {}
-
-impl PingreqBuilder {
-    pub(crate) fn build(&self) -> Option<Pingreq> {
-        Some(Pingreq {})
+        encoder.encode(Self::FIXED_HDR);
+        encoder.encode(0u8);
     }
 }
 
@@ -51,13 +39,13 @@ mod test {
 
     #[test]
     fn to_bytes_0() {
-        const EXPECTED: [u8; 2] = [Pingreq::PACKET_ID << 4, 0];
+        const EXPECTED: [u8; 2] = [PingreqTx::PACKET_ID << 4, 0];
 
-        let builder = PingreqBuilder::default();
+        let builder = PingreqTxBuilder::default();
         let packet = builder.build().unwrap();
-        let mut buf = [0u8; 2];
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
 
-        assert_eq!(result, EXPECTED);
+        assert_eq!(&buf.split().freeze()[..], EXPECTED);
     }
 }

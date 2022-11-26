@@ -1,17 +1,15 @@
 use crate::core::{
     base_types::*,
     error::{
-        CodecError, ConversionError, InsufficientBufferSize, InvalidPacketHeader,
-        InvalidPacketSize, InvalidPropertyLength, InvalidValue, MandatoryPropertyMissing,
-        UnexpectedProperty,
+        CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
+        InvalidValue, UnexpectedProperty,
     },
     properties::*,
-    utils::{
-        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryFromBytes,
-        TryToByteBuffer,
-    },
+    utils::{ByteLen, Decoder, Encode, Encoder, PacketID, SizedPacket, TryDecode},
 };
+use bytes::{Bytes, BytesMut};
 use core::mem;
+use derive_builder::Builder;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DisconnectReason {
@@ -85,8 +83,8 @@ impl TryFrom<u8> for DisconnectReason {
     }
 }
 
-impl SizedProperty for DisconnectReason {
-    fn property_len(&self) -> usize {
+impl ByteLen for DisconnectReason {
+    fn byte_len(&self) -> usize {
         mem::size_of::<u8>()
     }
 }
@@ -97,150 +95,87 @@ impl Default for DisconnectReason {
     }
 }
 
-impl TryFromBytes for DisconnectReason {
+impl TryDecode for DisconnectReason {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(u8::try_from_bytes(bytes)?)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(u8::try_decode(bytes)?)
     }
 }
 
-impl ToByteBuffer for DisconnectReason {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as u8).to_byte_buffer(buf)
+impl Encode for DisconnectReason {
+    fn encode(&self, buf: &mut BytesMut) {
+        (*self as u8).encode(buf)
     }
 }
 
-pub(crate) struct DisconnectProperties {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct DisconnectRx {
+    #[builder(default)]
+    pub(crate) reason: DisconnectReason,
+    #[builder(default)]
     pub(crate) session_expiry_interval: SessionExpiryInterval,
+    #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonString>,
+    #[builder(setter(strip_option), default)]
     pub(crate) server_reference: Option<ServerReference>,
+    #[builder(setter(custom), default)]
     pub(crate) user_property: Vec<UserProperty>,
 }
 
-impl SizedProperty for DisconnectProperties {
-    fn property_len(&self) -> usize {
-        let session_expiry_interval_len = Some(&self.session_expiry_interval)
-            .map(|val| {
-                if *val == SessionExpiryInterval::default() {
-                    return 0;
-                }
-
-                val.property_len()
-            })
-            .unwrap();
-
-        let reason_string_len = self
-            .reason_string
-            .as_ref()
-            .map(|val| val.property_len())
-            .unwrap_or(0);
-
-        let server_reference_len = self
-            .server_reference
-            .as_ref()
-            .map(|val| val.property_len())
-            .unwrap_or(0);
-
-        let user_property_len = self
-            .user_property
-            .iter()
-            .map(|val| val.property_len())
-            .sum::<usize>();
-
-        session_expiry_interval_len + reason_string_len + server_reference_len + user_property_len
+impl DisconnectRxBuilder {
+    fn user_property(&mut self, value: UserProperty) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
     }
 }
 
-impl ToByteBuffer for DisconnectProperties {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let property_len = VarSizeInt::from(self.property_len());
-        let len = property_len.len() + property_len.value() as usize;
-
-        let result = &mut buf[0..len];
-        let mut writer = ByteWriter::from(result);
-
-        writer.write(&property_len);
-
-        if self.session_expiry_interval != SessionExpiryInterval::default() {
-            writer.write(&self.session_expiry_interval);
-        }
-
-        if let Some(val) = self.reason_string.as_ref() {
-            writer.write(val);
-        }
-
-        if let Some(val) = self.server_reference.as_ref() {
-            writer.write(val);
-        }
-
-        for val in self.user_property.iter() {
-            writer.write(val)
-        }
-
-        result
-    }
-}
-
-pub(crate) struct Disconnect {
-    pub(crate) reason: DisconnectReason,
-    pub(crate) properties: DisconnectProperties,
-}
-
-impl Disconnect {
+impl DisconnectRx {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
-
-    fn remaining_len(&self) -> VarSizeInt {
-        let property_len = VarSizeInt::from(self.properties.property_len());
-        VarSizeInt::from(
-            mem::size_of::<DisconnectReason>() + property_len.len() + property_len.value() as usize,
-        )
-    }
 }
 
-impl PacketID for Disconnect {
+impl PacketID for DisconnectRx {
     const PACKET_ID: u8 = 14;
 }
 
-impl SizedPacket for Disconnect {
-    fn packet_len(&self) -> usize {
-        let remaining_len = self.remaining_len();
-        mem::size_of::<u8>() + remaining_len.len() + remaining_len.value() as usize
-    }
-}
-
-impl TryFromBytes for Disconnect {
+impl TryDecode for DisconnectRx {
     type Error = CodecError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let mut builder = DisconnectBuilder::default();
-        let mut reader = ByteReader::from(bytes);
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        let mut builder = DisconnectRxBuilder::default();
+        let mut decoder = Decoder::from(bytes);
 
-        let fixed_hdr = reader.try_read::<u8>()?;
+        let fixed_hdr = decoder.try_decode::<u8>()?;
         if fixed_hdr != Self::FIXED_HDR {
             return Err(InvalidPacketHeader.into());
         }
 
-        let remaining_len = reader.try_read::<VarSizeInt>()?;
-        let packet_size =
-            mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
-        if packet_size > bytes.len() {
+        let remaining_len = decoder.try_decode::<VarSizeInt>()?;
+        if remaining_len > decoder.remaining() {
             return Err(InvalidPacketSize.into());
         }
 
-        let reason = reader.try_read::<DisconnectReason>()?;
+        let reason = decoder.try_decode::<DisconnectReason>()?;
         builder.reason(reason);
 
-        if reader.remaining() == 0 {
+        if decoder.remaining() == 0 {
             return builder.build();
         }
 
-        let property_len = reader.try_read::<VarSizeInt>()?;
-        if property_len.value() as usize > reader.remaining() {
+        let byte_len = decoder.try_decode::<VarSizeInt>()?;
+        if byte_len > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
-        for property in PropertyIterator::from(reader.get_buf()) {
+        for property in decoder.iter::<Property>() {
             if let Err(err) = property {
                 return Err(err.into());
             }
@@ -269,75 +204,120 @@ impl TryFromBytes for Disconnect {
     }
 }
 
-impl TryToByteBuffer for Disconnect {
-    type Error = CodecError;
+impl<'a> DisconnectTx<'a> {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
+    fn property_len(&self) -> VarSizeInt {
+        let session_expiry_interval_len = Some(&self.session_expiry_interval)
+            .map(|val| {
+                if *val == SessionExpiryInterval::default() {
+                    return 0;
+                }
 
-        writer.write(&Self::FIXED_HDR);
+                val.byte_len()
+            })
+            .unwrap();
 
+        let reason_string_len = self
+            .reason_string
+            .as_ref()
+            .map(|val| val.byte_len())
+            .unwrap_or(0);
+
+        let server_reference_len = self
+            .server_reference
+            .as_ref()
+            .map(|val| val.byte_len())
+            .unwrap_or(0);
+
+        let user_property_len = self
+            .user_property
+            .iter()
+            .map(|val| val.byte_len())
+            .sum::<usize>();
+
+        VarSizeInt::try_from(
+            session_expiry_interval_len
+                + reason_string_len
+                + server_reference_len
+                + user_property_len,
+        )
+        .unwrap()
+    }
+
+    fn remaining_len(&self) -> VarSizeInt {
+        let property_len = self.property_len();
+        VarSizeInt::try_from(
+            mem::size_of::<DisconnectReason>() + property_len.len() + property_len.value() as usize,
+        )
+        .unwrap()
+    }
+}
+
+impl<'a> PacketID for DisconnectTx<'a> {
+    const PACKET_ID: u8 = 14;
+}
+
+impl<'a> SizedPacket for DisconnectTx<'a> {
+    fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
-        debug_assert!(remaining_len.value() as usize <= writer.remaining());
-        writer.write(&remaining_len);
-
-        writer.write(&self.reason);
-        writer.write(&self.properties);
-
-        Ok(result)
+        mem::size_of::<u8>() + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
-#[derive(Default)]
-pub(crate) struct DisconnectBuilder {
-    reason: Option<DisconnectReason>,
-    session_expiry_interval: SessionExpiryInterval,
-    reason_string: Option<ReasonString>,
-    server_reference: Option<ServerReference>,
-    user_property: Vec<UserProperty>,
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError"))]
+pub(crate) struct DisconnectTx<'a> {
+    #[builder(default)]
+    pub(crate) reason: DisconnectReason,
+    #[builder(default)]
+    pub(crate) session_expiry_interval: SessionExpiryInterval,
+    #[builder(setter(strip_option), default)]
+    pub(crate) reason_string: Option<ReasonStringRef<'a>>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) server_reference: Option<ServerReferenceRef<'a>>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
 }
 
-impl DisconnectBuilder {
-    pub(crate) fn reason(&mut self, val: DisconnectReason) -> &mut Self {
-        self.reason = Some(val);
-        self
+impl<'a> DisconnectTxBuilder<'a> {
+    pub(crate) fn user_property(&mut self, value: UserPropertyRef<'a>) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
     }
+}
 
-    pub(crate) fn session_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.session_expiry_interval = val.into();
-        self
-    }
+impl<'a> Encode for DisconnectTx<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        let mut encoder = Encoder::from(buf);
 
-    pub(crate) fn reason_string(&mut self, val: String) -> &mut Self {
-        self.reason_string = Some(val.into());
-        self
-    }
+        encoder.encode(Self::FIXED_HDR);
+        encoder.encode(self.remaining_len());
+        encoder.encode(self.reason);
+        encoder.encode(self.property_len());
 
-    pub(crate) fn server_reference(&mut self, val: String) -> &mut Self {
-        self.server_reference = Some(val.into());
-        self
-    }
+        if self.session_expiry_interval != SessionExpiryInterval::default() {
+            encoder.encode(self.session_expiry_interval.clone());
+        }
 
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
+        if let Some(val) = self.reason_string {
+            encoder.encode(val);
+        }
 
-    pub(crate) fn build(self) -> Result<Disconnect, CodecError> {
-        let properties = DisconnectProperties {
-            session_expiry_interval: self.session_expiry_interval,
-            reason_string: self.reason_string,
-            user_property: self.user_property,
-            server_reference: self.server_reference,
-        };
+        if let Some(val) = self.server_reference {
+            encoder.encode(val);
+        }
 
-        Ok(Disconnect {
-            reason: self.reason.ok_or(MandatoryPropertyMissing)?,
-            properties,
-        })
+        for val in self.user_property.iter().copied() {
+            encoder.encode(val)
+        }
     }
 }
 
@@ -347,7 +327,7 @@ mod test {
     use crate::core::utils::PropertyID;
 
     const PACKET: [u8; 25] = [
-        ((Disconnect::PACKET_ID as u8) << 4) as u8,
+        ((DisconnectRx::PACKET_ID as u8) << 4) as u8,
         23, // Remaining length
         (DisconnectReason::Success as u8),
         21, // Property length
@@ -376,33 +356,36 @@ mod test {
 
     #[test]
     fn from_bytes_0() {
-        let packet = Disconnect::try_from_bytes(&PACKET).unwrap();
+        let packet = DisconnectRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
 
         assert_eq!(packet.reason, DisconnectReason::Success);
         assert_eq!(
-            String::from(packet.properties.reason_string.unwrap()),
-            String::from("Success")
+            packet.reason_string.unwrap(),
+            ReasonString::from(UTF8String(Bytes::from_static("Success".as_bytes())))
         );
-        assert_eq!(packet.properties.user_property.len(), 1);
+        assert_eq!(packet.user_property.len(), 1);
         assert_eq!(
-            packet.properties.user_property[0],
-            UserProperty::from((String::from("key"), String::from("val")))
+            packet.user_property[0],
+            UserProperty::from(UTF8StringPair(
+                Bytes::from_static("key".as_bytes()),
+                Bytes::from_static("val".as_bytes())
+            ))
         );
     }
 
     #[test]
     fn to_bytes_0() {
-        let mut builder = DisconnectBuilder::default();
+        let mut builder = DisconnectTxBuilder::default();
 
         builder.reason(DisconnectReason::Success);
-        builder.reason_string(String::from("Success"));
-        builder.user_property((String::from("key"), String::from("val")));
+        builder.reason_string(ReasonStringRef::from(UTF8StringRef("Success")));
+        builder.user_property(UserPropertyRef::from(UTF8StringPairRef("key", "val")));
 
         let packet = builder.build().unwrap();
 
-        let mut buf = [0u8; PACKET.len()];
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
 
-        assert_eq!(result, PACKET);
+        assert_eq!(&buf.split().freeze()[..], &PACKET);
     }
 }

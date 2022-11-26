@@ -1,8 +1,10 @@
+use bytes::{Bytes, BytesMut};
+
 use crate::{
-    codec::ack::{Ack, AckBuilder},
+    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder},
     core::{
         error::{ConversionError, InvalidValue},
-        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+        utils::{ByteLen, Encode, PacketID, TryDecode},
     },
 };
 use core::mem;
@@ -39,8 +41,8 @@ impl TryFrom<u8> for PubackReason {
     }
 }
 
-impl SizedProperty for PubackReason {
-    fn property_len(&self) -> usize {
+impl ByteLen for PubackReason {
+    fn byte_len(&self) -> usize {
         mem::size_of::<u8>()
     }
 }
@@ -51,27 +53,35 @@ impl Default for PubackReason {
     }
 }
 
-impl TryFromBytes for PubackReason {
+impl TryDecode for PubackReason {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(u8::try_from_bytes(bytes)?)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(u8::try_decode(bytes)?)
     }
 }
 
-impl ToByteBuffer for PubackReason {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as u8).to_byte_buffer(buf)
+impl Encode for PubackReason {
+    fn encode(&self, buf: &mut BytesMut) {
+        (*self as u8).encode(buf)
     }
 }
 
-pub(crate) type Puback = Ack<PubackReason>;
+pub(crate) type PubackRx = AckRx<PubackReason>;
 
-impl PacketID for Puback {
+impl PacketID for PubackRx {
     const PACKET_ID: u8 = 4;
 }
 
-pub(crate) type PubackBuilder = AckBuilder<PubackReason>;
+pub(crate) type PubackRxBuilder = AckRxBuilder<PubackReason>;
+
+pub(crate) type PubackTx<'a> = AckTx<'a, PubackReason>;
+
+impl<'a> PacketID for PubackTx<'a> {
+    const PACKET_ID: u8 = 4;
+}
+
+pub(crate) type PubackTxBuilder<'a> = AckTxBuilder<'a, PubackReason>;
 
 #[cfg(test)]
 mod test {

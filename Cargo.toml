@@ -14,3 +14,4 @@ categories = ["network-programming", "mqtt", "networking"]
 either = "1.8"
 futures = "0.3"
 bytes = "1.2"
+derive_builder = "0.11"

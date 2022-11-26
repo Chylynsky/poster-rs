@@ -1,23 +1,20 @@
-use crate::core::utils::{
-    SizedProperty, ToByteBuffer, TryFromBytes, TryFromIterator, TryToByteBuffer,
+use crate::core::{
+    error::{
+        ConversionError, InsufficientBufferSize, InvalidEncoding, InvalidValue,
+        ValueExceedesMaximum, ValueIsZero,
+    },
+    utils::{ByteLen, Encode, TryDecode},
 };
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use core::{
     convert::From,
     iter::Iterator,
     mem,
     ops::{Add, Div, Mul, Sub},
-    str,
-};
-
-use std::{string::String, vec::Vec};
-
-use super::error::{
-    ConversionError, InsufficientBufferSize, InvalidEncoding, InvalidValue, ValueExceedesMaximum,
-    ValueIsZero,
 };
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Copy, Clone, PartialEq, Debug, Eq)]
+#[derive(Copy, Clone, PartialEq, Debug, Eq, PartialOrd)]
 enum VarSizeIntState {
     SingleByte(u8),
     TwoByte(u16),
@@ -48,70 +45,16 @@ impl VarSizeInt {
             VarSizeIntState::FourByte(val) => val as u32,
         }
     }
-
-    #[allow(clippy::wrong_self_convention)]
-    fn to_byte_buffer_unchecked<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.len()];
-
-        match self.0 {
-            VarSizeIntState::SingleByte(val) => result.copy_from_slice(&[val]),
-            VarSizeIntState::TwoByte(mut val) => {
-                let byte0 = (val % 0x80) as u8 | 0x80;
-                val /= 0x80;
-                let byte1 = (val % 0x80) as u8;
-
-                result.copy_from_slice(&[byte0, byte1]);
-            }
-            VarSizeIntState::ThreeByte(mut val) => {
-                let byte0 = (val % 0x80) as u8 | 0x80;
-                val /= 0x80;
-                let byte1 = (val % 0x80) as u8 | 0x80;
-                val /= 0x80;
-                let byte2 = (val % 0x80) as u8;
-
-                result.copy_from_slice(&[byte0, byte1, byte2])
-            }
-
-            VarSizeIntState::FourByte(mut val) => {
-                let byte0 = (val % 0x80) as u8 | 0x80;
-                val /= 0x80;
-                let byte1 = (val % 0x80) as u8 | 0x80;
-                val /= 0x80;
-                let byte2 = (val % 0x80) as u8 | 0x80;
-                val /= 0x80;
-                let byte3 = (val % 0x80) as u8;
-
-                result.copy_from_slice(&[byte0, byte1, byte2, byte3])
-            }
-        }
-
-        result
-    }
 }
 
-impl Default for VarSizeInt {
-    fn default() -> Self {
-        Self(VarSizeIntState::SingleByte(0))
-    }
-}
-
-impl SizedProperty for VarSizeInt {
-    fn property_len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl TryFromIterator<u8> for VarSizeInt {
+impl TryFrom<&[u8]> for VarSizeInt {
     type Error = ConversionError;
 
-    fn try_from_iter<Iter>(iter: Iter) -> Result<Self, Self::Error>
-    where
-        Iter: Iterator<Item = u8>,
-    {
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let mut mult = 1u32;
         let mut val = 0u32;
 
-        for (idx, byte) in iter.enumerate() {
+        for (idx, &byte) in bytes.iter().enumerate() {
             val += (byte as u32 & 127) * mult;
 
             if mult as usize > Self::MAX {
@@ -135,76 +78,238 @@ impl TryFromIterator<u8> for VarSizeInt {
     }
 }
 
-impl TryFromBytes for VarSizeInt {
-    type Error = ConversionError;
-
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let iter = bytes.iter().copied();
-        VarSizeInt::try_from_iter(iter)
+impl Default for VarSizeInt {
+    fn default() -> Self {
+        Self(VarSizeIntState::SingleByte(0))
     }
 }
 
-impl TryToByteBuffer for VarSizeInt {
+impl ByteLen for VarSizeInt {
+    fn byte_len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl TryDecode for VarSizeInt {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        if self.len() > buf.len() {
-            return Err(InsufficientBufferSize.into());
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(bytes.as_ref())
+    }
+}
+
+impl Encode for VarSizeInt {
+    fn encode(&self, buf: &mut BytesMut) {
+        return match self.0 {
+            VarSizeIntState::SingleByte(val) => {
+                buf.put_u8(val);
+            }
+            VarSizeIntState::TwoByte(mut val) => {
+                let byte0 = (val % 0x80) as u8 | 0x80;
+                val /= 0x80;
+                let byte1 = (val % 0x80) as u8;
+                debug_assert!(val / 0x80 == 0);
+
+                buf.put(&[byte0, byte1][..]);
+            }
+            VarSizeIntState::ThreeByte(mut val) => {
+                let byte0 = (val % 0x80) as u8 | 0x80;
+                val /= 0x80;
+                let byte1 = (val % 0x80) as u8 | 0x80;
+                val /= 0x80;
+                let byte2 = (val % 0x80) as u8;
+                debug_assert!(val / 0x80 == 0);
+
+                buf.put(&[byte0, byte1, byte2][..]);
+            }
+
+            VarSizeIntState::FourByte(mut val) => {
+                let byte0 = (val % 0x80) as u8 | 0x80;
+                val /= 0x80;
+                let byte1 = (val % 0x80) as u8 | 0x80;
+                val /= 0x80;
+                let byte2 = (val % 0x80) as u8 | 0x80;
+                val /= 0x80;
+                let byte3 = (val % 0x80) as u8;
+                debug_assert!(val / 0x80 == 0);
+
+                buf.put(&[byte0, byte1, byte2, byte3][..]);
+            }
+        };
+    }
+}
+
+impl PartialEq<u8> for VarSizeInt {
+    fn eq(&self, other: &u8) -> bool {
+        self.value() == *other as u32
+    }
+}
+
+impl PartialEq<u16> for VarSizeInt {
+    fn eq(&self, other: &u16) -> bool {
+        self.value() == *other as u32
+    }
+}
+
+impl PartialEq<u32> for VarSizeInt {
+    fn eq(&self, other: &u32) -> bool {
+        self.value() == *other
+    }
+}
+
+impl PartialEq<usize> for VarSizeInt {
+    fn eq(&self, other: &usize) -> bool {
+        self.value() as usize == *other
+    }
+}
+
+impl PartialEq<i8> for VarSizeInt {
+    fn eq(&self, other: &i8) -> bool {
+        if *other > 0 {
+            self.value() == *other as u32
+        } else {
+            false
         }
-
-        Ok(self.to_byte_buffer_unchecked(buf))
     }
 }
 
-impl ToByteBuffer for VarSizeInt {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        self.to_byte_buffer_unchecked(buf)
+impl PartialEq<i16> for VarSizeInt {
+    fn eq(&self, other: &i16) -> bool {
+        if *other > 0 {
+            self.value() == *other as u32
+        } else {
+            false
+        }
+    }
+}
+
+impl PartialEq<i32> for VarSizeInt {
+    fn eq(&self, other: &i32) -> bool {
+        if *other > 0 {
+            self.value() == *other as u32
+        } else {
+            false
+        }
+    }
+}
+
+impl PartialEq<isize> for VarSizeInt {
+    fn eq(&self, other: &isize) -> bool {
+        if *other > 0 {
+            self.value() as usize == *other as usize
+        } else {
+            false
+        }
+    }
+}
+
+impl PartialOrd<u8> for VarSizeInt {
+    fn partial_cmp(&self, other: &u8) -> Option<std::cmp::Ordering> {
+        Some(self.value().cmp(&(*other as u32)))
+    }
+}
+
+impl PartialOrd<u16> for VarSizeInt {
+    fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
+        Some(self.value().cmp(&(*other as u32)))
+    }
+}
+
+impl PartialOrd<u32> for VarSizeInt {
+    fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
+        Some(self.value().cmp(&other))
+    }
+}
+
+impl PartialOrd<usize> for VarSizeInt {
+    fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
+        Some((self.value() as usize).cmp(&other))
+    }
+}
+
+impl PartialOrd<i8> for VarSizeInt {
+    fn partial_cmp(&self, other: &i8) -> Option<std::cmp::Ordering> {
+        if *other > 0 {
+            Some((self.value()).cmp(&(*other as u32)))
+        } else {
+            Some(std::cmp::Ordering::Greater)
+        }
+    }
+}
+
+impl PartialOrd<i16> for VarSizeInt {
+    fn partial_cmp(&self, other: &i16) -> Option<std::cmp::Ordering> {
+        if *other > 0 {
+            Some((self.value()).cmp(&(*other as u32)))
+        } else {
+            Some(std::cmp::Ordering::Greater)
+        }
+    }
+}
+
+impl PartialOrd<i32> for VarSizeInt {
+    fn partial_cmp(&self, other: &i32) -> Option<std::cmp::Ordering> {
+        if *other > 0 {
+            Some((self.value()).cmp(&(*other as u32)))
+        } else {
+            Some(std::cmp::Ordering::Greater)
+        }
+    }
+}
+
+impl PartialOrd<isize> for VarSizeInt {
+    fn partial_cmp(&self, other: &isize) -> Option<std::cmp::Ordering> {
+        if *other > 0 {
+            Some((self.value() as usize).cmp(&(*other as usize)))
+        } else {
+            Some(std::cmp::Ordering::Greater)
+        }
     }
 }
 
 impl Add for VarSizeInt {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        Self::from(self.value() + rhs.value())
+        Self::try_from(self.value() + rhs.value()).unwrap()
     }
 }
 
 impl Sub for VarSizeInt {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        Self::from(self.value() - rhs.value())
+        Self::try_from(self.value() - rhs.value()).unwrap()
     }
 }
 
 impl Mul for VarSizeInt {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
-        Self::from(self.value() * rhs.value())
+        Self::try_from(self.value() * rhs.value()).unwrap()
     }
 }
 
 impl Div for VarSizeInt {
     type Output = Self;
     fn div(self, rhs: Self) -> Self::Output {
-        Self::from(self.value() / rhs.value())
+        Self::try_from(self.value() / rhs.value()).unwrap()
     }
 }
 
 impl From<u8> for VarSizeInt {
     fn from(val: u8) -> Self {
-        if val >> 7 == 0 {
-            return Self(VarSizeIntState::SingleByte(val));
+        if val <= 127 {
+            Self(VarSizeIntState::SingleByte(val))
+        } else {
+            Self(VarSizeIntState::TwoByte(val as u16))
         }
-
-        Self(VarSizeIntState::TwoByte(val as u16))
     }
 }
 
 impl From<u16> for VarSizeInt {
     fn from(val: u16) -> Self {
-        if val >> 7 == 0 {
+        if val <= 127 {
             return Self(VarSizeIntState::SingleByte(val as u8));
-        } else if val >> 15 == 0 {
+        } else if val >= 128 && val <= 16383 {
             return Self(VarSizeIntState::TwoByte(val));
         }
 
@@ -212,59 +317,75 @@ impl From<u16> for VarSizeInt {
     }
 }
 
-impl From<u32> for VarSizeInt {
-    fn from(val: u32) -> Self {
-        if val >> 7 == 0 {
-            return Self(VarSizeIntState::SingleByte(val as u8));
-        } else if val >> 15 == 0 {
-            return Self(VarSizeIntState::TwoByte(val as u16));
-        } else if val >> 23 == 0 {
-            return Self(VarSizeIntState::ThreeByte(val));
-        }
+impl TryFrom<u32> for VarSizeInt {
+    type Error = ConversionError;
 
-        assert!(val <= Self::MAX as u32);
-        Self(VarSizeIntState::FourByte(val))
+    fn try_from(val: u32) -> Result<Self, Self::Error> {
+        if val <= 127 {
+            Ok(Self(VarSizeIntState::SingleByte(val as u8)))
+        } else if val >= 128 && val <= 16383 {
+            Ok(Self(VarSizeIntState::TwoByte(val as u16)))
+        } else if val >= 16384 && val <= 2097151 {
+            Ok(Self(VarSizeIntState::ThreeByte(val)))
+        } else if val as usize <= Self::MAX {
+            Ok(Self(VarSizeIntState::FourByte(val)))
+        } else {
+            Err(ValueExceedesMaximum.into())
+        }
     }
 }
 
-impl From<usize> for VarSizeInt {
-    fn from(val: usize) -> Self {
-        if val >> 7 == 0 {
-            return Self(VarSizeIntState::SingleByte(val as u8));
-        } else if val >> 15 == 0 {
-            return Self(VarSizeIntState::TwoByte(val as u16));
-        } else if val >> 23 == 0 {
-            return Self(VarSizeIntState::ThreeByte(val as u32));
-        }
+impl TryFrom<usize> for VarSizeInt {
+    type Error = ConversionError;
 
-        assert!(val <= Self::MAX);
-        Self(VarSizeIntState::FourByte(val as u32))
+    fn try_from(val: usize) -> Result<Self, Self::Error> {
+        if val <= 127 {
+            Ok(Self(VarSizeIntState::SingleByte(val as u8)))
+        } else if val >= 128 && val <= 16383 {
+            Ok(Self(VarSizeIntState::TwoByte(val as u16)))
+        } else if val >= 16384 && val <= 2097151 {
+            Ok(Self(VarSizeIntState::ThreeByte(val as u32)))
+        } else if val <= Self::MAX {
+            Ok(Self(VarSizeIntState::FourByte(val as u32)))
+        } else {
+            Err(ValueExceedesMaximum.into())
+        }
     }
 }
 
-impl From<VarSizeInt> for u8 {
-    fn from(val: VarSizeInt) -> Self {
+impl TryFrom<VarSizeInt> for u8 {
+    type Error = ConversionError;
+
+    fn try_from(val: VarSizeInt) -> Result<Self, Self::Error> {
         match val.0 {
-            VarSizeIntState::SingleByte(val) => val as u8,
+            VarSizeIntState::SingleByte(val) => Ok(val as u8),
             VarSizeIntState::TwoByte(val) => {
-                assert!(val <= 0xff);
-                val as u8
+                if val > 0xff {
+                    Err(ValueExceedesMaximum.into())
+                } else {
+                    Ok(val as u8)
+                }
             }
-            _ => panic!(),
+            _ => Err(ValueExceedesMaximum.into()),
         }
     }
 }
 
-impl From<VarSizeInt> for u16 {
-    fn from(val: VarSizeInt) -> Self {
+impl TryFrom<VarSizeInt> for u16 {
+    type Error = ConversionError;
+
+    fn try_from(val: VarSizeInt) -> Result<Self, Self::Error> {
         match val.0 {
-            VarSizeIntState::SingleByte(val) => val as u16,
-            VarSizeIntState::TwoByte(val) => val as u16,
+            VarSizeIntState::SingleByte(val) => Ok(val as u16),
+            VarSizeIntState::TwoByte(val) => Ok(val as u16),
             VarSizeIntState::ThreeByte(val) => {
-                assert!(val <= 0xffff);
-                val as u16
+                if val > 0xffff {
+                    Err(ValueExceedesMaximum.into())
+                } else {
+                    Ok(val as u16)
+                }
             }
-            _ => panic!(),
+            _ => Err(ValueExceedesMaximum.into()),
         }
     }
 }
@@ -275,10 +396,7 @@ impl From<VarSizeInt> for u32 {
             VarSizeIntState::SingleByte(val) => val as u32,
             VarSizeIntState::TwoByte(val) => val as u32,
             VarSizeIntState::ThreeByte(val) => val,
-            VarSizeIntState::FourByte(val) => {
-                assert!(val as usize <= VarSizeInt::MAX);
-                val
-            }
+            VarSizeIntState::FourByte(val) => val,
         }
     }
 }
@@ -289,24 +407,21 @@ impl From<VarSizeInt> for usize {
             VarSizeIntState::SingleByte(val) => val as usize,
             VarSizeIntState::TwoByte(val) => val as usize,
             VarSizeIntState::ThreeByte(val) => val as usize,
-            VarSizeIntState::FourByte(val) => {
-                assert!(val as usize <= VarSizeInt::MAX);
-                val as usize
-            }
+            VarSizeIntState::FourByte(val) => val as usize,
         }
     }
 }
 
-impl SizedProperty for u8 {
-    fn property_len(&self) -> usize {
+impl ByteLen for u8 {
+    fn byte_len(&self) -> usize {
         mem::size_of::<Self>()
     }
 }
 
-impl TryFromBytes for u8 {
+impl TryDecode for u8 {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
         bytes
             .first()
             .copied()
@@ -314,22 +429,9 @@ impl TryFromBytes for u8 {
     }
 }
 
-impl ToByteBuffer for u8 {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        buf[0] = *self;
-        &buf[0..1]
-    }
-}
-
-impl TryToByteBuffer for u8 {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&self.to_be_bytes());
-        Ok(result)
+impl Encode for u8 {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u8(*self);
     }
 }
 
@@ -360,16 +462,16 @@ impl Default for QoS {
     }
 }
 
-impl SizedProperty for QoS {
-    fn property_len(&self) -> usize {
+impl ByteLen for QoS {
+    fn byte_len(&self) -> usize {
         mem::size_of::<u8>()
     }
 }
 
-impl TryFromBytes for QoS {
+impl TryDecode for QoS {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
         bytes
             .first()
             .copied()
@@ -378,31 +480,22 @@ impl TryFromBytes for QoS {
     }
 }
 
-impl ToByteBuffer for QoS {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        buf[0] = *self as u8;
-        &buf[0..1]
+impl Encode for QoS {
+    fn encode(&self, buf: &mut BytesMut) {
+        (*self as u8).encode(buf)
     }
 }
 
-impl TryToByteBuffer for QoS {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        (*self as u8).try_to_byte_buffer(buf)
-    }
-}
-
-impl SizedProperty for bool {
-    fn property_len(&self) -> usize {
+impl ByteLen for bool {
+    fn byte_len(&self) -> usize {
         mem::size_of::<u8>()
     }
 }
 
-impl TryFromBytes for bool {
+impl TryDecode for bool {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
         bytes
             .first()
             .ok_or_else(|| InsufficientBufferSize.into())
@@ -414,30 +507,22 @@ impl TryFromBytes for bool {
     }
 }
 
-impl ToByteBuffer for bool {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as u8).to_byte_buffer(buf)
+impl Encode for bool {
+    fn encode(&self, buf: &mut BytesMut) {
+        (*self as u8).encode(buf)
     }
 }
 
-impl TryToByteBuffer for bool {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], ConversionError> {
-        (*self as u8).try_to_byte_buffer(buf)
-    }
-}
-
-impl SizedProperty for u16 {
-    fn property_len(&self) -> usize {
+impl ByteLen for u16 {
+    fn byte_len(&self) -> usize {
         mem::size_of::<Self>()
     }
 }
 
-impl TryFromBytes for u16 {
+impl TryDecode for u16 {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
         bytes
             .iter()
             .take(mem::size_of::<u16>())
@@ -447,56 +532,28 @@ impl TryFromBytes for u16 {
     }
 }
 
-impl ToByteBuffer for u16 {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&self.to_be_bytes());
-        result
+impl Encode for u16 {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(*self);
     }
 }
 
-impl TryToByteBuffer for u16 {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&self.to_be_bytes());
-        Ok(result)
-    }
-}
-
-impl SizedProperty for u32 {
-    fn property_len(&self) -> usize {
+impl ByteLen for u32 {
+    fn byte_len(&self) -> usize {
         mem::size_of::<Self>()
     }
 }
 
-impl ToByteBuffer for u32 {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&self.to_be_bytes());
-        result
+impl Encode for u32 {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u32(*self);
     }
 }
 
-impl TryToByteBuffer for u32 {
+impl TryDecode for u32 {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&self.to_be_bytes());
-        Ok(result)
-    }
-}
-
-impl TryFromBytes for u32 {
-    type Error = ConversionError;
-
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
         bytes
             .iter()
             .take(mem::size_of::<u32>())
@@ -515,546 +572,386 @@ impl<T> NonZero<T>
 where
     T: Copy,
 {
-    pub(crate) fn value(&self) -> T {
+    pub(crate) fn get(&self) -> T {
         self.0
     }
 }
 
-impl From<u8> for NonZero<u8> {
-    fn from(val: u8) -> Self {
-        assert!(val != 0);
-        Self(val)
+impl<T> PartialEq<T> for NonZero<T>
+where
+    T: Copy + PartialEq,
+{
+    fn eq(&self, other: &T) -> bool {
+        self.get() == *other
     }
 }
 
-impl From<NonZero<u8>> for u8 {
-    fn from(val: NonZero<u8>) -> Self {
-        val.0
-    }
-}
-
-impl SizedProperty for NonZero<u8> {
-    fn property_len(&self) -> usize {
-        self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for NonZero<u8> {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        self.0.to_byte_buffer(buf)
-    }
-}
-
-impl TryToByteBuffer for NonZero<u8> {
+impl TryFrom<u8> for NonZero<u8> {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        self.0.try_to_byte_buffer(buf)
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
+        if val == 0 {
+            return Err(ValueIsZero.into());
+        }
+
+        Ok(Self(val))
     }
 }
 
-impl TryFromBytes for NonZero<u8> {
+impl TryFrom<NonZero<u8>> for u8 {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        u8::try_from_bytes(bytes).and_then(|val| {
-            if val == 0 {
-                return Err(ValueIsZero.into());
-            }
-
-            Ok(NonZero(val))
-        })
+    fn try_from(val: NonZero<u8>) -> Result<Self, Self::Error> {
+        Ok(val.get())
     }
 }
 
-impl From<u16> for NonZero<u16> {
-    fn from(val: u16) -> Self {
-        assert!(val != 0, "value must be other than 0");
-        Self(val)
+impl ByteLen for NonZero<u8> {
+    fn byte_len(&self) -> usize {
+        self.get().byte_len()
     }
 }
 
-impl From<NonZero<u16>> for u16 {
-    fn from(val: NonZero<u16>) -> Self {
-        val.0
+impl Encode for NonZero<u8> {
+    fn encode(&self, buf: &mut BytesMut) {
+        self.get().encode(buf)
     }
 }
 
-impl SizedProperty for NonZero<u16> {
-    fn property_len(&self) -> usize {
-        self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for NonZero<u16> {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        self.0.to_byte_buffer(buf)
-    }
-}
-
-impl TryToByteBuffer for NonZero<u16> {
+impl TryDecode for NonZero<u8> {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        self.0.try_to_byte_buffer(buf)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        u8::try_decode(bytes).and_then(Self::try_from)
     }
 }
 
-impl TryFromBytes for NonZero<u16> {
+impl TryFrom<u16> for NonZero<u16> {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        u16::try_from_bytes(bytes).and_then(|val| {
-            if val == 0 {
-                return Err(ValueIsZero.into());
-            }
+    fn try_from(val: u16) -> Result<Self, Self::Error> {
+        if val == 0 {
+            return Err(ValueIsZero.into());
+        }
 
-            Ok(NonZero(val))
-        })
+        Ok(Self(val))
     }
 }
 
-impl From<u32> for NonZero<u32> {
-    fn from(val: u32) -> Self {
-        assert!(val != 0, "value must be other than 0");
-        Self(val)
-    }
-}
-
-impl From<NonZero<u32>> for u32 {
-    fn from(val: NonZero<u32>) -> Self {
-        val.0
-    }
-}
-
-impl SizedProperty for NonZero<u32> {
-    fn property_len(&self) -> usize {
-        self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for NonZero<u32> {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        self.0.to_byte_buffer(buf)
-    }
-}
-
-impl TryToByteBuffer for NonZero<u32> {
+impl TryFrom<NonZero<u16>> for u16 {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        self.0.try_to_byte_buffer(buf)
+    fn try_from(val: NonZero<u16>) -> Result<Self, Self::Error> {
+        Ok(val.get())
     }
 }
 
-impl TryFromBytes for NonZero<u32> {
+impl ByteLen for NonZero<u16> {
+    fn byte_len(&self) -> usize {
+        self.get().byte_len()
+    }
+}
+
+impl Encode for NonZero<u16> {
+    fn encode(&self, buf: &mut BytesMut) {
+        self.get().encode(buf)
+    }
+}
+
+impl TryDecode for NonZero<u16> {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        u32::try_from_bytes(bytes).and_then(|val| {
-            if val == 0 {
-                return Err(ValueIsZero.into());
-            }
-
-            Ok(NonZero(val))
-        })
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        u16::try_decode(bytes).and_then(Self::try_from)
     }
 }
 
-impl From<VarSizeInt> for NonZero<VarSizeInt> {
-    fn from(val: VarSizeInt) -> Self {
-        assert!(val.value() != 0, "value must be other than 0");
-        Self(val)
-    }
-}
-
-impl From<NonZero<VarSizeInt>> for VarSizeInt {
-    fn from(val: NonZero<VarSizeInt>) -> Self {
-        val.0
-    }
-}
-
-impl SizedProperty for NonZero<VarSizeInt> {
-    fn property_len(&self) -> usize {
-        self.0.property_len()
-    }
-}
-
-impl ToByteBuffer for NonZero<VarSizeInt> {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        self.0.to_byte_buffer(buf)
-    }
-}
-
-impl TryToByteBuffer for NonZero<VarSizeInt> {
+impl TryFrom<u32> for NonZero<u32> {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        self.0.try_to_byte_buffer(buf)
+    fn try_from(val: u32) -> Result<Self, Self::Error> {
+        if val == 0 {
+            return Err(ValueIsZero.into());
+        }
+
+        Ok(Self(val))
     }
 }
 
-impl TryFromBytes for NonZero<VarSizeInt> {
+impl TryFrom<NonZero<u32>> for u32 {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        VarSizeInt::try_from_bytes(bytes).and_then(|val| {
-            if val.value() == 0 {
-                return Err(ValueIsZero.into());
-            }
+    fn try_from(val: NonZero<u32>) -> Result<Self, Self::Error> {
+        Ok(val.get())
+    }
+}
 
-            Ok(NonZero(val))
-        })
+impl ByteLen for NonZero<u32> {
+    fn byte_len(&self) -> usize {
+        self.get().byte_len()
+    }
+}
+
+impl Encode for NonZero<u32> {
+    fn encode(&self, buf: &mut BytesMut) {
+        self.get().encode(buf)
+    }
+}
+
+impl TryDecode for NonZero<u32> {
+    type Error = ConversionError;
+
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        u32::try_decode(bytes).and_then(Self::try_from)
+    }
+}
+
+impl TryFrom<VarSizeInt> for NonZero<VarSizeInt> {
+    type Error = ConversionError;
+
+    fn try_from(val: VarSizeInt) -> Result<Self, Self::Error> {
+        if val == 0 {
+            return Err(ValueIsZero.into());
+        }
+
+        Ok(Self(val))
+    }
+}
+
+impl TryFrom<NonZero<VarSizeInt>> for VarSizeInt {
+    type Error = ConversionError;
+
+    fn try_from(val: NonZero<VarSizeInt>) -> Result<Self, Self::Error> {
+        Ok(val.get())
+    }
+}
+
+impl ByteLen for NonZero<VarSizeInt> {
+    fn byte_len(&self) -> usize {
+        self.get().byte_len()
+    }
+}
+
+impl Encode for NonZero<VarSizeInt> {
+    fn encode(&self, buf: &mut BytesMut) {
+        self.get().encode(buf)
+    }
+}
+
+impl TryDecode for NonZero<VarSizeInt> {
+    type Error = ConversionError;
+
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        VarSizeInt::try_decode(bytes).and_then(Self::try_from)
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Binary(Vec<u8>);
+pub(crate) struct Binary(pub(crate) Bytes);
 
-impl From<Vec<u8>> for Binary {
-    fn from(val: Vec<u8>) -> Self {
-        Self(val)
-    }
-}
-
-impl From<Binary> for Vec<u8> {
-    fn from(val: Binary) -> Self {
-        val.0
-    }
-}
-
-impl SizedProperty for Binary {
-    fn property_len(&self) -> usize {
+impl ByteLen for Binary {
+    fn byte_len(&self) -> usize {
         self.0.len() + mem::size_of::<u16>()
     }
 }
 
-impl TryFromBytes for Binary {
+impl TryDecode for Binary {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(mut bytes: Bytes) -> Result<Self, Self::Error> {
         // Binary size given as two byte integer
         if mem::size_of::<u16>() > bytes.len() {
             return Err(InsufficientBufferSize.into());
         }
 
-        // TODO: use unsafe split_at_unchecked when stabilized
-        let (size_buf, remaining) = bytes.split_at(mem::size_of::<u16>());
+        let size = bytes.get_u16() as usize;
+        if size > bytes.len() {
+            return Err(InsufficientBufferSize.into());
+        }
 
-        let size = size_buf
-            .iter()
-            .map(|&value| value as usize)
-            .reduce(|result, tmp| result << 8 | tmp)
-            .unwrap();
-
-        remaining
-            .get(0..size)
-            .ok_or_else(|| InsufficientBufferSize.into())
-            .map(|val| Self(Vec::from(val)))
+        Ok(Self(bytes.split_to(size)))
     }
 }
 
-impl ToByteBuffer for Binary {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&[&(self.0.len() as u16).to_be_bytes()[..], &self.0].concat());
-        result
+impl Encode for Binary {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(self.0.len() as u16);
+        buf.put(self.0.clone());
     }
 }
 
-impl TryToByteBuffer for Binary {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BinaryRef<'a>(pub(crate) &'a [u8]);
+
+impl<'a> ByteLen for BinaryRef<'a> {
+    fn byte_len(&self) -> usize {
+        mem::size_of::<u16>() + self.0.len()
+    }
+}
+
+impl<'a> Encode for BinaryRef<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(self.0.len() as u16);
+        buf.put(self.0);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub(crate) struct Payload(pub(crate) Bytes);
+
+impl ByteLen for Payload {
+    fn byte_len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl TryDecode for Payload {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&[&(self.0.len() as u16).to_be_bytes()[..], &self.0].concat());
-        Ok(result)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Ok(Self(bytes))
     }
 }
 
-pub(crate) type BinaryRef<'a> = &'a [u8];
-
-impl<'a> SizedProperty for BinaryRef<'a> {
-    fn property_len(&self) -> usize {
-        self.len() + mem::size_of::<u16>()
+impl Encode for Payload {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put(self.0.clone());
     }
 }
 
-impl<'a> ToByteBuffer for BinaryRef<'a> {
-    fn to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> &'b [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self].concat());
-        result
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PayloadRef<'a>(pub(crate) &'a [u8]);
+
+impl<'a> ByteLen for PayloadRef<'a> {
+    fn byte_len(&self) -> usize {
+        self.0.len()
     }
 }
 
-impl<'a> TryToByteBuffer for BinaryRef<'a> {
+impl<'a> Encode for PayloadRef<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put(self.0);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UTF8String(pub(crate) Bytes);
+
+impl ByteLen for UTF8String {
+    fn byte_len(&self) -> usize {
+        self.0.len() + mem::size_of::<u16>()
+    }
+}
+
+impl TryDecode for UTF8String {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> Result<&'b [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self].concat());
-        Ok(result)
-    }
-}
-
-pub(crate) type Payload = Vec<u8>;
-
-impl SizedProperty for Payload {
-    fn property_len(&self) -> usize {
-        self.len()
-    }
-}
-
-impl TryFromBytes for Payload {
-    type Error = ConversionError;
-
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Ok(Vec::from(bytes))
-    }
-}
-
-impl ToByteBuffer for Payload {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(self);
-        result
-    }
-}
-
-impl TryToByteBuffer for Payload {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(self);
-        Ok(result)
-    }
-}
-
-impl SizedProperty for String {
-    fn property_len(&self) -> usize {
-        self.len() + mem::size_of::<u16>()
-    }
-}
-
-impl TryFromBytes for String {
-    type Error = ConversionError;
-
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        // Binary size given as two byte integer
+    fn try_decode(mut bytes: Bytes) -> Result<Self, Self::Error> {
+        // UTF8String size given as two byte integer
         if mem::size_of::<u16>() > bytes.len() {
             return Err(InsufficientBufferSize.into());
         }
 
-        let (size_buf, remaining) = bytes.split_at(mem::size_of::<u16>());
+        let size_buf = bytes.split_to(mem::size_of::<u16>());
+        let size = u16::try_decode(size_buf).unwrap() as usize;
 
-        let size = size_buf
-            .iter()
-            .map(|&value| value as usize)
-            .reduce(|result, tmp| result << 8 | tmp)
-            .unwrap();
+        if size > bytes.len() {
+            return Err(InsufficientBufferSize.into());
+        }
 
-        remaining
-            .get(0..size)
-            .ok_or_else(|| InsufficientBufferSize.into())
-            .and_then(|val| String::from_utf8(Vec::from(val)).map_err(ConversionError::from))
+        Ok(Self(bytes.split_to(size)))
     }
 }
 
-impl ToByteBuffer for String {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self.as_bytes()].concat());
-        result
+impl Encode for UTF8String {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(self.0.len() as u16);
+        buf.put(self.0.clone());
     }
 }
 
-impl TryToByteBuffer for String {
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub(crate) struct UTF8StringRef<'a>(pub(crate) &'a str);
+
+impl<'a> ByteLen for UTF8StringRef<'a> {
+    fn byte_len(&self) -> usize {
+        self.0.len() + mem::size_of::<u16>()
+    }
+}
+
+impl<'a> Encode for UTF8StringRef<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(self.0.len() as u16);
+        buf.put(self.0.as_bytes());
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UTF8StringPair(pub(crate) Bytes, pub(crate) Bytes);
+
+impl ByteLen for UTF8StringPair {
+    fn byte_len(&self) -> usize {
+        2 * mem::size_of::<u16>() + self.0.len() + self.1.len()
+    }
+}
+
+impl TryDecode for UTF8StringPair {
     type Error = ConversionError;
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self.as_bytes()].concat());
-        Ok(result)
-    }
-}
-
-pub(crate) type StringRef<'a> = &'a str;
-
-impl<'a> SizedProperty for StringRef<'a> {
-    fn property_len(&self) -> usize {
-        self.len() + mem::size_of::<u16>()
-    }
-}
-
-impl<'a> ToByteBuffer for StringRef<'a> {
-    fn to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> &'b [u8] {
-        let result = &mut buf[0..self.property_len()];
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self.as_bytes()].concat());
-        result
-    }
-}
-
-impl<'a> TryToByteBuffer for StringRef<'a> {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> Result<&'b [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        result.copy_from_slice(&[&(self.len() as u16).to_be_bytes()[..], self.as_bytes()].concat());
-        Ok(result)
-    }
-}
-
-pub(crate) type StringPair = (String, String);
-
-impl SizedProperty for StringPair {
-    fn property_len(&self) -> usize {
-        self.0.property_len() + self.1.property_len()
-    }
-}
-
-impl TryFromBytes for StringPair {
-    type Error = ConversionError;
-
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+    fn try_decode(mut bytes: Bytes) -> Result<Self, Self::Error> {
         if mem::size_of::<u16>() > bytes.len() {
             return Err(InsufficientBufferSize.into());
         }
 
-        let (key_size_buf, remaining) = bytes.split_at(mem::size_of::<u16>());
-        let key_size = key_size_buf
-            .iter()
-            .map(|&value| value as usize)
-            .reduce(|result, tmp| result << 8 | tmp)
-            .unwrap();
-
-        if key_size > remaining.len() {
+        let key_len = bytes.get_u16() as usize;
+        if key_len > bytes.len() {
             return Err(InsufficientBufferSize.into());
         }
 
-        let (key_buf, remaining) = remaining.split_at(key_size);
-        if mem::size_of::<u16>() > remaining.len() {
+        let key = bytes.copy_to_bytes(key_len);
+
+        if mem::size_of::<u16>() > bytes.len() {
             return Err(InsufficientBufferSize.into());
         }
 
-        let (value_size_buf, remaining) = remaining.split_at(mem::size_of::<u16>());
-        let value_size = value_size_buf
-            .iter()
-            .map(|&value| value as usize)
-            .reduce(|result, tmp| result << 8 | tmp)
-            .unwrap();
+        let val_len = bytes.get_u16() as usize;
 
-        if value_size > remaining.len() {
+        if val_len > bytes.len() {
             return Err(InsufficientBufferSize.into());
         }
 
-        let (value_buf, _) = remaining.split_at(value_size);
+        let val = bytes.copy_to_bytes(val_len);
 
-        Ok((
-            String::from_utf8(Vec::from(&key_buf[0..key_size]))?,
-            String::from_utf8(Vec::from(&value_buf[0..value_size]))?,
-        ))
+        Ok(Self(key, val))
     }
 }
 
-impl ToByteBuffer for StringPair {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let result = &mut buf[0..self.property_len()];
-        let (key, val) = &self;
+impl Encode for UTF8StringPair {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(self.0.len() as u16);
+        buf.put(self.0.clone());
 
-        result.copy_from_slice(
-            &[
-                &(key.len() as u16).to_be_bytes()[..],
-                key.as_bytes(),
-                &(val.len() as u16).to_be_bytes()[..],
-                val.as_bytes(),
-            ]
-            .concat(),
-        );
-        result
+        buf.put_u16(self.1.len() as u16);
+        buf.put(self.1.clone());
     }
 }
 
-impl TryToByteBuffer for StringPair {
-    type Error = ConversionError;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct UTF8StringPairRef<'a>(pub(crate) &'a str, pub(crate) &'a str);
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        let (key, val) = &self;
-
-        result.copy_from_slice(
-            &[
-                &(key.len() as u16).to_be_bytes()[..],
-                key.as_bytes(),
-                &(val.len() as u16).to_be_bytes()[..],
-                val.as_bytes(),
-            ]
-            .concat(),
-        );
-
-        Ok(result)
+impl<'a> ByteLen for UTF8StringPairRef<'a> {
+    fn byte_len(&self) -> usize {
+        2 * mem::size_of::<u16>() + self.0.len() + self.1.len()
     }
 }
 
-pub(crate) type StringPairRef<'a> = (StringRef<'a>, StringRef<'a>);
+impl<'a> Encode for UTF8StringPairRef<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        buf.put_u16(self.0.len() as u16);
+        buf.put(self.0.as_bytes());
 
-impl<'a> SizedProperty for StringPairRef<'a> {
-    fn property_len(&self) -> usize {
-        self.0.property_len() + self.1.property_len()
-    }
-}
-
-impl<'a> ToByteBuffer for StringPairRef<'a> {
-    fn to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> &'b [u8] {
-        let result = &mut buf[0..self.property_len()];
-        let (key, val) = &self;
-
-        result.copy_from_slice(
-            &[
-                &(key.len() as u16).to_be_bytes()[..],
-                key.as_bytes(),
-                &(val.len() as u16).to_be_bytes()[..],
-                val.as_bytes(),
-            ]
-            .concat(),
-        );
-        result
-    }
-}
-
-impl<'a> TryToByteBuffer for StringPairRef<'a> {
-    type Error = ConversionError;
-
-    fn try_to_byte_buffer<'b>(&self, buf: &'b mut [u8]) -> Result<&'b [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.property_len())
-            .ok_or(InsufficientBufferSize)?;
-        let (key, val) = &self;
-
-        result.copy_from_slice(
-            &[
-                &(key.len() as u16).to_be_bytes()[..],
-                key.as_bytes(),
-                &(val.len() as u16).to_be_bytes()[..],
-                val.as_bytes(),
-            ]
-            .concat(),
-        );
-
-        Ok(result)
+        buf.put_u16(self.1.len() as u16);
+        buf.put(self.1.as_bytes());
     }
 }
 
@@ -1062,85 +959,299 @@ impl<'a> TryToByteBuffer for StringPairRef<'a> {
 mod test {
     use super::*;
 
-    mod from_bytes {
+    mod byte_len {
         use super::*;
 
         #[test]
-        fn byte() {
+        fn u8() {
+            const VALUE: u8 = 17;
+            assert_eq!(VALUE.byte_len(), mem::size_of::<u8>());
+        }
+
+        #[test]
+        fn u16() {
+            const VALUE: u16 = 4096;
+            assert_eq!(VALUE.byte_len(), mem::size_of::<u16>());
+        }
+
+        #[test]
+        fn u32() {
+            const VALUE: u32 = 409665;
+            assert_eq!(VALUE.byte_len(), mem::size_of::<u32>());
+        }
+
+        #[test]
+        fn var_size_int() {
+            let input: [(VarSizeInt, usize); 5] = [
+                (VarSizeInt::from(127u8), 1),
+                (VarSizeInt::from(128u8), 2),
+                (VarSizeInt::from(16383u16), 2),
+                (VarSizeInt::try_from(2097151u32).unwrap(), 3),
+                (VarSizeInt::try_from(268435455u32).unwrap(), 4),
+            ];
+
+            for (var_size_int, expected_size) in input {
+                assert_eq!(var_size_int.byte_len(), expected_size);
+            }
+        }
+
+        #[test]
+        fn binary() {
+            const VALUE: [u8; 8] = [
+                /* SIZE: */ 0x00, 0x06, /* DATA: */ 0x00, 0x04, 0x03, 0x76, 0x61, 0x6c,
+            ];
+            let binary = Binary(Bytes::from_static(&VALUE[2..]));
+            assert_eq!(VALUE.len(), binary.byte_len());
+        }
+
+        #[test]
+        fn payload() {
+            const VALUE: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
+            let payload = Payload(Bytes::from_static(&VALUE));
+            assert_eq!(VALUE.len(), payload.byte_len());
+        }
+
+        #[test]
+        fn string() {
+            const INPUT: &str = "val";
+            let utf8_str = UTF8String(Bytes::from_static(INPUT.as_bytes()));
+            assert_eq!(INPUT.len() + 2, utf8_str.byte_len());
+        }
+
+        #[test]
+        fn string_pair() {
+            const KEY: &str = "key";
+            const VAL: &str = "val";
+            let utf8_str_pair = UTF8StringPair(
+                Bytes::from_static(KEY.as_bytes()),
+                Bytes::from_static(VAL.as_bytes()),
+            );
+
+            assert_eq!(4 + KEY.len() + VAL.len(), utf8_str_pair.byte_len());
+        }
+    }
+
+    mod encode {
+        use super::*;
+
+        #[test]
+        fn u8() {
+            const VALUE: u8 = 17;
+            let mut buf = BytesMut::new();
+            VALUE.encode(&mut buf);
+
+            assert_eq!(&[VALUE][..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn u16() {
+            const VALUE: u16 = 4096;
+            let mut buf = BytesMut::new();
+            VALUE.encode(&mut buf);
+
+            assert_eq!(&VALUE.to_be_bytes()[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn u32() {
+            const VALUE: u32 = 409665;
+            let mut buf = BytesMut::new();
+            VALUE.encode(&mut buf);
+
+            assert_eq!(&VALUE.to_be_bytes()[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn var_size_int() {
+            let input: [(VarSizeInt, &[u8]); 5] = [
+                (VarSizeInt::from(127u8), &[0x7f]),
+                (VarSizeInt::from(128u8), &[0x80, 0x01]),
+                (VarSizeInt::from(16383u16), &[0xff, 0x7f]),
+                (
+                    VarSizeInt::try_from(2097151u32).unwrap(),
+                    &[0xff, 0xff, 0x7f],
+                ),
+                (
+                    VarSizeInt::try_from(268435455u32).unwrap(),
+                    &[0xff, 0xff, 0xff, 0x7f],
+                ),
+            ];
+
+            for (var_size_int, expected_bytes) in input {
+                let mut buf = BytesMut::new();
+                var_size_int.encode(&mut buf);
+                assert_eq!(expected_bytes, &buf.split().freeze()[..]);
+            }
+        }
+
+        #[test]
+        fn binary() {
+            const VALUE: [u8; 8] = [
+                /* SIZE: */ 0x00, 0x06, /* DATA: */ 0x00, 0x04, 0x03, 0x76, 0x61, 0x6c,
+            ];
+            let mut buf = BytesMut::new();
+            Binary(Bytes::from_static(&VALUE[2..])).encode(&mut buf);
+
+            assert_eq!(&VALUE[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn payload() {
+            const VALUE: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
+            let mut buf = BytesMut::new();
+            Payload(Bytes::from_static(&VALUE)).encode(&mut buf);
+
+            assert_eq!(&VALUE[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn string() {
+            const INPUT: &str = "val";
+            const EXPECTED_VAL: [u8; 5] = [0x00, 0x03, b'v', b'a', b'l'];
+
+            let mut buf = BytesMut::new();
+            UTF8String(Bytes::from_static(INPUT.as_bytes())).encode(&mut buf);
+
+            assert_eq!(&EXPECTED_VAL[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn string_pair() {
+            const KEY: &str = "key";
+            const VAL: &str = "val";
+            const EXPECTED_VAL: [u8; 10] =
+                [0x00, 0x03, b'k', b'e', b'y', 0x00, 0x03, b'v', b'a', b'l'];
+
+            let mut buf = BytesMut::new();
+            UTF8StringPair(
+                Bytes::from_static(KEY.as_bytes()),
+                Bytes::from_static(VAL.as_bytes()),
+            )
+            .encode(&mut buf);
+
+            assert_eq!(&EXPECTED_VAL[..], &buf.split().freeze());
+        }
+    }
+
+    mod try_decode {
+        use super::*;
+
+        #[test]
+        fn u8() {
             const EXPECTED_VALUE: u8 = 73;
             const INPUT: [u8; 1] = [EXPECTED_VALUE];
-            let result = u8::try_from_bytes(&INPUT).unwrap();
+            let result = u8::try_decode(Bytes::from_static(&INPUT)).unwrap();
             assert_eq!(result, EXPECTED_VALUE);
         }
 
         #[test]
-        fn two_byte_int() {
+        fn u16() {
             const EXPECTED_VALUE: u16 = 0x140;
             const INPUT: [u8; 2] = [0x1, 0x40];
-            let result = u16::try_from_bytes(&INPUT).unwrap();
+            let result = u16::try_decode(Bytes::from_static(&INPUT)).unwrap();
             assert_eq!(result, EXPECTED_VALUE);
         }
 
         #[test]
-        fn four_byte_int() {
+        fn u32() {
             const EXPECTED_VALUE: u32 = 0x7d40;
             const INPUT: [u8; 4] = [0x00, 0x00, 0x7d, 0x40];
-            let result = u32::try_from_bytes(&INPUT).unwrap();
+            let result = u32::try_decode(Bytes::from_static(&INPUT)).unwrap();
             assert_eq!(result, EXPECTED_VALUE);
+        }
+
+        #[test]
+        fn var_size_int() {
+            const INPUT: [(&[u8], usize, u32); 4] = [
+                (&[0x7f], 1, 127),
+                (&[0xff, 0x7f], 2, 16383),
+                (&[0xff, 0xff, 0x7f], 3, 2097151),
+                (&[0xff, 0xff, 0xff, 0x7f], 4, 268435455),
+            ];
+
+            for (bytes, expected_size, expected_value) in INPUT {
+                let result = VarSizeInt::try_decode(Bytes::from_static(bytes));
+
+                assert!(result.is_ok());
+                assert_eq!(result.as_ref().unwrap().len(), expected_size);
+                assert_eq!(result.as_ref().unwrap().value(), expected_value);
+            }
+        }
+
+        #[test]
+        fn var_size_int_invalid() {
+            const INPUT: [&[u8]; 4] = [
+                &[0xff],
+                &[0xff, 0xff],
+                &[0xff, 0xff, 0xff],
+                &[0xff, 0xff, 0xff, 0xff],
+            ];
+
+            for bytes in INPUT {
+                let result = VarSizeInt::try_decode(Bytes::from_static(bytes));
+                assert!(result.is_err());
+            }
         }
 
         #[test]
         fn binary() {
             const INPUT: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
-            let val = Binary::try_from_bytes(&INPUT).unwrap();
-            assert_eq!(val.0, [0x03, 0x76, 0x61, 0x6c]);
+            let val = Binary::try_decode(Bytes::from_static(&INPUT)).unwrap();
+            assert_eq!(&val.0[..], &[0x03, 0x76, 0x61, 0x6c]);
+        }
+
+        #[test]
+        fn payload() {
+            const INPUT: [u8; 4] = [0x03, 0x76, 0x61, 0x6c];
+            let val = Payload::try_decode(Bytes::from_static(&INPUT)).unwrap();
+            assert_eq!(&val.0[..], &[0x03, 0x76, 0x61, 0x6c]);
         }
 
         #[test]
         fn binary_invalid_size() {
             const INPUT: [u8; 6] = [0xff, 0xff, 0x03, 0x76, 0x61, 0x6c];
-            let val = Binary::try_from_bytes(&INPUT);
+            let val = Binary::try_decode(Bytes::from_static(&INPUT));
             assert!(val.is_err());
         }
 
         #[test]
-        fn utf8string() {
+        fn string() {
             const EXPECTED_VAL: &str = "val";
             const INPUT: [u8; 5] = [0x00, 0x03, b'v', b'a', b'l'];
-            let val = String::try_from_bytes(&INPUT).unwrap();
-            assert_eq!(val, EXPECTED_VAL);
+            let val = UTF8String::try_decode(Bytes::from_static(&INPUT)).unwrap();
+            assert_eq!(&val.0[..], EXPECTED_VAL.as_bytes());
         }
 
         #[test]
-        fn utf8string_invalid_size() {
+        fn string_invalid_size() {
             const INPUT: [u8; 5] = [0xff, 0xff, b'v', b'a', b'l'];
-            let val = String::try_from_bytes(&INPUT);
+            let val = UTF8String::try_decode(Bytes::from_static(&INPUT));
             assert!(val.is_err());
         }
 
         #[test]
-        fn utf8string_pair() {
+        fn string_pair() {
             const EXPECTED_KEY: &str = "key";
             const EXPECTED_VAL: &str = "val";
             const INPUT: [u8; 10] = [0x00, 0x03, b'k', b'e', b'y', 0x00, 0x03, b'v', b'a', b'l'];
-            let (key, val) = StringPair::try_from_bytes(&INPUT).unwrap();
-            assert_eq!(key, EXPECTED_KEY);
-            assert_eq!(val, EXPECTED_VAL);
+            let result = UTF8StringPair::try_decode(Bytes::from_static(&INPUT)).unwrap();
+            assert_eq!(&result.0, EXPECTED_KEY.as_bytes());
+            assert_eq!(&result.1, EXPECTED_VAL.as_bytes());
         }
 
         #[test]
         fn utf8string_pair_invalid_size() {
             const INPUT: [u8; 10] = [0x00, 0x03, b'k', b'e', b'y', 0xff, 0xff, b'v', b'a', b'l'];
-            let val = StringPair::try_from_bytes(&INPUT);
+            let val = UTF8StringPair::try_decode(Bytes::from_static(&INPUT));
             assert!(val.is_err());
         }
     }
 
-    mod var_size_int {
+    mod conversion {
         use super::*;
 
         #[test]
-        fn from_u8() {
+        fn var_size_int_from_u8() {
             const INPUT: [(u8, usize); 4] =
                 [(0, 1), (u8::MAX, 2), (0b10000000, 2), (0b01111111, 1)];
 
@@ -1148,12 +1259,12 @@ mod test {
                 let result = VarSizeInt::from(val);
 
                 assert_eq!(expected_len, result.len());
-                assert_eq!(val, result.into());
+                assert_eq!(val as u32, result.value());
             }
         }
 
         #[test]
-        fn from_u16() {
+        fn var_size_int_from_u16() {
             const INPUT: [(u16, usize); 5] = [
                 (0, 1),
                 (u16::MAX, 3),
@@ -1166,12 +1277,12 @@ mod test {
                 let result = VarSizeInt::from(val);
 
                 assert_eq!(expected_len, result.len());
-                assert_eq!(val, result.into());
+                assert_eq!(val as u32, result.value());
             }
         }
 
         #[test]
-        fn from_u32() {
+        fn var_size_int_from_u32() {
             const INPUT: [(u32, usize); 6] = [
                 (0, 1),
                 (VarSizeInt::MAX as u32, 4),
@@ -1182,92 +1293,40 @@ mod test {
             ];
 
             for (val, expected_len) in INPUT {
-                let result = VarSizeInt::from(val);
+                let result = VarSizeInt::try_from(val).unwrap();
 
                 assert_eq!(expected_len, result.len());
-                assert_eq!(val, result.into());
+                assert_eq!(val as u32, result.value());
             }
         }
 
         #[test]
-        fn from_iter() {
-            const INPUT: [(&[u8], usize, u32); 4] = [
-                (&[0x7f], 1, 127),
-                (&[0xff, 0x7f], 2, 16383),
-                (&[0xff, 0xff, 0x7f], 3, 2097151),
-                (&[0xff, 0xff, 0xff, 0x7f], 4, 268435455),
+        fn var_size_int_from_usize() {
+            const INPUT: [(usize, usize); 6] = [
+                (0, 1),
+                (VarSizeInt::MAX as usize, 4),
+                (u16::MAX as usize, 3),
+                (u8::MAX as usize, 2),
+                (0b10000000, 2),
+                (0b01111111, 1),
             ];
 
-            for (bytes, expected_size, expected_value) in INPUT {
-                let result = VarSizeInt::try_from_iter(bytes.iter().copied());
+            for (val, expected_len) in INPUT {
+                let result = VarSizeInt::try_from(val).unwrap();
 
-                assert!(result.is_ok());
-                assert_eq!(result.as_ref().unwrap().len(), expected_size);
-                assert_eq!(result.as_ref().unwrap().value(), expected_value);
+                assert_eq!(expected_len, result.len());
+                assert_eq!(val as usize, result.value() as usize);
             }
         }
 
         #[test]
-        fn from_iter_invalid() {
-            const INPUT: [&[u8]; 4] = [
-                &[0xff],
-                &[0xff, 0xff],
-                &[0xff, 0xff, 0xff],
-                &[0xff, 0xff, 0xff, 0xff],
-            ];
-
-            for bytes in INPUT {
-                let result = VarSizeInt::try_from_iter(bytes.iter().copied());
-                assert!(result.is_err());
-            }
+        fn non_zero_from_0() {
+            assert!(NonZero::<u8>::try_from(0).is_err());
         }
 
         #[test]
-        fn to_byte_buffer() {
-            let input: [(VarSizeInt, &[u8]); 5] = [
-                (VarSizeInt::from(127u8), &[0x7f]),
-                (VarSizeInt::from(128u8), &[0x80, 0x01]),
-                (VarSizeInt::from(16383u16), &[0xff, 0x7f]),
-                (VarSizeInt::from(2097151u32), &[0xff, 0xff, 0x7f]),
-                (VarSizeInt::from(268435455u32), &[0xff, 0xff, 0xff, 0x7f]),
-            ];
-
-            for (var_size_int, expected_bytes) in input {
-                let mut buf = [0u8; 4];
-                let result = var_size_int.to_byte_buffer(&mut buf);
-                assert_eq!(result, expected_bytes);
-            }
-        }
-
-        #[test]
-        #[should_panic]
-        fn to_byte_buffer_invalid() {
-            let input = VarSizeInt::from(268435455u32);
-            let mut buf = [0u8; 2];
-            input.to_byte_buffer(&mut buf);
-        }
-
-        #[test]
-        fn try_to_byte_buffer_invalid() {
-            let input = VarSizeInt::from(268435455u32);
-            let mut buf = [0u8; 2];
-            let result = input.try_to_byte_buffer(&mut buf);
-            assert!(result.is_err());
-        }
-    }
-
-    mod non_zero {
-        use super::*;
-
-        #[test]
-        #[should_panic]
-        fn from_zero() {
-            let _ = NonZero::<u8>::from(0);
-        }
-
-        #[test]
-        fn from() {
-            let _ = NonZero::<u8>::from(1);
+        fn non_zero_from_1() {
+            assert!(NonZero::<u8>::try_from(1).is_ok());
         }
     }
 }

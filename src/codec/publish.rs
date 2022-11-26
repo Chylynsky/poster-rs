@@ -5,121 +5,84 @@ use crate::core::{
         InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
     },
     properties::*,
-    utils::{
-        ByteReader, ByteWriter, PacketID, SizedPacket, SizedProperty, TryFromBytes, TryToByteBuffer,
-    },
+    utils::{ByteLen, Decoder, Encode, Encoder, PacketID, SizedPacket, TryDecode},
 };
+use bytes::{Bytes, BytesMut};
 use core::mem;
+use derive_builder::Builder;
 
-pub(crate) struct Publish {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
+pub(crate) struct PublishRx {
+    #[builder(default)]
     pub(crate) dup: bool,
+    #[builder(default)]
     pub(crate) retain: bool,
+    #[builder(default)]
     pub(crate) qos: QoS,
 
-    pub(crate) topic_name: String,
+    pub(crate) topic_name: UTF8String,
+    #[builder(setter(strip_option), default)]
     pub(crate) packet_identifier: Option<NonZero<u16>>,
 
+    #[builder(setter(strip_option), default)]
     pub(crate) payload_format_indicator: Option<PayloadFormatIndicator>,
+    #[builder(setter(strip_option), default)]
     pub(crate) topic_alias: Option<TopicAlias>,
+    #[builder(setter(strip_option), default)]
     pub(crate) message_expiry_interval: Option<MessageExpiryInterval>,
+    #[builder(setter(strip_option), default)]
     pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
+    #[builder(setter(strip_option), default)]
     pub(crate) correlation_data: Option<CorrelationData>,
+    #[builder(setter(strip_option), default)]
     pub(crate) response_topic: Option<ResponseTopic>,
+    #[builder(setter(strip_option), default)]
     pub(crate) content_type: Option<ContentType>,
+    #[builder(setter(custom), default)]
     pub(crate) user_property: Vec<UserProperty>,
 
+    #[builder(default)]
     pub(crate) payload: Payload,
 }
 
-impl Publish {
-    fn fixed_hdr(&self) -> u8 {
-        (Self::PACKET_ID << 4)
-            | ((self.dup as u8) << 3)
-            | ((self.qos as u8) << 1)
-            | (self.retain as u8)
+impl PublishRxBuilder {
+    fn validate(&self) -> Result<(), CodecError> {
+        match self.qos {
+            Some(QoS::AtMostOnce) => Ok(()),
+            None => Ok(()),
+            Some(_) => self
+                .packet_identifier
+                .map(|_| ())
+                .ok_or(MandatoryPropertyMissing.into()),
+        }
     }
 
-    fn property_len(&self) -> VarSizeInt {
-        VarSizeInt::from(
-            self.payload_format_indicator
-                .as_ref()
-                .map(|val| val.property_len())
-                .unwrap_or(0)
-                + self
-                    .topic_alias
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + self
-                    .message_expiry_interval
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + self
-                    .subscription_identifier
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + self
-                    .correlation_data
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + self
-                    .response_topic
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + self
-                    .content_type
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + self
-                    .user_property
-                    .iter()
-                    .map(|val| val.property_len())
-                    .sum::<usize>(),
-        )
-    }
-
-    fn remaining_len(&self) -> VarSizeInt {
-        let property_len = self.property_len();
-        VarSizeInt::from(
-            self.topic_name.property_len()
-                + self
-                    .packet_identifier
-                    .as_ref()
-                    .map(|val| val.property_len())
-                    .unwrap_or(0)
-                + property_len.len()
-                + property_len.value() as usize
-                + self.payload.property_len(),
-        )
+    fn user_property(&mut self, value: UserProperty) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
     }
 }
 
-impl PacketID for Publish {
+impl PacketID for PublishRx {
     const PACKET_ID: u8 = 3;
 }
 
-impl SizedPacket for Publish {
-    fn packet_len(&self) -> usize {
-        let remaining_len = self.remaining_len();
-        mem::size_of::<u8>() // Fixed header size
-            + remaining_len.len()
-            + remaining_len.value() as usize
-    }
-}
-
-impl TryFromBytes for Publish {
+impl TryDecode for PublishRx {
     type Error = CodecError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        let mut builder = PublishBuilder::default();
-        let mut reader = ByteReader::from(bytes);
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        let mut builder = PublishRxBuilder::default();
+        let mut decoder = Decoder::from(bytes);
 
-        let fixed_hdr = reader.try_read::<u8>()?;
+        let fixed_hdr = decoder.try_decode::<u8>()?;
         if fixed_hdr >> 4 != Self::PACKET_ID {
             return Err(InvalidPacketHeader.into());
         }
@@ -130,29 +93,29 @@ impl TryFromBytes for Publish {
             .retain(fixed_hdr & 1 != 0)
             .qos(qos);
 
-        let remaining_len = reader.try_read::<VarSizeInt>()?;
-        let packet_size =
-            mem::size_of_val(&fixed_hdr) + remaining_len.len() + remaining_len.value() as usize;
-        if packet_size > bytes.len() {
+        let remaining_len = decoder.try_decode::<VarSizeInt>()?;
+        if remaining_len > decoder.remaining() {
             return Err(InvalidPacketSize.into());
         }
 
-        let topic_name = reader.try_read::<String>()?;
+        let topic_name = decoder.try_decode::<UTF8String>()?;
         builder.topic_name(topic_name);
 
         // Packet identifier only available if QoS > 0
         if qos == QoS::AtLeastOnce || qos == QoS::ExactlyOnce {
-            let packet_id = reader.try_read::<NonZero<u16>>()?;
+            let packet_id = decoder.try_decode::<NonZero<u16>>()?;
             builder.packet_identifier(packet_id);
         }
 
-        let property_len = reader.try_read::<VarSizeInt>().map(usize::from)?;
-        if property_len as usize > reader.remaining() {
+        let property_len = decoder.try_decode::<VarSizeInt>()?;
+        if property_len > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
-        let property_buf = reader.get_buf().get(..property_len).unwrap();
-        for property in PropertyIterator::from(property_buf) {
+        let property_iterator =
+            Decoder::from(decoder.get_buf().split_to(property_len.value() as usize))
+                .iter::<Property>();
+        for property in property_iterator {
             if let Err(err) = property {
                 return Err(err.into());
             }
@@ -188,201 +151,206 @@ impl TryFromBytes for Publish {
             }
         }
 
-        reader.advance_by(property_len);
-
-        builder.payload(reader.try_read::<Payload>()?);
+        decoder.advance_by(usize::from(property_len));
+        builder.payload(decoder.try_decode::<Payload>()?);
         builder.build()
     }
 }
 
-impl TryToByteBuffer for Publish {
-    type Error = CodecError;
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
+pub(crate) struct PublishTx<'a> {
+    #[builder(default)]
+    pub(crate) dup: bool,
+    #[builder(default)]
+    pub(crate) retain: bool,
+    #[builder(default)]
+    pub(crate) qos: QoS,
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
+    pub(crate) topic_name: UTF8StringRef<'a>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) packet_identifier: Option<NonZero<u16>>,
 
-        writer.write(&self.fixed_hdr());
+    #[builder(setter(strip_option), default)]
+    pub(crate) payload_format_indicator: Option<PayloadFormatIndicator>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) topic_alias: Option<TopicAlias>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) message_expiry_interval: Option<MessageExpiryInterval>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) correlation_data: Option<CorrelationDataRef<'a>>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) response_topic: Option<ResponseTopicRef<'a>>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) content_type: Option<ContentTypeRef<'a>>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
+    #[builder(setter(strip_option), default)]
+    pub(crate) payload: Option<PayloadRef<'a>>,
+}
+
+impl<'a> PublishTxBuilder<'a> {
+    fn validate(&self) -> Result<(), CodecError> {
+        match self.qos {
+            Some(QoS::AtMostOnce) => Ok(()),
+            None => Ok(()),
+            Some(_) => self
+                .packet_identifier
+                .map(|_| ())
+                .ok_or(MandatoryPropertyMissing.into()),
+        }
+    }
+
+    pub(crate) fn user_property(&mut self, value: UserPropertyRef<'a>) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+}
+
+impl<'a> PublishTx<'a> {
+    fn fixed_hdr(&self) -> u8 {
+        (Self::PACKET_ID << 4)
+            | ((self.dup as u8) << 3)
+            | ((self.qos as u8) << 1)
+            | (self.retain as u8)
+    }
+
+    fn property_len(&self) -> VarSizeInt {
+        VarSizeInt::try_from(
+            self.payload_format_indicator
+                .as_ref()
+                .map(|val| val.byte_len())
+                .unwrap_or(0)
+                + self
+                    .topic_alias
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .message_expiry_interval
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .subscription_identifier
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .correlation_data
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .response_topic
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .content_type
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + self
+                    .user_property
+                    .iter()
+                    .map(|val| val.byte_len())
+                    .sum::<usize>(),
+        )
+        .unwrap()
+    }
+
+    fn remaining_len(&self) -> VarSizeInt {
+        let property_len = self.property_len();
+        VarSizeInt::try_from(
+            self.topic_name.byte_len()
+                + self
+                    .packet_identifier
+                    .as_ref()
+                    .map(|val| val.byte_len())
+                    .unwrap_or(0)
+                + property_len.len()
+                + property_len.value() as usize
+                + self.payload.as_ref().map(|val| val.byte_len()).unwrap_or(0),
+        )
+        .unwrap()
+    }
+}
+
+impl<'a> PacketID for PublishTx<'a> {
+    const PACKET_ID: u8 = 3;
+}
+
+impl<'a> SizedPacket for PublishTx<'a> {
+    fn packet_len(&self) -> usize {
+        let remaining_len = self.remaining_len();
+        mem::size_of::<u8>() // Fixed header size
+            + remaining_len.len()
+            + remaining_len.value() as usize
+    }
+}
+
+impl<'a> Encode for PublishTx<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        let mut encoder = Encoder::from(buf);
+
+        encoder.encode(self.fixed_hdr());
 
         let remaining_len = self.remaining_len();
-        debug_assert!(remaining_len.value() as usize <= writer.remaining());
-        writer.write(&remaining_len);
+        encoder.encode(remaining_len);
 
-        writer.write(&self.topic_name);
+        encoder.encode(self.topic_name);
 
-        if let Some(val) = self.packet_identifier.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.packet_identifier {
+            encoder.encode(val);
         }
 
-        writer.write(&self.property_len());
+        encoder.encode(self.property_len());
 
-        if let Some(val) = self.payload_format_indicator.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.payload_format_indicator.clone() {
+            encoder.encode(val);
         }
 
-        if let Some(val) = self.topic_alias.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.topic_alias.clone() {
+            encoder.encode(val);
         }
 
-        if let Some(val) = self.message_expiry_interval.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.message_expiry_interval.clone() {
+            encoder.encode(val);
         }
 
-        if let Some(val) = self.subscription_identifier.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.subscription_identifier.clone() {
+            encoder.encode(val);
         }
 
-        if let Some(val) = self.correlation_data.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.correlation_data {
+            encoder.encode(val);
         }
 
-        if let Some(val) = self.response_topic.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.response_topic {
+            encoder.encode(val);
         }
 
-        if let Some(val) = self.content_type.as_ref() {
-            writer.write(val);
+        if let Some(val) = self.content_type {
+            encoder.encode(val);
         }
 
-        for val in self.user_property.iter() {
-            writer.write(val);
+        for val in self.user_property.iter().copied() {
+            encoder.encode(val);
         }
 
-        writer.write(&self.payload);
-
-        Ok(result)
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct PublishBuilder {
-    dup: bool,
-    retain: bool,
-    qos: QoS,
-
-    topic_name: Option<String>,
-    packet_identifier: Option<NonZero<u16>>,
-
-    payload_format_indicator: Option<PayloadFormatIndicator>,
-    topic_alias: Option<TopicAlias>,
-    message_expiry_interval: Option<MessageExpiryInterval>,
-    subscription_identifier: Option<SubscriptionIdentifier>,
-    correlation_data: Option<CorrelationData>,
-    response_topic: Option<ResponseTopic>,
-    content_type: Option<ContentType>,
-    user_property: Vec<UserProperty>,
-
-    payload: Option<Payload>,
-}
-
-impl PublishBuilder {
-    pub(crate) fn dup(&mut self, val: bool) -> &mut Self {
-        self.dup = val;
-        self
-    }
-
-    pub(crate) fn retain(&mut self, val: bool) -> &mut Self {
-        self.retain = val;
-        self
-    }
-
-    pub(crate) fn qos(&mut self, val: QoS) -> &mut Self {
-        self.qos = val;
-        self
-    }
-
-    pub(crate) fn topic_name(&mut self, val: String) -> &mut Self {
-        self.topic_name = Some(val);
-        self
-    }
-
-    pub(crate) fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.packet_identifier = Some(val);
-        self
-    }
-
-    pub(crate) fn payload_format_indicator(&mut self, val: bool) -> &mut Self {
-        self.payload_format_indicator = Some(val.into());
-        self
-    }
-
-    pub(crate) fn topic_alias(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.topic_alias = Some(val.into());
-        self
-    }
-
-    pub(crate) fn message_expiry_interval(&mut self, val: u32) -> &mut Self {
-        self.message_expiry_interval = Some(val.into());
-        self
-    }
-
-    pub(crate) fn subscription_identifier(&mut self, val: NonZero<VarSizeInt>) -> &mut Self {
-        self.subscription_identifier = Some(val.into());
-        self
-    }
-
-    pub(crate) fn correlation_data(&mut self, val: Binary) -> &mut Self {
-        self.correlation_data = Some(val.into());
-        self
-    }
-
-    pub(crate) fn response_topic(&mut self, val: String) -> &mut Self {
-        self.response_topic = Some(val.into());
-        self
-    }
-
-    pub(crate) fn content_type(&mut self, val: String) -> &mut Self {
-        self.content_type = Some(val.into());
-        self
-    }
-
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
-
-    pub(crate) fn payload(&mut self, val: Payload) -> &mut Self {
-        self.payload = Some(val);
-        self
-    }
-
-    pub(crate) fn build(self) -> Result<Publish, CodecError> {
-        match self.qos {
-            QoS::AtMostOnce => {
-                if self.dup {
-                    return Err(UnexpectedProperty.into());
-                }
-
-                if self.packet_identifier.is_some() {
-                    return Err(UnexpectedProperty.into());
-                }
-            }
-            QoS::AtLeastOnce => {
-                self.packet_identifier.ok_or(MandatoryPropertyMissing)?;
-            }
-            QoS::ExactlyOnce => {
-                self.packet_identifier.ok_or(MandatoryPropertyMissing)?;
-            }
+        if let Some(payload) = self.payload {
+            encoder.encode(payload);
         }
-
-        Ok(Publish {
-            dup: self.dup,
-            retain: self.retain,
-            qos: self.qos,
-            topic_name: self.topic_name.ok_or(MandatoryPropertyMissing)?,
-            packet_identifier: self.packet_identifier,
-            payload_format_indicator: self.payload_format_indicator,
-            topic_alias: self.topic_alias,
-            message_expiry_interval: self.message_expiry_interval,
-            subscription_identifier: self.subscription_identifier,
-            correlation_data: self.correlation_data,
-            response_topic: self.response_topic,
-            content_type: self.content_type,
-            user_property: self.user_property,
-            payload: self.payload.ok_or(MandatoryPropertyMissing)?,
-        })
     }
 }
 
@@ -390,7 +358,7 @@ impl PublishBuilder {
 mod test {
     use super::*;
 
-    const FIXED_HDR: u8 = (((Publish::PACKET_ID as u8) << 4) | 0x0b) as u8; // DUP: 1, QoS: 1, RETAIN: 1
+    const FIXED_HDR: u8 = (((PublishRx::PACKET_ID as u8) << 4) | 0x0b) as u8; // DUP: 1, QoS: 1, RETAIN: 1
     const PACKET: [u8; 15] = [
         FIXED_HDR, 13, // Remaining length
         0,  // Topic length MSB
@@ -403,29 +371,32 @@ mod test {
 
     #[test]
     fn from_bytes_0() {
-        let packet = Publish::try_from_bytes(&PACKET).unwrap();
+        let packet = PublishRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
 
         assert!(packet.dup);
         assert!(packet.retain);
         assert_eq!(packet.qos, QoS::AtLeastOnce);
-        assert_eq!(packet.packet_identifier.unwrap(), 13.into());
-        assert_eq!(String::from_utf8(packet.payload).unwrap(), "test");
+        assert_eq!(packet.packet_identifier.unwrap(), 13);
+        assert_eq!(
+            packet.payload,
+            Payload(Bytes::from_static("test".as_bytes()))
+        );
     }
 
     #[test]
     fn to_bytes_0() {
-        let mut builder = PublishBuilder::default();
+        let mut builder = PublishTxBuilder::default();
         builder.dup(true);
         builder.qos(QoS::AtLeastOnce);
         builder.retain(true);
-        builder.packet_identifier(NonZero::from(13));
-        builder.topic_name(String::from("test"));
-        builder.payload(Vec::from([b't', b'e', b's', b't']));
+        builder.packet_identifier(NonZero::try_from(13).unwrap());
+        builder.topic_name(UTF8StringRef("test"));
+        builder.payload(PayloadRef(&[b't', b'e', b's', b't']));
 
         let packet = builder.build().unwrap();
-        let mut buf = [0u8; PACKET.len()];
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
 
-        assert_eq!(result, PACKET);
+        assert_eq!(&buf.split().freeze()[..], &PACKET);
     }
 }

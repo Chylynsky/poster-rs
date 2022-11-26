@@ -1,194 +1,355 @@
 use crate::{
-    codec::{
-        Auth, AuthReason, Connack, ConnectReason, Puback, PubackReason, Publish, Suback,
-        SubackReason, Unsuback, UnsubackReason,
-    },
-    core::base_types::{Binary, NonZero, QoS, VarSizeInt},
+    codec::*,
+    core::base_types::{Binary, NonZero, QoS, UTF8String},
 };
+use std::str;
 
 pub struct ConnectRsp {
-    pub session_present: bool,
-    pub reason: ConnectReason,
-    pub wildcard_subscription_available: bool,
-    pub subscription_identifier_available: bool,
-    pub shared_subscription_available: bool,
-    pub maximum_qos: QoS,
-    pub retain_available: bool,
-    pub server_keep_alive: Option<u16>,
-    pub receive_maximum: u16,
-    pub topic_alias_maximum: u16,
-    pub session_expiry_interval: u32,
-    pub maximum_packet_size: Option<u32>,
-    pub authentication_data: Option<Vec<u8>>,
-    pub assigned_client_identifier: Option<String>,
-    pub reason_string: Option<String>,
-    pub response_information: Option<String>,
-    pub server_reference: Option<String>,
-    pub authentication_method: Option<String>,
-    pub user_property: Vec<(String, String)>,
+    packet: ConnackRx,
 }
 
-impl From<Connack> for ConnectRsp {
-    fn from(pck: Connack) -> Self {
-        Self {
-            session_present: pck.session_present,
-            reason: pck.reason,
-            wildcard_subscription_available: pck.wildcard_subscription_available.into(),
-            subscription_identifier_available: pck.subscription_identifier_available.into(),
-            shared_subscription_available: pck.shared_subscription_available.into(),
-            maximum_qos: pck.maximum_qos.into(),
-            retain_available: pck.retain_available.into(),
-            server_keep_alive: pck.server_keep_alive.map(|val| val.into()),
-            receive_maximum: NonZero::from(pck.receive_maximum).into(),
-            topic_alias_maximum: pck.topic_alias_maximum.into(),
-            session_expiry_interval: pck.session_expiry_interval.into(),
-            maximum_packet_size: pck.maximum_packet_size.map(|val| NonZero::from(val).into()),
-            authentication_data: pck
-                .authentication_data
-                .map(|val| -> Vec<u8> { Binary::from(val).into() }),
-            assigned_client_identifier: pck.assigned_client_identifier.map(|val| val.into()),
-            reason_string: pck.reason_string.map(|val| val.into()),
-            response_information: pck.response_information.map(|val| val.into()),
-            server_reference: pck.server_reference.map(|val| val.into()),
-            authentication_method: pck.authentication_method.map(|val| val.into()),
-            user_property: pck
-                .user_property
-                .into_iter()
-                .map(|val| val.into())
-                .collect::<Vec<(String, String)>>(),
-        }
+impl From<ConnackRx> for ConnectRsp {
+    fn from(packet: ConnackRx) -> Self {
+        Self { packet }
+    }
+}
+
+impl ConnectRsp {
+    pub fn session_present(&self) -> bool {
+        self.packet.session_present
+    }
+
+    pub fn reason(&self) -> ConnectReason {
+        self.packet.reason
+    }
+
+    pub fn wildcard_subscription_available(&self) -> bool {
+        bool::from(self.packet.wildcard_subscription_available)
+    }
+
+    pub fn subscription_identifier_available(&self) -> bool {
+        bool::from(self.packet.subscription_identifier_available)
+    }
+
+    pub fn shared_subscription_available(&self) -> bool {
+        bool::from(self.packet.shared_subscription_available)
+    }
+
+    pub fn maximum_qos(&self) -> QoS {
+        QoS::from(self.packet.maximum_qos)
+    }
+
+    pub fn retain_available(&self) -> bool {
+        bool::from(self.packet.retain_available)
+    }
+
+    pub fn server_keep_alive(&self) -> Option<u16> {
+        self.packet.server_keep_alive.map(u16::from)
+    }
+
+    pub fn receive_maximum(&self) -> u16 {
+        NonZero::from(self.packet.receive_maximum).get()
+    }
+
+    pub fn topic_alias_maximum(&self) -> u16 {
+        u16::from(self.packet.topic_alias_maximum)
+    }
+
+    pub fn session_expiry_interval(&self) -> u32 {
+        u32::from(self.packet.session_expiry_interval)
+    }
+
+    pub fn maximum_packet_size(&self) -> Option<u32> {
+        self.packet
+            .maximum_packet_size
+            .map(NonZero::from)
+            .map(|val| val.get())
+    }
+
+    pub fn assigned_client_identifier(&self) -> Option<&str> {
+        self.packet
+            .assigned_client_identifier
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn response_information(&self) -> Option<&str> {
+        self.packet
+            .response_information
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn server_reference(&self) -> Option<&str> {
+        self.packet
+            .server_reference
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn authentication_method(&self) -> Option<&str> {
+        self.packet
+            .authentication_method
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn authentication_data(&self) -> Option<&[u8]> {
+        self.packet
+            .authentication_data
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+    }
+
+    pub fn user_property(&self) {
+        todo!()
     }
 }
 
 pub struct AuthRsp {
-    pub reason: AuthReason,
-    pub authentication_method: Option<String>,
-    pub authentication_data: Option<Vec<u8>>,
-    pub reason_string: Option<String>,
-    pub user_property: Vec<(String, String)>,
+    packet: AuthRx,
 }
 
-impl From<Auth> for AuthRsp {
-    fn from(pck: Auth) -> Self {
-        Self {
-            reason: pck.reason,
-            authentication_method: pck.authentication_method.map(|val| val.into()),
-            authentication_data: pck.authentication_data.map(|val| Binary::from(val).into()),
-            reason_string: pck.reason_string.map(|val| val.into()),
-            user_property: pck
-                .user_property
-                .into_iter()
-                .map(|val| val.into())
-                .collect::<Vec<(String, String)>>(),
-        }
+impl From<AuthRx> for AuthRsp {
+    fn from(packet: AuthRx) -> Self {
+        Self { packet }
+    }
+}
+
+impl AuthRsp {
+    pub fn reason(&self) -> AuthReason {
+        self.packet.reason
+    }
+
+    pub fn authentication_method(&self) -> Option<&str> {
+        self.packet
+            .authentication_method
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn authentication_data(&self) -> Option<&[u8]> {
+        self.packet
+            .authentication_data
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+    }
+
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn user_property(&self) {
+        todo!()
     }
 }
 
 pub struct SubscribeRsp {
-    pub reason: SubackReason,
-    pub reason_string: Option<String>,
-    pub user_property: Vec<(String, String)>,
+    packet: SubackRx,
 }
 
-impl From<Suback> for SubscribeRsp {
-    fn from(pck: Suback) -> Self {
-        Self {
-            reason: pck.payload[0],
-            reason_string: pck.reason_string.map(|val| val.into()),
-            user_property: pck
-                .user_property
-                .into_iter()
-                .map(|val| val.into())
-                .collect::<Vec<(String, String)>>(),
-        }
+impl From<SubackRx> for SubscribeRsp {
+    fn from(packet: SubackRx) -> Self {
+        Self { packet }
+    }
+}
+
+impl SubscribeRsp {
+    pub fn reason(&self) -> SubackReason {
+        self.packet.payload.first().copied().unwrap()
+    }
+
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn user_property(&self) {
+        todo!()
     }
 }
 
 pub struct PublishRsp {
-    pub reason: PubackReason,
-    pub reason_string: Option<String>,
-    pub user_property: Vec<(String, String)>,
+    packet: PubackRx,
 }
 
-impl From<Puback> for PublishRsp {
-    fn from(pck: Puback) -> Self {
-        Self {
-            reason: pck.reason,
-            reason_string: pck.reason_string.map(|val| val.into()),
-            user_property: pck
-                .user_property
-                .into_iter()
-                .map(|val| val.into())
-                .collect::<Vec<(String, String)>>(),
-        }
+impl From<PubackRx> for PublishRsp {
+    fn from(packet: PubackRx) -> Self {
+        Self { packet }
+    }
+}
+
+impl PublishRsp {
+    pub fn reason(&self) -> PubackReason {
+        self.packet.reason
+    }
+
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn user_property(&self) {
+        todo!()
     }
 }
 
 pub struct UnsubscribeRsp {
-    pub reason: UnsubackReason,
-    pub reason_string: Option<String>,
-    pub user_property: Vec<(String, String)>,
+    packet: UnsubackRx,
 }
 
-impl From<Unsuback> for UnsubscribeRsp {
-    fn from(pck: Unsuback) -> Self {
-        Self {
-            reason: pck.payload[0],
-            reason_string: pck.reason_string.map(|val| val.into()),
-            user_property: pck
-                .user_property
-                .into_iter()
-                .map(|val| val.into())
-                .collect::<Vec<(String, String)>>(),
-        }
+impl From<UnsubackRx> for UnsubscribeRsp {
+    fn from(packet: UnsubackRx) -> Self {
+        Self { packet }
+    }
+}
+
+impl UnsubscribeRsp {
+    pub fn reason(&self) -> UnsubackReason {
+        self.packet.payload.first().copied().unwrap()
+    }
+
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn user_property(&self) {
+        todo!()
     }
 }
 
 pub struct PublishData {
-    pub dup: bool,
-    pub retain: bool,
-    pub qos: QoS,
-
-    pub topic_name: String,
-
-    pub payload_format_indicator: Option<bool>,
-    pub topic_alias: Option<u16>,
-    pub message_expiry_interval: Option<u32>,
-    pub subscription_identifier: Option<u32>,
-    pub correlation_data: Option<Vec<u8>>,
-    pub response_topic: Option<String>,
-    pub content_type: Option<String>,
-    pub user_property: Vec<(String, String)>,
-
-    pub payload: Vec<u8>,
+    packet: PublishRx,
 }
 
-impl From<Publish> for PublishData {
-    fn from(pck: Publish) -> Self {
-        Self {
-            dup: pck.dup,
-            retain: pck.retain,
-            qos: pck.qos,
-            topic_name: pck.topic_name,
-            payload_format_indicator: pck.payload_format_indicator.map(|val| val.into()),
-            topic_alias: pck.topic_alias.map(|val| {
-                let topic_alias: NonZero<u16> = val.into();
-                topic_alias.value()
-            }),
-            message_expiry_interval: pck.message_expiry_interval.map(|val| val.into()),
-            subscription_identifier: pck.subscription_identifier.map(|val| {
-                let sub_id: NonZero<VarSizeInt> = val.into();
-                sub_id.value().into()
-            }),
-            correlation_data: pck.correlation_data.map(|val| Binary::from(val).into()),
-            response_topic: pck.response_topic.map(|val| val.into()),
-            content_type: pck.content_type.map(|val| val.into()),
-            user_property: pck
-                .user_property
-                .into_iter()
-                .map(|val| val.into())
-                .collect::<Vec<(String, String)>>(),
-            payload: pck.payload,
-        }
+impl From<PublishRx> for PublishData {
+    fn from(packet: PublishRx) -> Self {
+        Self { packet }
+    }
+}
+
+impl PublishData {
+    pub fn dup(&self) -> bool {
+        self.packet.dup
+    }
+
+    pub fn retain(&self) -> bool {
+        self.packet.retain
+    }
+
+    pub fn qos(&self) -> QoS {
+        self.packet.qos
+    }
+
+    pub fn topic_name(&self) -> &str {
+        str::from_utf8(self.packet.topic_name.0.as_ref()).unwrap()
+    }
+
+    pub fn payload_format_indicator(&self) -> Option<bool> {
+        self.packet.payload_format_indicator.map(bool::from)
+    }
+
+    pub fn topic_alias(&self) -> Option<u16> {
+        self.packet
+            .topic_alias
+            .map(NonZero::from)
+            .map(|val| val.get())
+    }
+
+    pub fn message_expiry_interval(&self) -> Option<u32> {
+        self.packet.message_expiry_interval.map(u32::from)
+    }
+
+    pub fn subscription_identifier(&self) -> Option<u32> {
+        self.packet
+            .subscription_identifier
+            .map(NonZero::from)
+            .map(|val| val.get())
+            .map(|val| val.value())
+    }
+
+    pub fn correlation_data(&self) -> Option<&[u8]> {
+        self.packet
+            .correlation_data
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+    }
+
+    pub fn response_topic(&self) -> Option<&str> {
+        self.packet
+            .response_topic
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn content_type(&self) -> Option<&str> {
+        self.packet
+            .content_type
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    pub fn user_property(&self) {
+        todo!()
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        self.packet.payload.0.as_ref()
     }
 }

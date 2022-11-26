@@ -19,22 +19,25 @@ mod unsubscribe;
 
 mod packets;
 
-pub(crate) use auth::{Auth, AuthBuilder};
-pub(crate) use connect::{Connect, ConnectBuilder};
-pub(crate) use disconnect::{Disconnect, DisconnectBuilder};
-pub(crate) use pingreq::PingreqBuilder;
-pub(crate) use puback::Puback;
+pub(crate) use auth::{AuthRx, AuthTx, AuthTxBuilder};
+pub(crate) use connect::{ConnectTx, ConnectTxBuilder};
+pub(crate) use disconnect::{DisconnectRx, DisconnectTx, DisconnectTxBuilder};
+pub(crate) use pingreq::{PingreqTx, PingreqTxBuilder};
+pub(crate) use puback::{PubackRx, PubackTx, PubackTxBuilder};
+pub(crate) use pubcomp::{PubcompRx, PubcompTx, PubcompTxBuilder};
+pub(crate) use pubrec::{PubrecRx, PubrecTx, PubrecTxBuilder};
+pub(crate) use pubrel::{PubrelRx, PubrelTx, PubrelTxBuilder};
 
-pub(crate) use publish::{Publish, PublishBuilder};
+pub(crate) use publish::{PublishRx, PublishTx, PublishTxBuilder};
 
-pub(crate) use subscribe::{RetainHandling, Subscribe, SubscribeBuilder, SubscriptionOptions};
-pub(crate) use unsubscribe::{Unsubscribe, UnsubscribeBuilder};
+pub(crate) use subscribe::{RetainHandling, SubscribeTx, SubscribeTxBuilder, SubscriptionOptions};
+pub(crate) use unsubscribe::{UnsubscribeTx, UnsubscribeTxBuilder};
 
-pub(crate) use connack::Connack;
+pub(crate) use connack::ConnackRx;
 
-pub(crate) use pingresp::Pingresp;
-pub(crate) use suback::Suback;
-pub(crate) use unsuback::Unsuback;
+pub(crate) use pingresp::PingrespRx;
+pub(crate) use suback::SubackRx;
+pub(crate) use unsuback::UnsubackRx;
 
 pub(crate) use packets::{RxPacket, TxPacket};
 

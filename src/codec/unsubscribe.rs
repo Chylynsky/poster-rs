@@ -1,141 +1,109 @@
 use crate::core::{
     base_types::*,
-    error::{CodecError, InsufficientBufferSize},
+    error::{CodecError, MandatoryPropertyMissing},
     properties::*,
-    utils::{ByteWriter, PacketID, SizedPacket, SizedProperty, ToByteBuffer, TryToByteBuffer},
+    utils::{ByteLen, Encode, Encoder, PacketID, SizedPacket},
 };
+use bytes::BytesMut;
+use derive_builder::Builder;
 
-pub(crate) struct UnsubscribeProperties {
-    pub(crate) user_property: Vec<UserProperty>,
-}
-
-impl SizedProperty for UnsubscribeProperties {
-    fn property_len(&self) -> usize {
-        self.user_property
-            .iter()
-            .map(|val| val.property_len())
-            .sum::<usize>()
-    }
-}
-
-impl ToByteBuffer for UnsubscribeProperties {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        let property_len = VarSizeInt::from(self.property_len());
-        let len = property_len.len() + property_len.value() as usize;
-
-        debug_assert!(len <= buf.len());
-
-        let result = &mut buf[0..len];
-        let mut writer = ByteWriter::from(result);
-
-        writer.write(&property_len);
-
-        for val in self.user_property.iter() {
-            writer.write(val);
-        }
-
-        result
-    }
-}
-
-pub(crate) struct Unsubscribe {
+#[derive(Builder)]
+#[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
+pub(crate) struct UnsubscribeTx<'a> {
     pub(crate) packet_identifier: NonZero<u16>,
-    pub(crate) properties: UnsubscribeProperties,
-    pub(crate) payload: Vec<String>,
+    #[builder(setter(custom), default)]
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
+    #[builder(setter(custom), default)]
+    pub(crate) payload: Vec<UTF8StringRef<'a>>,
 }
 
-impl Unsubscribe {
+impl<'a> UnsubscribeTxBuilder<'a> {
+    fn validate(&self) -> Result<(), CodecError> {
+        if self.payload.is_none() {
+            Err(MandatoryPropertyMissing.into()) // Empty payload is a protocol error
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn user_property(&mut self, value: UserPropertyRef<'a>) {
+        match self.user_property.as_mut() {
+            Some(user_property) => {
+                user_property.push(value);
+            }
+            None => {
+                self.user_property = Some(Vec::new());
+                self.user_property.as_mut().unwrap().push(value);
+            }
+        }
+    }
+
+    pub(crate) fn payload(&mut self, topic: UTF8StringRef<'a>) {
+        match self.payload.as_mut() {
+            Some(payload) => {
+                payload.push(topic);
+            }
+            None => {
+                self.payload = Some(Vec::new());
+                self.payload.as_mut().unwrap().push(topic);
+            }
+        }
+    }
+}
+
+impl<'a> UnsubscribeTx<'a> {
     const FIXED_HDR: u8 = (Self::PACKET_ID << 4) | 0b0010;
 
+    fn property_len(&self) -> VarSizeInt {
+        VarSizeInt::try_from(
+            self.user_property
+                .iter()
+                .map(|val| val.byte_len())
+                .sum::<usize>(),
+        )
+        .unwrap()
+    }
+
     fn remaining_len(&self) -> VarSizeInt {
-        let property_len = VarSizeInt::from(self.properties.property_len());
-        VarSizeInt::from(
-            self.packet_identifier.property_len()
+        let property_len = self.property_len();
+        VarSizeInt::try_from(
+            self.packet_identifier.byte_len()
                 + property_len.len()
                 + property_len.value() as usize
-                + self
-                    .payload
-                    .iter()
-                    .map(|val| val.property_len())
-                    .sum::<usize>(),
+                + self.payload.iter().map(|val| val.byte_len()).sum::<usize>(),
         )
+        .unwrap()
     }
 }
 
-impl PacketID for Unsubscribe {
+impl<'a> PacketID for UnsubscribeTx<'a> {
     const PACKET_ID: u8 = 10;
 }
 
-impl SizedPacket for Unsubscribe {
+impl<'a> SizedPacket for UnsubscribeTx<'a> {
     fn packet_len(&self) -> usize {
         let remaining_len = self.remaining_len();
-        Self::FIXED_HDR.property_len() + remaining_len.len() + remaining_len.value() as usize
+        Self::FIXED_HDR.byte_len() + remaining_len.len() + remaining_len.value() as usize
     }
 }
 
-impl TryToByteBuffer for Unsubscribe {
-    type Error = CodecError;
+impl<'a> Encode for UnsubscribeTx<'a> {
+    fn encode(&self, buf: &mut BytesMut) {
+        let mut encoder = Encoder::from(buf);
 
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error> {
-        let result = buf
-            .get_mut(0..self.packet_len())
-            .ok_or(InsufficientBufferSize)?;
-        let mut writer = ByteWriter::from(result);
+        encoder.encode(Self::FIXED_HDR);
+        encoder.encode(self.remaining_len());
+        encoder.encode(self.packet_identifier);
 
-        writer.write(&Self::FIXED_HDR);
+        encoder.encode(self.property_len());
 
-        let remaining_len = self.remaining_len();
-        debug_assert!(remaining_len.value() as usize <= writer.remaining());
-        writer.write(&remaining_len);
-
-        writer.write(&self.packet_identifier);
-        writer.write(&self.properties);
-
-        for val in self.payload.iter() {
-            writer.write(val);
+        for val in self.user_property.iter().copied() {
+            encoder.encode(val);
         }
 
-        Ok(result)
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct UnsubscribeBuilder {
-    packet_identifier: Option<NonZero<u16>>,
-    user_property: Vec<UserProperty>,
-    payload: Vec<String>,
-}
-
-impl UnsubscribeBuilder {
-    pub(crate) fn packet_identifier(&mut self, val: NonZero<u16>) -> &mut Self {
-        self.packet_identifier = Some(val);
-        self
-    }
-
-    pub(crate) fn user_property(&mut self, val: StringPair) -> &mut Self {
-        self.user_property.push(val.into());
-        self
-    }
-
-    pub(crate) fn payload(&mut self, val: String) -> &mut Self {
-        self.payload.push(val);
-        self
-    }
-
-    pub(crate) fn build(self) -> Option<Unsubscribe> {
-        if self.payload.is_empty() {
-            return None; // Unsubscribe packet with no payload is a Protocol Error
+        for val in self.payload.iter().copied() {
+            encoder.encode(val);
         }
-
-        let properties = UnsubscribeProperties {
-            user_property: self.user_property,
-        };
-
-        Some(Unsubscribe {
-            packet_identifier: self.packet_identifier?,
-            properties,
-            payload: self.payload,
-        })
     }
 }
 
@@ -146,7 +114,7 @@ mod test {
     #[test]
     fn to_bytes_0() {
         const EXPECTED: [u8; 15] = [
-            Unsubscribe::FIXED_HDR,
+            UnsubscribeTx::FIXED_HDR,
             13, // Remaining length
             0,  // Packet ID MSB
             13, // Packet ID LSB
@@ -163,15 +131,15 @@ mod test {
             b'd',
         ];
 
-        let mut builder = UnsubscribeBuilder::default();
-        builder.packet_identifier(NonZero::from(13));
-        builder.payload(String::from("a/b"));
-        builder.payload(String::from("c/d"));
+        let mut builder = UnsubscribeTxBuilder::default();
+        builder.packet_identifier(NonZero::try_from(13).unwrap());
+        builder.payload(UTF8StringRef("a/b"));
+        builder.payload(UTF8StringRef("c/d"));
 
         let packet = builder.build().unwrap();
-        let mut buf = [0u8; EXPECTED.len()];
-        let result = packet.try_to_byte_buffer(&mut buf).unwrap();
+        let mut buf = BytesMut::new();
+        packet.encode(&mut buf);
 
-        assert_eq!(result, EXPECTED);
+        assert_eq!(&buf.split().freeze()[..], &EXPECTED);
     }
 }

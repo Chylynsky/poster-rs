@@ -1,8 +1,10 @@
+use bytes::{Bytes, BytesMut};
+
 use crate::{
-    codec::ack::{Ack, AckBuilder},
+    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder},
     core::{
         error::{ConversionError, InvalidValue},
-        utils::{PacketID, SizedProperty, ToByteBuffer, TryFromBytes},
+        utils::{ByteLen, Encode, PacketID, TryDecode},
     },
 };
 
@@ -30,33 +32,41 @@ impl Default for PubrelReason {
     }
 }
 
-impl SizedProperty for PubrelReason {
-    fn property_len(&self) -> usize {
-        (*self as u8).property_len()
+impl ByteLen for PubrelReason {
+    fn byte_len(&self) -> usize {
+        (*self as u8).byte_len()
     }
 }
 
-impl TryFromBytes for PubrelReason {
+impl TryDecode for PubrelReason {
     type Error = ConversionError;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        Self::try_from(u8::try_from_bytes(bytes)?)
+    fn try_decode(bytes: Bytes) -> Result<Self, Self::Error> {
+        Self::try_from(u8::try_decode(bytes)?)
     }
 }
 
-impl ToByteBuffer for PubrelReason {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
-        (*self as u8).to_byte_buffer(buf)
+impl Encode for PubrelReason {
+    fn encode(&self, buf: &mut BytesMut) {
+        (*self as u8).encode(buf)
     }
 }
 
-pub(crate) type Pubrel = Ack<PubrelReason>;
+pub(crate) type PubrelRx = AckRx<PubrelReason>;
 
-impl PacketID for Pubrel {
+impl PacketID for PubrelRx {
     const PACKET_ID: u8 = 6;
 }
 
-pub(crate) type PubrelBuilder = AckBuilder<PubrelReason>;
+pub(crate) type PubrelTx<'a> = AckTx<'a, PubrelReason>;
+
+impl<'a> PacketID for PubrelTx<'a> {
+    const PACKET_ID: u8 = 6;
+}
+
+pub(crate) type PubrelRxBuilder = AckRxBuilder<PubrelReason>;
+
+pub(crate) type PubrelTxBuilder<'a> = AckTxBuilder<'a, PubrelReason>;
 
 #[cfg(test)]
 mod test {

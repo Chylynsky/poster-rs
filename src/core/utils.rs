@@ -1,7 +1,9 @@
-use bytes::Bytes;
+use std::marker::PhantomData;
 
-pub(crate) trait SizedProperty {
-    fn property_len(&self) -> usize;
+use bytes::{Buf, Bytes, BytesMut};
+
+pub(crate) trait ByteLen {
+    fn byte_len(&self) -> usize;
 }
 
 pub(crate) trait PropertyID {
@@ -16,34 +18,17 @@ pub(crate) trait PacketID {
     const PACKET_ID: u8;
 }
 
-pub(crate) trait TryFromBytes
+pub(crate) trait Encode {
+    fn encode(&self, buf: &mut BytesMut);
+}
+
+pub(crate) trait TryEncode
 where
     Self: Sized,
 {
     type Error;
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>;
-}
-
-pub(crate) trait ToByteBuffer {
-    fn to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> &'a [u8];
-}
-
-pub(crate) trait TryToByteBuffer {
-    type Error;
-
-    fn try_to_byte_buffer<'a>(&self, buf: &'a mut [u8]) -> Result<&'a [u8], Self::Error>;
-}
-
-pub(crate) trait TryFromIterator<T>
-where
-    Self: Sized,
-{
-    type Error;
-
-    fn try_from_iter<Iter>(iter: Iter) -> Result<Self, Self::Error>
-    where
-        Iter: Iterator<Item = T> + Clone;
+    fn try_encode(&self, buf: &mut BytesMut) -> Result<(), Self::Error>;
 }
 
 pub(crate) trait Decode {
@@ -59,124 +44,135 @@ where
     fn try_decode(buf: Bytes) -> Result<Self, Self::Error>;
 }
 
-pub(crate) struct ByteReader<'a> {
-    buf: &'a [u8],
-    offset: usize,
+pub(crate) struct DecodeIter<T> {
+    decoder: Decoder,
+    _phantom: PhantomData<T>,
 }
 
-impl<'a> ByteReader<'a> {
-    pub(crate) fn advance_by(&mut self, n: usize) {
-        debug_assert!(self.offset + n <= self.buf.len());
-        self.offset += n;
-    }
+impl<T> Iterator for DecodeIter<T>
+where
+    T: ByteLen + TryDecode,
+{
+    type Item = Result<T, T::Error>;
 
-    pub(crate) fn from(buf: &'a [u8]) -> Self {
-        Self { buf, offset: 0 }
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.decoder.remaining() == 0 {
+            None
+        } else {
+            Some(self.decoder.try_decode::<T>())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct Decoder {
+    buf: Bytes,
+}
+
+impl From<Bytes> for Decoder {
+    fn from(buf: Bytes) -> Self {
+        Self { buf }
+    }
+}
+
+impl Decoder {
+    pub(crate) fn advance_by(&mut self, n: usize) {
+        self.buf.advance(n);
     }
 
     pub(crate) fn remaining(&self) -> usize {
-        self.buf.len() - self.offset
+        self.buf.len()
     }
 
-    pub(crate) fn try_read<T>(&mut self) -> Result<T, T::Error>
+    pub(crate) fn try_decode<T>(&mut self) -> Result<T, T::Error>
     where
-        T: Sized + TryFromBytes + SizedProperty,
+        T: Sized + TryDecode + ByteLen,
     {
-        let buf = &self.buf[self.offset..];
-        let result = T::try_from_bytes(buf)?;
-        self.advance_by(result.property_len());
+        let result = T::try_decode(self.buf.clone())?;
+        self.advance_by(result.byte_len());
         Ok(result)
     }
 
-    pub(crate) fn get_buf(&self) -> &[u8] {
-        &self.buf[self.offset..]
-    }
-}
-
-pub(crate) struct ByteWriter<'a> {
-    buf: &'a mut [u8],
-    offset: usize,
-}
-
-impl<'a> ByteWriter<'a> {
-    fn advance_by(&mut self, n: usize) {
-        debug_assert!(self.offset + n <= self.buf.len());
-        self.offset += n;
+    pub(crate) fn get_buf(&self) -> Bytes {
+        self.buf.clone()
     }
 
-    pub(crate) fn from(buf: &'a mut [u8]) -> Self {
-        Self { buf, offset: 0 }
-    }
-
-    pub(crate) fn remaining(&self) -> usize {
-        self.buf.len() - self.offset
-    }
-
-    pub(crate) fn write<T>(&mut self, val: &T)
+    pub(crate) fn iter<T>(self) -> DecodeIter<T>
     where
-        T: ToByteBuffer,
+        T: TryDecode,
     {
-        let buf = &mut self.buf[self.offset..];
-        let written_bytes = val.to_byte_buffer(buf).len();
-        self.advance_by(written_bytes);
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    mod byte_writer {
-        use super::*;
-
-        #[test]
-        fn write() {
-            const INPUT: u32 = 0x12345678;
-
-            let mut buf = [0u8; 32];
-            let mut writer = ByteWriter::from(&mut buf);
-            writer.write(&INPUT);
-
-            assert_eq!(writer.offset, std::mem::size_of::<u32>());
-            assert_eq!(writer.remaining(), buf.len() - std::mem::size_of::<u32>());
-            assert_eq!(&buf[0..std::mem::size_of::<u32>()], INPUT.to_be_bytes());
-        }
-
-        #[test]
-        #[should_panic]
-        fn write_out_of_bounds() {
-            const INPUT: u32 = 0x12345678;
-
-            let mut buf = [0u8; 0];
-            let mut writer = ByteWriter::from(&mut buf);
-            writer.write(&INPUT);
-        }
-    }
-
-    mod byte_reader {
-        use super::*;
-
-        #[test]
-        fn try_read() {
-            const INPUT: [u8; 1] = [45u8];
-
-            let mut reader = ByteReader::from(&INPUT);
-            let result = reader.try_read::<u8>();
-
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap(), 45);
-            assert_eq!(reader.offset, 1);
-            assert_eq!(reader.remaining(), 0);
-        }
-
-        #[test]
-        fn try_read_out_of_bounds() {
-            const INPUT: [u8; 0] = [];
-
-            let mut reader = ByteReader::from(&INPUT);
-            let result = reader.try_read::<u32>();
-
-            assert!(result.is_err());
+        DecodeIter {
+            decoder: self,
+            _phantom: PhantomData,
         }
     }
 }
+
+pub(crate) struct Encoder<'a> {
+    buf: &'a mut BytesMut,
+}
+
+impl<'a> From<&'a mut BytesMut> for Encoder<'a> {
+    fn from(buf: &'a mut BytesMut) -> Self {
+        Self { buf }
+    }
+}
+
+impl<'a> Encoder<'a> {
+    pub(crate) fn encode<T>(&mut self, val: T)
+    where
+        T: Encode,
+    {
+        val.encode(&mut self.buf)
+    }
+}
+
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+
+//     mod encoder {
+//         use super::*;
+
+//         #[test]
+//         fn write_u32() {
+//             const INPUT: u32 = 0x12345678;
+
+//             let mut writer = Encoder::from(BytesMut::new());
+//             writer.try_encode::<u32>(INPUT);
+
+//             assert_eq!(
+//                 &writer.get_buf()[0..std::mem::size_of::<u32>()],
+//                 INPUT.to_be_bytes()
+//             );
+//         }
+//     }
+
+//     mod decoder {
+//         use super::*;
+
+//         #[test]
+//         fn try_read() {
+//             const INPUT: [u8; 1] = [45u8];
+//             let buf = Bytes::from_static(&INPUT);
+
+//             let mut reader = Decoder::from(buf);
+//             let result = reader.try_decode::<u8>();
+
+//             assert!(result.is_ok());
+//             assert_eq!(result.unwrap(), 45);
+//             assert_eq!(reader.remaining(), 0);
+//         }
+
+//         #[test]
+//         fn try_read_out_of_bounds() {
+//             const INPUT: [u8; 0] = [];
+//             let buf = Bytes::from_static(&INPUT);
+
+//             let mut reader = Decoder::from(buf);
+//             let result = reader.try_decode::<u32>();
+
+//             assert!(result.is_err());
+//         }
+//     }
+// }
