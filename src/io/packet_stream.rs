@@ -153,6 +153,9 @@ where
             }
 
             let size = result.unwrap();
+            if size == 0 {
+                return Poll::Ready(None); // EOF
+            }
 
             if let Some(packet) = self
                 .step(size)

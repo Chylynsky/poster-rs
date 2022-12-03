@@ -48,13 +48,12 @@ pub(crate) struct PublishRx {
 
 impl PublishRxBuilder {
     fn validate(&self) -> Result<(), CodecError> {
-        match self.qos {
-            Some(QoS::AtMostOnce) => Ok(()),
-            None => Ok(()),
-            Some(_) => self
-                .packet_identifier
-                .map(|_| ())
-                .ok_or(MandatoryPropertyMissing.into()),
+        match self.qos.unwrap_or_default() {
+            QoS::AtMostOnce => Ok(()),
+            _ => match self.packet_identifier {
+                Some(_) => Ok(()),
+                None => Err(MandatoryPropertyMissing.into()),
+            },
         }
     }
 
@@ -193,13 +192,12 @@ pub(crate) struct PublishTx<'a> {
 
 impl<'a> PublishTxBuilder<'a> {
     fn validate(&self) -> Result<(), CodecError> {
-        match self.qos {
-            Some(QoS::AtMostOnce) => Ok(()),
-            None => Ok(()),
-            Some(_) => self
-                .packet_identifier
-                .map(|_| ())
-                .ok_or(MandatoryPropertyMissing.into()),
+        match self.qos.unwrap_or_default() {
+            QoS::AtMostOnce => Ok(()),
+            _ => match self.packet_identifier {
+                Some(_) => Ok(()),
+                None => Err(MandatoryPropertyMissing.into()),
+            },
         }
     }
 

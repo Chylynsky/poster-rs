@@ -1,8 +1,10 @@
 use crate::{
     codec::*,
-    core::base_types::{Binary, NonZero, QoS, UTF8String},
+    core::base_types::{NonZero, QoS},
 };
-use std::str;
+use std::{error::Error, fmt::Display, str};
+
+use super::error::MqttError;
 
 pub struct ConnectRsp {
     packet: ConnackRx,
@@ -76,16 +78,6 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
-    pub fn reason_string(&self) -> Option<&str> {
-        self.packet
-            .reason_string
-            .as_ref()
-            .map(|val| &val.0)
-            .map(|val| val.0.as_ref())
-            .map(str::from_utf8)
-            .and_then(Result::ok)
-    }
-
     pub fn response_information(&self) -> Option<&str> {
         self.packet
             .response_information
@@ -123,10 +115,6 @@ impl ConnectRsp {
             .map(|val| &val.0)
             .map(|val| val.0.as_ref())
     }
-
-    pub fn user_property(&self) {
-        todo!()
-    }
 }
 
 pub struct AuthRsp {
@@ -161,109 +149,111 @@ impl AuthRsp {
             .map(|val| &val.0)
             .map(|val| val.0.as_ref())
     }
+}
 
-    pub fn reason_string(&self) -> Option<&str> {
-        self.packet
-            .reason_string
-            .as_ref()
-            .map(|val| &val.0)
-            .map(|val| val.0.as_ref())
-            .map(str::from_utf8)
-            .and_then(Result::ok)
-    }
+#[derive(Debug, Clone, Copy)]
+pub enum PublishError {
+    Puback(PubackReason),
+    Pubrec(PubrecReason),
+    Pubcomp(PubcompReason),
+}
 
-    pub fn user_property(&self) {
-        todo!()
+impl From<PublishError> for MqttError {
+    fn from(err: PublishError) -> Self {
+        MqttError::PublishError(err)
     }
 }
 
-pub struct SubscribeRsp {
-    packet: SubackRx,
-}
+impl Error for PublishError {}
 
-impl From<SubackRx> for SubscribeRsp {
-    fn from(packet: SubackRx) -> Self {
-        Self { packet }
+impl Display for PublishError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Puback(reason) => write!(
+                f,
+                "{{ \"type\": \"PublishError\", \"message\": \"QoS 1 publish error: {} [{:?}]\" }}",
+                *reason as u8, reason,
+            ),
+
+            Self::Pubrec(reason) => write!(
+                f,
+                "{{ \"type\": \"PublishError\", \"message\": \"QoS 2 publish error: {} [{:?}]\" }}",
+                *reason as u8, reason,
+            ),
+
+            Self::Pubcomp(reason) => write!(
+                f,
+                "{{ \"type\": \"PublishError\", \"message\": \"QoS 2 publish error: {} [{:?}]\" }}",
+                *reason as u8, reason,
+            ),
+        }
     }
 }
 
-impl SubscribeRsp {
-    pub fn reason(&self) -> SubackReason {
-        self.packet.payload.first().copied().unwrap()
-    }
-
-    pub fn reason_string(&self) -> Option<&str> {
-        self.packet
-            .reason_string
-            .as_ref()
-            .map(|val| &val.0)
-            .map(|val| val.0.as_ref())
-            .map(str::from_utf8)
-            .and_then(Result::ok)
-    }
-
-    pub fn user_property(&self) {
-        todo!()
+impl From<PubackReason> for PublishError {
+    fn from(reason: PubackReason) -> Self {
+        debug_assert!(reason as u8 >= 0x80);
+        Self::Puback(reason)
     }
 }
 
-pub struct PublishRsp {
-    packet: PubackRx,
-}
-
-impl From<PubackRx> for PublishRsp {
-    fn from(packet: PubackRx) -> Self {
-        Self { packet }
+impl From<PubrecReason> for PublishError {
+    fn from(reason: PubrecReason) -> Self {
+        debug_assert!(reason as u8 >= 0x80);
+        Self::Pubrec(reason)
     }
 }
 
-impl PublishRsp {
-    pub fn reason(&self) -> PubackReason {
-        self.packet.reason
-    }
-
-    pub fn reason_string(&self) -> Option<&str> {
-        self.packet
-            .reason_string
-            .as_ref()
-            .map(|val| &val.0)
-            .map(|val| val.0.as_ref())
-            .map(str::from_utf8)
-            .and_then(Result::ok)
-    }
-
-    pub fn user_property(&self) {
-        todo!()
+impl From<PubcompReason> for PublishError {
+    fn from(reason: PubcompReason) -> Self {
+        debug_assert!(reason as u8 >= 0x80);
+        Self::Pubcomp(reason)
     }
 }
 
-pub struct UnsubscribeRsp {
-    packet: UnsubackRx,
+#[derive(Debug, Clone, Copy)]
+pub struct UnsubscribeError {
+    pub reason: UnsubackReason,
 }
 
-impl From<UnsubackRx> for UnsubscribeRsp {
-    fn from(packet: UnsubackRx) -> Self {
-        Self { packet }
+impl From<UnsubscribeError> for MqttError {
+    fn from(err: UnsubscribeError) -> Self {
+        MqttError::UnsubscribeError(err)
     }
 }
 
-impl UnsubscribeRsp {
-    pub fn reason(&self) -> UnsubackReason {
-        self.packet.payload.first().copied().unwrap()
-    }
+impl Error for UnsubscribeError {}
 
-    pub fn reason_string(&self) -> Option<&str> {
-        self.packet
-            .reason_string
-            .as_ref()
-            .map(|val| &val.0)
-            .map(|val| val.0.as_ref())
-            .map(str::from_utf8)
-            .and_then(Result::ok)
+impl Display for UnsubscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ \"type\": \"UnsubscribeError\", \"message\": \"unsubscribe error: {} [{:?}]\" }}",
+            self.reason as u8, self.reason,
+        )
     }
+}
 
-    pub fn user_property(&self) {
-        todo!()
+#[derive(Debug, Clone, Copy)]
+pub struct SubscribeError {
+    pub reason: SubackReason,
+}
+
+impl From<SubscribeError> for MqttError {
+    fn from(err: SubscribeError) -> Self {
+        MqttError::SubscribeError(err)
+    }
+}
+
+impl Error for SubscribeError {}
+
+impl Display for SubscribeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ \"type\": \"SubscribeError\", \"message\": \"subscribe error: {} [{:?}]\" }}",
+            self.reason as u8, self.reason,
+        )
     }
 }
 
@@ -343,10 +333,6 @@ impl PublishData {
             .map(|val| val.0.as_ref())
             .map(str::from_utf8)
             .and_then(Result::ok)
-    }
-
-    pub fn user_property(&self) {
-        todo!()
     }
 
     pub fn payload(&self) -> &[u8] {

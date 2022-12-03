@@ -10,15 +10,13 @@ pub(crate) struct TxPacketStream<TxStreamT> {
 }
 
 impl<TxStreamT> From<TxStreamT> for TxPacketStream<TxStreamT> {
-   fn from(inner: TxStreamT) -> Self {
-        Self {
-            stream: inner,
-        }
+    fn from(inner: TxStreamT) -> Self {
+        Self { stream: inner }
     }
 }
 
 impl<TxStreamT> TxPacketStream<TxStreamT> {
-    pub(crate) async fn write(&mut self, packet: Bytes) -> Result<usize, io::Error>
+    pub(crate) async fn write(&mut self, packet: &[u8]) -> Result<usize, io::Error>
     where
         TxStreamT: AsyncWrite + Unpin,
     {

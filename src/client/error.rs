@@ -1,11 +1,14 @@
-use std::{error::Error, fmt, io};
-
+use crate::{
+    client::rsp::{PublishError, SubscribeError, UnsubscribeError},
+    codec::DisconnectRx,
+    core::error::CodecError,
+    DisconnectReason,
+};
 use futures::channel::{
     mpsc::{SendError, TrySendError},
     oneshot::Canceled,
 };
-
-use crate::{codec::DisconnectRx, core::error::CodecError, DisconnectReason};
+use std::{error::Error, fmt, io};
 
 #[derive(Debug, Clone)]
 pub struct SocketClosed;
@@ -120,14 +123,30 @@ impl From<&str> for InternalError {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct QuotaExceeded;
+
+impl fmt::Display for QuotaExceeded {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{{ \"type\": \"QuotaExceeded\", \"message\": \"quota exceeded\" }}"
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum MqttError {
     InternalError(InternalError),
+    UnsubscribeError(UnsubscribeError),
+    SubscribeError(SubscribeError),
+    PublishError(PublishError),
     SocketClosed(SocketClosed),
     HandleClosed(HandleClosed),
     ContextExited(ContextExited),
     Disconnected(Disconnected),
     CodecError(CodecError),
+    QuotaExceeded(QuotaExceeded),
 }
 
 impl fmt::Display for MqttError {
@@ -135,6 +154,9 @@ impl fmt::Display for MqttError {
         match self {
             Self::CodecError(err) => write!(f, "{}", err),
             Self::InternalError(err) => write!(f, "{}", err),
+            Self::UnsubscribeError(err) => write!(f, "{}", err),
+            Self::SubscribeError(err) => write!(f, "{}", err),
+            Self::PublishError(err) => write!(f, "{}", err),
             Self::SocketClosed(err) => {
                 write!(f, "{{ \"type\": \"MqttError\", \"message\": \"{}\" }}", err)
             }
@@ -147,6 +169,7 @@ impl fmt::Display for MqttError {
             Self::Disconnected(err) => {
                 write!(f, "{{ \"type\": \"MqttError\", \"message\": \"{}\" }}", err)
             }
+            Self::QuotaExceeded(err) => write!(f, "{}", err),
         }
     }
 }
@@ -222,5 +245,11 @@ impl From<DisconnectRx> for MqttError {
 impl From<DisconnectReason> for MqttError {
     fn from(reason: DisconnectReason) -> Self {
         Self::Disconnected(reason.into())
+    }
+}
+
+impl From<QuotaExceeded> for MqttError {
+    fn from(err: QuotaExceeded) -> Self {
+        Self::QuotaExceeded(err)
     }
 }

@@ -181,12 +181,6 @@ impl<'a> AuthOpts<'a> {
         self
     }
 
-    pub fn reason_string(mut self, val: &'a str) -> Self {
-        self.builder
-            .reason_string(ReasonStringRef::from(UTF8StringRef(val)));
-        self
-    }
-
     pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
         self.builder
             .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
@@ -262,6 +256,7 @@ impl<'a> SubscribeOpts<'a> {
 
 #[derive(Default)]
 pub struct PublishOpts<'a> {
+    pub(crate) qos: Option<QoS>,
     builder: PublishTxBuilder<'a>,
 }
 
@@ -276,6 +271,7 @@ impl<'a> PublishOpts<'a> {
     }
 
     pub fn qos(mut self, val: QoS) -> Self {
+        self.qos = Some(val);
         self.builder.qos(val);
         self
     }

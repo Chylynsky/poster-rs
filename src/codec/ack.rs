@@ -12,6 +12,10 @@ use crate::core::{
 use core::{cmp::PartialEq, mem};
 use derive_builder::Builder;
 
+pub(crate) trait FixedHeader {
+    const FIXED_HDR: u8;
+}
+
 #[derive(Builder)]
 #[builder(build_fn(error = "CodecError"))]
 pub(crate) struct AckRx<ReasonT>
@@ -45,17 +49,9 @@ where
     }
 }
 
-impl<ReasonT> AckRx<ReasonT>
-where
-    Self: PacketID,
-    ReasonT: Default + PartialEq + ByteLen,
-{
-    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
-}
-
 impl<ReasonT> TryDecode for AckRx<ReasonT>
 where
-    Self: PacketID,
+    Self: PacketID + FixedHeader,
     ReasonT: Default + PartialEq + TryDecode + ByteLen + Clone,
     <ReasonT as TryDecode>::Error: Into<CodecError>,
 {
@@ -85,15 +81,20 @@ where
         builder.packet_identifier(packet_id);
 
         // When remaining length is 2, the Reason is 0x00 and there are no properties.
-        if remaining_len.value() == 2 {
+        if remaining_len == 2 {
             return builder.build();
         }
 
         let reason = decoder.try_decode::<ReasonT>().map_err(|err| err.into())?;
         builder.reason(reason);
 
-        let byte_len = decoder.try_decode::<VarSizeInt>()?;
-        if byte_len > decoder.remaining() {
+        // When remaining length is less than 4 there are no properties.
+        if remaining_len < 4 {
+            return builder.build();
+        }
+
+        let property_len = decoder.try_decode::<VarSizeInt>()?;
+        if property_len > decoder.remaining() {
             return Err(InvalidPropertyLength.into());
         }
 
@@ -158,8 +159,6 @@ where
     Self: PacketID,
     ReasonT: Default + PartialEq + ByteLen,
 {
-    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
-
     fn property_len(&self) -> VarSizeInt {
         VarSizeInt::try_from(
             self.reason_string
@@ -194,7 +193,7 @@ where
 
 impl<'a, ReasonT> SizedPacket for AckTx<'a, ReasonT>
 where
-    Self: PacketID,
+    Self: PacketID + FixedHeader,
     ReasonT: Default + PartialEq + ByteLen,
 {
     fn packet_len(&self) -> usize {
@@ -205,7 +204,7 @@ where
 
 impl<'a, ReasonT> Encode for AckTx<'a, ReasonT>
 where
-    AckTx<'a, ReasonT>: PacketID,
+    AckTx<'a, ReasonT>: PacketID + FixedHeader,
     ReasonT: Default + Encode + PartialEq + ByteLen + Copy,
 {
     fn encode(&self, buf: &mut BytesMut) {
@@ -243,12 +242,11 @@ pub(crate) mod test {
     pub(crate) fn from_bytes_impl<ReasonT>()
     where
         ReasonT: Debug + PartialEq + Default + TryDecode + ByteLen + Clone,
-        AckRx<ReasonT>: PacketID,
+        AckRx<ReasonT>: PacketID + FixedHeader,
         <ReasonT as TryDecode>::Error: Debug + Into<CodecError>,
     {
-        let fixed_hdr = ((AckRx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let input_packet = [
-            fixed_hdr,
+            AckRx::<ReasonT>::FIXED_HDR,
             25,   // Remaining length
             0x45, // Packet ID MSB
             0x73, // Packet ID LSB
@@ -298,12 +296,12 @@ pub(crate) mod test {
     pub(crate) fn from_bytes_short_impl<ReasonT>()
     where
         ReasonT: Debug + PartialEq + Default + TryDecode + ByteLen + Clone,
-        AckRx<ReasonT>: PacketID,
+        AckRx<ReasonT>: PacketID + FixedHeader,
         <ReasonT as TryDecode>::Error: Debug + Into<CodecError>,
     {
-        let fixed_hdr = ((AckRx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let input_packet = [
-            fixed_hdr, 2,    // Remaining length
+            AckRx::<ReasonT>::FIXED_HDR,
+            2,    // Remaining length
             0x45, // Packet ID MSB
             0x73, // Packet ID LSB
         ];
@@ -316,11 +314,10 @@ pub(crate) mod test {
     pub(crate) fn to_bytes_impl<'a, ReasonT>()
     where
         ReasonT: Copy + PartialEq + Default + Encode + ByteLen,
-        AckTx<'a, ReasonT>: PacketID,
+        AckTx<'a, ReasonT>: PacketID + FixedHeader,
     {
-        let fixed_hdr = ((AckTx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let expected_packet = [
-            fixed_hdr,
+            AckTx::<ReasonT>::FIXED_HDR,
             25,   // Remaining length
             0x45, // Packet ID MSB
             0x73, // Packet ID LSB
@@ -364,11 +361,11 @@ pub(crate) mod test {
     pub(crate) fn to_bytes_short_impl<'a, ReasonT>()
     where
         ReasonT: Copy + PartialEq + Default + Encode + ByteLen,
-        AckTx<'a, ReasonT>: PacketID,
+        AckTx<'a, ReasonT>: PacketID + FixedHeader,
     {
-        let fixed_hdr = ((AckTx::<ReasonT>::PACKET_ID as u8) << 4) as u8;
         let expected_packet = [
-            fixed_hdr, 2,    // Remaining length
+            AckTx::<ReasonT>::FIXED_HDR,
+            2,    // Remaining length
             0x45, // Packet ID MSB
             0x73, // Packet ID LSB
         ];

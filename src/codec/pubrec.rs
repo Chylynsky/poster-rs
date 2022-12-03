@@ -1,7 +1,7 @@
 use bytes::{Bytes, BytesMut};
 
 use crate::{
-    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder},
+    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder, FixedHeader},
     core::{
         error::{ConversionError, InvalidValue},
         utils::{ByteLen, Encode, PacketID, TryDecode},
@@ -72,10 +72,18 @@ impl PacketID for PubrecRx {
     const PACKET_ID: u8 = 5;
 }
 
+impl FixedHeader for PubrecRx {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
+}
+
 pub(crate) type PubrecTx<'a> = AckTx<'a, PubrecReason>;
 
 impl<'a> PacketID for PubrecTx<'a> {
     const PACKET_ID: u8 = 5;
+}
+
+impl<'a> FixedHeader for PubrecTx<'a> {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 }
 
 pub(crate) type PubrecRxBuilder = AckRxBuilder<PubrecReason>;

@@ -5,6 +5,7 @@ mod opts;
 mod rsp;
 mod streams;
 
-pub use context::{run, Context, ContextHandle};
-pub use opts::{ConnectOpts, PublishOpts, SubscribeOpts, UnsubscribeOpts};
-pub use rsp::{ConnectRsp, PublishRsp, SubscribeRsp, UnsubscribeRsp};
+pub use context::*;
+pub use error::*;
+pub use opts::*;
+pub use rsp::*;

@@ -1,7 +1,7 @@
 use bytes::{Bytes, BytesMut};
 
 use crate::{
-    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder},
+    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder, FixedHeader},
     core::{
         error::{ConversionError, InvalidValue},
         utils::{ByteLen, Encode, PacketID, TryDecode},
@@ -73,12 +73,20 @@ impl PacketID for PubackRx {
     const PACKET_ID: u8 = 4;
 }
 
+impl FixedHeader for PubackRx {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
+}
+
 pub(crate) type PubackRxBuilder = AckRxBuilder<PubackReason>;
 
 pub(crate) type PubackTx<'a> = AckTx<'a, PubackReason>;
 
 impl<'a> PacketID for PubackTx<'a> {
     const PACKET_ID: u8 = 4;
+}
+
+impl<'a> FixedHeader for PubackTx<'a> {
+    const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 }
 
 pub(crate) type PubackTxBuilder<'a> = AckTxBuilder<'a, PubackReason>;
