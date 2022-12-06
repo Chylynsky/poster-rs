@@ -123,7 +123,7 @@ impl<'a> Encoder<'a> {
     where
         T: Encode,
     {
-        val.encode(&mut self.buf)
+        val.encode(self.buf)
     }
 }
 

@@ -1,10 +1,9 @@
 use crate::{
+    client::error::MqttError,
     codec::*,
     core::base_types::{NonZero, QoS},
 };
 use std::{error::Error, fmt::Display, str};
-
-use super::error::MqttError;
 
 pub struct ConnectRsp {
     packet: ConnackRx,

@@ -43,7 +43,7 @@ impl ByteLen for SubscriptionOptions {
 impl Encode for SubscriptionOptions {
     fn encode(&self, buf: &mut BytesMut) {
         let mut encoder = Encoder::from(buf);
-        let qos = QoS::from(self.maximum_qos);
+        let qos = self.maximum_qos;
         let val = (qos as u8)
             | ((self.no_local as u8) << 3)
             | ((self.retain_as_published as u8) << 4)
@@ -155,7 +155,7 @@ impl<'a> Encode for SubscribeTx<'a> {
 
         encoder.encode(self.property_len());
 
-        if let Some(val) = self.subscription_identifier.clone() {
+        if let Some(val) = self.subscription_identifier {
             encoder.encode(val);
         }
 

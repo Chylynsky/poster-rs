@@ -295,7 +295,7 @@ impl TryDecode for Property {
         let mut decoder = Decoder::from(buf);
         let id = decoder.try_decode::<u8>()?; // Technically, the ID is Variable Byte Integer
 
-        match u8::from(id) {
+        match id {
             PayloadFormatIndicator::PROPERTY_ID => decoder
                 .try_decode::<bool>()
                 .map(|val| Property::PayloadFormatIndicator(PayloadFormatIndicator(val)))
@@ -600,7 +600,7 @@ mod test {
                 (
                     &input_bytes,
                     AuthenticationData::PROPERTY_ID,
-                    Property::AuthenticationData(AuthenticationData(expected_binary.clone())),
+                    Property::AuthenticationData(AuthenticationData(expected_binary)),
                 ),
             ];
 
@@ -657,7 +657,7 @@ mod test {
                 (
                     &input_bytes,
                     ReasonString::PROPERTY_ID,
-                    Property::ReasonString(ReasonString(expected_str.clone())),
+                    Property::ReasonString(ReasonString(expected_str)),
                 ),
             ];
 
@@ -836,7 +836,7 @@ mod test {
                 Vec::from(EXPECTED_BUF),
             );
             utf8_string_test(ServerReference(input_str.clone()), Vec::from(EXPECTED_BUF));
-            utf8_string_test(ReasonString(input_str.clone()), Vec::from(EXPECTED_BUF));
+            utf8_string_test(ReasonString(input_str), Vec::from(EXPECTED_BUF));
         }
 
         #[test]

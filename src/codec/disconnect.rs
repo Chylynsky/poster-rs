@@ -186,13 +186,13 @@ impl TryDecode for DisconnectRx {
                     return Err(UnexpectedProperty.into());
                 }
                 Property::ReasonString(val) => {
-                    builder.reason_string(val.into());
+                    builder.reason_string(val);
                 }
                 Property::ServerReference(val) => {
-                    builder.server_reference(val.into());
+                    builder.server_reference(val);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.into());
+                    builder.user_property(val);
                 }
                 _ => {
                     return Err(UnexpectedProperty.into());
@@ -304,7 +304,7 @@ impl<'a> Encode for DisconnectTx<'a> {
         encoder.encode(self.property_len());
 
         if self.session_expiry_interval != SessionExpiryInterval::default() {
-            encoder.encode(self.session_expiry_interval.clone());
+            encoder.encode(self.session_expiry_interval);
         }
 
         if let Some(val) = self.reason_string {

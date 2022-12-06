@@ -2,13 +2,13 @@ use crate::core::{
     base_types::*,
     error::{
         CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
-        InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
+        InvalidValue, UnexpectedProperty,
     },
     properties::*,
     utils::{ByteLen, Decoder, PacketID, TryDecode},
 };
 use bytes::Bytes;
-use core::mem;
+
 use derive_builder::Builder;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -124,7 +124,7 @@ impl TryDecode for SubackRx {
         let mut builder = SubackRxBuilder::default();
         let mut decoder = Decoder::from(bytes);
 
-        let fixed_hdr = decoder
+        let _fixed_hdr = decoder
             .try_decode::<u8>()
             .map_err(CodecError::from)
             .and_then(|val| {
@@ -155,10 +155,10 @@ impl TryDecode for SubackRx {
             match maybe_property {
                 Ok(property) => match property {
                     Property::ReasonString(val) => {
-                        builder.reason_string(val.into());
+                        builder.reason_string(val);
                     }
                     Property::UserProperty(val) => {
-                        builder.user_property(val.into());
+                        builder.user_property(val);
                     }
                     _ => {
                         return Err(UnexpectedProperty.into());

@@ -100,7 +100,7 @@ impl TryDecode for VarSizeInt {
 
 impl Encode for VarSizeInt {
     fn encode(&self, buf: &mut BytesMut) {
-        return match self.0 {
+        match self.0 {
             VarSizeIntState::SingleByte(val) => {
                 buf.put_u8(val);
             }
@@ -135,7 +135,7 @@ impl Encode for VarSizeInt {
 
                 buf.put(&[byte0, byte1, byte2, byte3][..]);
             }
-        };
+        }
     }
 }
 
@@ -217,13 +217,13 @@ impl PartialOrd<u16> for VarSizeInt {
 
 impl PartialOrd<u32> for VarSizeInt {
     fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
-        Some(self.value().cmp(&other))
+        Some(self.value().cmp(other))
     }
 }
 
 impl PartialOrd<usize> for VarSizeInt {
     fn partial_cmp(&self, other: &usize) -> Option<std::cmp::Ordering> {
-        Some((self.value() as usize).cmp(&other))
+        Some((self.value() as usize).cmp(other))
     }
 }
 
@@ -309,7 +309,7 @@ impl From<u16> for VarSizeInt {
     fn from(val: u16) -> Self {
         if val <= 127 {
             return Self(VarSizeIntState::SingleByte(val as u8));
-        } else if val >= 128 && val <= 16383 {
+        } else if (128..=16383).contains(&val) {
             return Self(VarSizeIntState::TwoByte(val));
         }
 
@@ -323,9 +323,9 @@ impl TryFrom<u32> for VarSizeInt {
     fn try_from(val: u32) -> Result<Self, Self::Error> {
         if val <= 127 {
             Ok(Self(VarSizeIntState::SingleByte(val as u8)))
-        } else if val >= 128 && val <= 16383 {
+        } else if (128..=16383).contains(&val) {
             Ok(Self(VarSizeIntState::TwoByte(val as u16)))
-        } else if val >= 16384 && val <= 2097151 {
+        } else if (16384..=2097151).contains(&val) {
             Ok(Self(VarSizeIntState::ThreeByte(val)))
         } else if val as usize <= Self::MAX {
             Ok(Self(VarSizeIntState::FourByte(val)))
@@ -341,9 +341,9 @@ impl TryFrom<usize> for VarSizeInt {
     fn try_from(val: usize) -> Result<Self, Self::Error> {
         if val <= 127 {
             Ok(Self(VarSizeIntState::SingleByte(val as u8)))
-        } else if val >= 128 && val <= 16383 {
+        } else if (128..=16383).contains(&val) {
             Ok(Self(VarSizeIntState::TwoByte(val as u16)))
-        } else if val >= 16384 && val <= 2097151 {
+        } else if (16384..=2097151).contains(&val) {
             Ok(Self(VarSizeIntState::ThreeByte(val as u32)))
         } else if val <= Self::MAX {
             Ok(Self(VarSizeIntState::FourByte(val as u32)))

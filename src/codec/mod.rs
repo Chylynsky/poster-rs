@@ -17,7 +17,7 @@ mod pingreq;
 mod subscribe;
 mod unsubscribe;
 
-mod packets;
+mod packet;
 
 pub(crate) use auth::{AuthRx, AuthTx, AuthTxBuilder};
 pub(crate) use connect::{ConnectTx, ConnectTxBuilder};
@@ -39,7 +39,7 @@ pub(crate) use pingresp::PingrespRx;
 pub(crate) use suback::SubackRx;
 pub(crate) use unsuback::UnsubackRx;
 
-pub(crate) use packets::{RxPacket, TxPacket};
+pub(crate) use packet::{RxPacket, TxPacket};
 
 pub use auth::AuthReason;
 pub use connack::ConnectReason;

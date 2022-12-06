@@ -8,7 +8,7 @@ use crate::core::{
     utils::{ByteLen, Decoder, PacketID, TryDecode},
 };
 use bytes::Bytes;
-use core::mem;
+
 use derive_builder::Builder;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -144,10 +144,10 @@ impl TryDecode for UnsubackRx {
             match maybe_property {
                 Ok(property) => match property {
                     Property::ReasonString(val) => {
-                        builder.reason_string(val.into());
+                        builder.reason_string(val);
                     }
                     Property::UserProperty(val) => {
-                        builder.user_property(val.into());
+                        builder.user_property(val);
                     }
                     _ => return Err(UnexpectedProperty.into()),
                 },

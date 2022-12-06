@@ -1,3 +1,3 @@
 mod packet_stream;
 
-pub(crate) use packet_stream::PacketStream;
+pub(crate) use packet_stream::{RxPacketStream, TxPacketStream};

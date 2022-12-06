@@ -3,7 +3,7 @@ use crate::{
     core::{
         base_types::VarSizeInt,
         error::{CodecError, ConversionError},
-        utils::{Decoder, TryDecode},
+        utils::TryDecode,
     },
 };
 use bytes::{Bytes, BytesMut};
@@ -12,7 +12,8 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use futures::{AsyncRead, Stream};
+use futures::{AsyncRead, AsyncWrite, AsyncWriteExt, Stream};
+use std::io;
 
 enum PacketStreamState {
     Idle,
@@ -20,7 +21,7 @@ enum PacketStreamState {
     ReadPacketData,
 }
 
-pub(crate) struct PacketStream<StreamT> {
+pub(crate) struct RxPacketStream<StreamT> {
     stream: StreamT,
     buf: BytesMut,
     offset: usize,
@@ -30,7 +31,7 @@ pub(crate) struct PacketStream<StreamT> {
     state: PacketStreamState,
 }
 
-impl<StreamT> From<StreamT> for PacketStream<StreamT> {
+impl<StreamT> From<StreamT> for RxPacketStream<StreamT> {
     fn from(stream: StreamT) -> Self {
         Self {
             stream,
@@ -42,7 +43,7 @@ impl<StreamT> From<StreamT> for PacketStream<StreamT> {
     }
 }
 
-impl<StreamT> PacketStream<StreamT> {
+impl<StreamT> RxPacketStream<StreamT> {
     pub(crate) fn with_capacity(capacity: usize, inner: StreamT) -> Self {
         Self {
             stream: inner,
@@ -76,7 +77,7 @@ impl<StreamT> PacketStream<StreamT> {
             PacketStreamState::Idle => {
                 self.offset = size;
                 self.state = PacketStreamState::ReadPacketLen;
-                return self.step(0); // Size is already consumed for setting the offset
+                self.step(0) // Size is already consumed for setting the offset
             }
             PacketStreamState::ReadPacketLen => {
                 self.offset += size;
@@ -88,12 +89,12 @@ impl<StreamT> PacketStream<StreamT> {
 
                 // Omit packet ID, try to read the remaining length.
                 let maybe_remaining_len = VarSizeInt::try_from(&self.buf[1..self.offset])
-                    .map(|val| Some(val))
+                    .map(Some)
                     .or_else(|err| {
                         if let ConversionError::InsufficientBufferSize(_) = err {
                             return Ok(None); // Need to read more data
                         }
-                        return Err(err);
+                        Err(err)
                     });
 
                 if let Err(err) = maybe_remaining_len {
@@ -108,7 +109,7 @@ impl<StreamT> PacketStream<StreamT> {
                     return self.step(0);
                 }
 
-                return None;
+                None
             }
             PacketStreamState::ReadPacketData => {
                 self.offset += size;
@@ -125,7 +126,7 @@ impl<StreamT> PacketStream<StreamT> {
     }
 }
 
-impl<StreamT> Stream for PacketStream<StreamT>
+impl<StreamT> Stream for RxPacketStream<StreamT>
 where
     StreamT: AsyncRead + Unpin,
 {
@@ -159,7 +160,7 @@ where
 
             if let Some(packet) = self
                 .step(size)
-                .map(|maybe_buf| maybe_buf.and_then(|buf| RxPacket::try_decode(buf)))
+                .map(|maybe_buf| maybe_buf.and_then(RxPacket::try_decode))
             {
                 cx.waker().wake_by_ref();
                 return Poll::Ready(Some(packet));
@@ -169,5 +170,32 @@ where
         }
 
         Poll::Pending
+    }
+}
+
+pub(crate) struct TxPacketStream<TxStreamT> {
+    stream: TxStreamT,
+}
+
+impl<TxStreamT> From<TxStreamT> for TxPacketStream<TxStreamT> {
+    fn from(inner: TxStreamT) -> Self {
+        Self { stream: inner }
+    }
+}
+
+impl<TxStreamT> TxPacketStream<TxStreamT> {
+    pub(crate) async fn write(&mut self, packet: &[u8]) -> Result<usize, io::Error>
+    where
+        TxStreamT: AsyncWrite + Unpin,
+    {
+        let mut remaining = packet.len();
+        while remaining != 0 {
+            remaining -= self
+                .stream
+                .write(&packet[(packet.len() - remaining)..])
+                .await?;
+        }
+
+        Ok(packet.len())
     }
 }

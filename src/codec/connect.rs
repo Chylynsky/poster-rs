@@ -278,27 +278,27 @@ impl<'a> Encode for ConnectTx<'a> {
 
         encoder.encode(self.property_len());
 
-        if let Some(val) = self.session_expiry_interval.clone() {
+        if let Some(val) = self.session_expiry_interval {
             encoder.encode(val)
         }
 
-        if let Some(val) = self.receive_maximum.clone() {
+        if let Some(val) = self.receive_maximum {
             encoder.encode(val)
         }
 
-        if let Some(val) = self.maximum_packet_size.clone() {
+        if let Some(val) = self.maximum_packet_size {
             encoder.encode(val)
         }
 
-        if let Some(val) = self.topic_alias_maximum.clone() {
+        if let Some(val) = self.topic_alias_maximum {
             encoder.encode(val)
         }
 
-        if let Some(val) = self.request_response_information.clone() {
+        if let Some(val) = self.request_response_information {
             encoder.encode(val)
         }
 
-        if let Some(val) = self.request_problem_information.clone() {
+        if let Some(val) = self.request_problem_information {
             encoder.encode(val)
         }
 
@@ -321,15 +321,15 @@ impl<'a> Encode for ConnectTx<'a> {
         if will_flag != 0 {
             encoder.encode(self.will_property_len());
 
-            if let Some(val) = self.will_delay_interval.clone() {
+            if let Some(val) = self.will_delay_interval {
                 encoder.encode(val)
             }
 
-            if let Some(val) = self.will_payload_format_indicator.clone() {
+            if let Some(val) = self.will_payload_format_indicator {
                 encoder.encode(val)
             }
 
-            if let Some(val) = self.will_message_expiry_interval.clone() {
+            if let Some(val) = self.will_message_expiry_interval {
                 encoder.encode(val)
             }
 

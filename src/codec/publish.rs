@@ -1,7 +1,7 @@
 use crate::core::{
     base_types::*,
     error::{
-        CodecError, InsufficientBufferSize, InvalidPacketHeader, InvalidPacketSize,
+        CodecError, InvalidPacketHeader, InvalidPacketSize,
         InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
     },
     properties::*,
@@ -121,28 +121,28 @@ impl TryDecode for PublishRx {
 
             match property.unwrap() {
                 Property::PayloadFormatIndicator(val) => {
-                    builder.payload_format_indicator(val.into());
+                    builder.payload_format_indicator(val);
                 }
                 Property::TopicAlias(val) => {
-                    builder.topic_alias(val.into());
+                    builder.topic_alias(val);
                 }
                 Property::MessageExpiryInterval(val) => {
-                    builder.message_expiry_interval(val.into());
+                    builder.message_expiry_interval(val);
                 }
                 Property::SubscriptionIdentifier(val) => {
-                    builder.subscription_identifier(val.into());
+                    builder.subscription_identifier(val);
                 }
                 Property::CorrelationData(val) => {
-                    builder.correlation_data(val.into());
+                    builder.correlation_data(val);
                 }
                 Property::ResponseTopic(val) => {
-                    builder.response_topic(val.into());
+                    builder.response_topic(val);
                 }
                 Property::ContentType(val) => {
-                    builder.content_type(val.into());
+                    builder.content_type(val);
                 }
                 Property::UserProperty(val) => {
-                    builder.user_property(val.into());
+                    builder.user_property(val);
                 }
                 _ => {
                     return Err(UnexpectedProperty.into());
@@ -314,19 +314,19 @@ impl<'a> Encode for PublishTx<'a> {
 
         encoder.encode(self.property_len());
 
-        if let Some(val) = self.payload_format_indicator.clone() {
+        if let Some(val) = self.payload_format_indicator {
             encoder.encode(val);
         }
 
-        if let Some(val) = self.topic_alias.clone() {
+        if let Some(val) = self.topic_alias {
             encoder.encode(val);
         }
 
-        if let Some(val) = self.message_expiry_interval.clone() {
+        if let Some(val) = self.message_expiry_interval {
             encoder.encode(val);
         }
 
-        if let Some(val) = self.subscription_identifier.clone() {
+        if let Some(val) = self.subscription_identifier {
             encoder.encode(val);
         }
 
