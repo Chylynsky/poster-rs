@@ -1,8 +1,9 @@
 use crate::core::{
     base_types::*,
+    collections::UserProperties,
     error::{
-        CodecError, InvalidPacketHeader, InvalidPacketSize,
-        InvalidPropertyLength, MandatoryPropertyMissing, UnexpectedProperty,
+        CodecError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
+        MandatoryPropertyMissing, UnexpectedProperty,
     },
     properties::*,
     utils::{ByteLen, Decoder, Encode, Encoder, PacketID, SizedPacket, TryDecode},
@@ -40,7 +41,7 @@ pub(crate) struct PublishRx {
     #[builder(setter(strip_option), default)]
     pub(crate) content_type: Option<ContentType>,
     #[builder(setter(custom), default)]
-    pub(crate) user_property: Vec<UserProperty>,
+    pub(crate) user_property: UserProperties,
 
     #[builder(default)]
     pub(crate) payload: Payload,
@@ -63,7 +64,7 @@ impl PublishRxBuilder {
                 user_property.push(value);
             }
             None => {
-                self.user_property = Some(Vec::new());
+                self.user_property = Some(UserProperties::new());
                 self.user_property.as_mut().unwrap().push(value);
             }
         }

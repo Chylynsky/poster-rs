@@ -136,15 +136,7 @@ where
         const CHUNK_SIZE: usize = 2048;
 
         let (mut stream, buf, offset, _, _) = self.split_borrows_mut();
-
-        if buf.capacity() - *offset < CHUNK_SIZE {
-            buf.reserve(CHUNK_SIZE);
-        }
-
-        unsafe {
-            // We do not care about initialization.
-            buf.set_len(*offset + CHUNK_SIZE);
-        }
+        buf.resize(*offset + CHUNK_SIZE, 0);
 
         if let Poll::Ready(result) =
             Pin::new(&mut stream).poll_read(cx, &mut buf[*offset..*offset + CHUNK_SIZE])

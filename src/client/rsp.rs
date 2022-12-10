@@ -1,7 +1,10 @@
 use crate::{
     client::error::MqttError,
     codec::*,
-    core::base_types::{NonZero, QoS},
+    core::{
+        base_types::{NonZero, QoS},
+        collections::UserProperties,
+    },
 };
 use std::{error::Error, fmt::Display, str};
 
@@ -77,6 +80,16 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
     pub fn response_information(&self) -> Option<&str> {
         self.packet
             .response_information
@@ -114,6 +127,10 @@ impl ConnectRsp {
             .map(|val| &val.0)
             .map(|val| val.0.as_ref())
     }
+
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
+    }
 }
 
 pub struct AuthRsp {
@@ -129,6 +146,16 @@ impl From<AuthRx> for AuthRsp {
 impl AuthRsp {
     pub fn reason(&self) -> AuthReason {
         self.packet.reason
+    }
+
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
     }
 
     pub fn authentication_method(&self) -> Option<&str> {
@@ -147,6 +174,10 @@ impl AuthRsp {
             .as_ref()
             .map(|val| &val.0)
             .map(|val| val.0.as_ref())
+    }
+
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
     }
 }
 
@@ -336,5 +367,9 @@ impl PublishData {
 
     pub fn payload(&self) -> &[u8] {
         self.packet.payload.0.as_ref()
+    }
+
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
     }
 }

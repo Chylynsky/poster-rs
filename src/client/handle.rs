@@ -109,9 +109,9 @@ impl ContextHandle {
 
     /// Performs graceful disconnection with the broker by sending the
     /// [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205) packet.
-    pub async fn disconnect(&mut self, reason: DisconnectReason) -> Result<(), MqttError> {
+    pub async fn disconnect(&mut self) -> Result<(), MqttError> {
         let mut builder = DisconnectTxBuilder::default();
-        builder.reason(reason);
+        builder.reason(DisconnectReason::Success);
 
         let packet = builder.build().unwrap();
 
@@ -126,6 +126,7 @@ impl ContextHandle {
 
     /// Sends ping to the broker by sending
     /// [Ping](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901195) packet.
+    /// This method must be called periodically if `session_expiry_interval` ([ConnectOpts]) was set during connection request.
     pub async fn ping(&mut self) -> Result<(), MqttError> {
         let (sender, receiver) = oneshot::channel();
 
@@ -150,6 +151,11 @@ impl ContextHandle {
         unreachable!("Unexpected packet type.");
     }
 
+    /// Publish data with the parameters set in [PublishOpts]. Acknowledgement of QoS>0
+    /// messages is handled automatically.
+    ///
+    /// # Arguments
+    /// `opts` Publish message parameters
     pub async fn publish<'a>(&mut self, opts: PublishOpts<'a>) -> Result<(), MqttError> {
         match opts.qos.unwrap_or_default() {
             QoS::AtMostOnce => {
@@ -262,10 +268,9 @@ impl ContextHandle {
             .subscription_identifier(self.sub_id.fetch_add(1, Ordering::Relaxed))
             .build()?;
 
-        let subscription_identifier =
-            NonZero::from(packet.subscription_identifier.unwrap())
-                .get()
-                .value();
+        let subscription_identifier = NonZero::from(packet.subscription_identifier.unwrap())
+            .get()
+            .value();
 
         let mut buf = BytesMut::with_capacity(packet.packet_len());
         packet.encode(&mut buf);
@@ -286,15 +291,13 @@ impl ContextHandle {
                 return Err(SubscribeError { reason }.into());
             }
 
-            return Ok(stream::unfold(
+            return Ok(Box::pin(stream::unfold(
                 SubscribeStreamState {
                     receiver: str_receiver,
                     sender: self.sender.clone(),
                 },
-                |mut state| async {
-                    state.impl_next().await.map(move |data| (data, state))
-                },
-            ));
+                |mut state| async { state.impl_next().await.map(move |data| (data, state)) },
+            )));
         }
 
         unreachable!("Unexpected packet type.");

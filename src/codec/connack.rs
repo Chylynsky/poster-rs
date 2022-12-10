@@ -1,7 +1,6 @@
-use bytes::Bytes;
-
 use crate::core::{
     base_types::*,
+    collections::UserProperties,
     error::{
         CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
         InvalidValue, UnexpectedProperty,
@@ -9,6 +8,7 @@ use crate::core::{
     properties::*,
     utils::{ByteLen, Decoder, PacketID, TryDecode},
 };
+use bytes::Bytes;
 use core::mem;
 use derive_builder::Builder;
 
@@ -131,7 +131,7 @@ pub(crate) struct ConnackRx {
     #[builder(setter(strip_option), default)]
     pub(crate) authentication_method: Option<AuthenticationMethod>,
     #[builder(setter(custom), default)]
-    pub(crate) user_property: Vec<UserProperty>,
+    pub(crate) user_property: UserProperties,
 }
 
 impl ConnackRxBuilder {
@@ -141,7 +141,7 @@ impl ConnackRxBuilder {
                 user_property.push(value);
             }
             None => {
-                self.user_property = Some(Vec::new());
+                self.user_property = Some(UserProperties::new());
                 self.user_property.as_mut().unwrap().push(value);
             }
         }

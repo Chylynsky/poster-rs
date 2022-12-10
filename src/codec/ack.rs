@@ -2,6 +2,7 @@ use bytes::{Bytes, BytesMut};
 
 use crate::core::{
     base_types::*,
+    collections::UserProperties,
     error::{
         CodecError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
         UnexpectedProperty,
@@ -29,7 +30,7 @@ where
     #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonString>,
     #[builder(setter(custom), default)]
-    pub(crate) user_property: Vec<UserProperty>,
+    pub(crate) user_property: UserProperties,
 }
 
 impl<ReasonT> AckRxBuilder<ReasonT>
@@ -42,7 +43,7 @@ where
                 user_property.push(value);
             }
             None => {
-                self.user_property = Some(Vec::new());
+                self.user_property = Some(UserProperties::new());
                 self.user_property.as_mut().unwrap().push(value);
             }
         }
@@ -284,13 +285,7 @@ pub(crate) mod test {
             "Success".as_bytes()
         );
         assert_eq!(packet.user_property.len(), 1);
-        assert_eq!(
-            packet.user_property[0],
-            UserProperty::from(UTF8StringPair(
-                Bytes::from_static("key".as_bytes()),
-                Bytes::from_static("val".as_bytes())
-            ))
-        );
+        assert_eq!(packet.user_property.get("key").unwrap(), "val");
     }
 
     pub(crate) fn from_bytes_short_impl<ReasonT>()

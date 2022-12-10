@@ -1,5 +1,6 @@
 use crate::core::{
     base_types::*,
+    collections::UserProperties,
     error::{
         CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
         InvalidValue, UnexpectedProperty,
@@ -121,7 +122,7 @@ pub(crate) struct DisconnectRx {
     #[builder(setter(strip_option), default)]
     pub(crate) server_reference: Option<ServerReference>,
     #[builder(setter(custom), default)]
-    pub(crate) user_property: Vec<UserProperty>,
+    pub(crate) user_property: UserProperties,
 }
 
 impl DisconnectRxBuilder {
@@ -131,7 +132,7 @@ impl DisconnectRxBuilder {
                 user_property.push(value);
             }
             None => {
-                self.user_property = Some(Vec::new());
+                self.user_property = Some(UserProperties::new());
                 self.user_property.as_mut().unwrap().push(value);
             }
         }
@@ -364,13 +365,7 @@ mod test {
             ReasonString::from(UTF8String(Bytes::from_static("Success".as_bytes())))
         );
         assert_eq!(packet.user_property.len(), 1);
-        assert_eq!(
-            packet.user_property[0],
-            UserProperty::from(UTF8StringPair(
-                Bytes::from_static("key".as_bytes()),
-                Bytes::from_static("val".as_bytes())
-            ))
-        );
+        assert_eq!(packet.user_property.get("key").unwrap(), "val");
     }
 
     #[test]

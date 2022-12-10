@@ -22,13 +22,10 @@ use futures::{
 use std::{collections::VecDeque, sync::Arc};
 
 // TODO:
-// - ACK subscriptions
 // - Outbound quota
 // - Accessing user properties
 // - Automatic pings
 // - Handle packet or subscription IDs in use
-// - Authorization?
-// - Context states?
 
 /// Client context. It is responsible for socket management and direct communication with the broker.
 pub struct Context<RxStreamT, TxStreamT> {

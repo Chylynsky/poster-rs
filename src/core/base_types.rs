@@ -859,7 +859,10 @@ impl TryDecode for UTF8String {
             return Err(InsufficientBufferSize.into());
         }
 
-        Ok(Self(bytes.split_to(size)))
+        let chunk = bytes.split_to(size);
+        std::str::from_utf8(&chunk)?;
+
+        Ok(Self(chunk))
     }
 }
 
@@ -909,6 +912,7 @@ impl TryDecode for UTF8StringPair {
         }
 
         let key = bytes.copy_to_bytes(key_len);
+        std::str::from_utf8(&key)?;
 
         if mem::size_of::<u16>() > bytes.len() {
             return Err(InsufficientBufferSize.into());
@@ -921,6 +925,7 @@ impl TryDecode for UTF8StringPair {
         }
 
         let val = bytes.copy_to_bytes(val_len);
+        std::str::from_utf8(&val)?;
 
         Ok(Self(key, val))
     }

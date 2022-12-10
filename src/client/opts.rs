@@ -169,6 +169,11 @@ impl<'a> AuthOpts<'a> {
         self
     }
 
+    pub fn reason_string(mut self, val: &'a str) {
+        self.builder
+            .reason_string(ReasonStringRef::from(UTF8StringRef(val)));
+    }
+
     pub fn authentication_data(mut self, val: &'a [u8]) -> Self {
         self.builder
             .authentication_data(AuthenticationDataRef::from(BinaryRef(val)));

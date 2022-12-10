@@ -1,5 +1,6 @@
 use crate::core::{
     base_types::*,
+    collections::UserProperties,
     error::{
         CodecError, ConversionError, InvalidPacketHeader, InvalidPacketSize, InvalidPropertyLength,
         InvalidValue, MandatoryPropertyMissing, UnexpectedProperty,
@@ -206,7 +207,7 @@ pub(crate) struct AuthRx {
     #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonString>,
     #[builder(setter(custom), default)]
-    pub(crate) user_property: Vec<UserProperty>,
+    pub(crate) user_property: UserProperties,
 }
 
 impl AuthRxBuilder {
@@ -216,7 +217,7 @@ impl AuthRxBuilder {
                 user_property.push(value);
             }
             None => {
-                self.user_property = Some(Vec::new());
+                self.user_property = Some(UserProperties::new());
                 self.user_property.as_mut().unwrap().push(value);
             }
         }
@@ -264,7 +265,7 @@ impl AuthRx {
                 + self
                     .user_property
                     .iter()
-                    .map(|val| val.byte_len())
+                    .map(|(key, val)| UTF8StringPairRef(key, val).byte_len())
                     .sum::<usize>(),
         )
         .unwrap()
