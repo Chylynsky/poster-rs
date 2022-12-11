@@ -16,11 +16,11 @@ pub enum RetainHandling {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct SubscriptionOptions {
-    pub(crate) maximum_qos: QoS,
-    pub(crate) no_local: bool,
-    pub(crate) retain_as_published: bool,
-    pub(crate) retain_handling: RetainHandling,
+pub struct SubscriptionOptions {
+    pub maximum_qos: QoS,
+    pub no_local: bool,
+    pub retain_as_published: bool,
+    pub retain_handling: RetainHandling,
 }
 
 impl Default for SubscriptionOptions {

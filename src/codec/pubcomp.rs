@@ -1,12 +1,11 @@
-use bytes::{Bytes, BytesMut};
-
 use crate::{
-    codec::ack::{AckRx, AckRxBuilder, AckTx, AckTxBuilder, FixedHeader},
+    codec::ack::{AckRx, AckTx, AckTxBuilder, FixedHeader},
     core::{
         error::{ConversionError, InvalidValue},
         utils::{ByteLen, Encode, PacketID, TryDecode},
     },
 };
+use bytes::{Bytes, BytesMut};
 use core::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -72,8 +71,6 @@ impl<'a> PacketID for PubcompTx<'a> {
 impl<'a> FixedHeader for PubcompTx<'a> {
     const FIXED_HDR: u8 = Self::PACKET_ID << 4;
 }
-
-pub(crate) type PubcompRxBuilder = AckRxBuilder<PubcompReason>;
 
 pub(crate) type PubcompTxBuilder<'a> = AckTxBuilder<'a, PubcompReason>;
 

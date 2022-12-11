@@ -110,7 +110,7 @@ impl Encode for DisconnectReason {
     }
 }
 
-#[derive(Builder)]
+#[derive(Builder, Clone)]
 #[builder(build_fn(error = "CodecError"))]
 pub(crate) struct DisconnectRx {
     #[builder(default)]
@@ -225,25 +225,14 @@ impl<'a> DisconnectTx<'a> {
             .map(|val| val.byte_len())
             .unwrap_or(0);
 
-        let server_reference_len = self
-            .server_reference
-            .as_ref()
-            .map(|val| val.byte_len())
-            .unwrap_or(0);
-
         let user_property_len = self
             .user_property
             .iter()
             .map(|val| val.byte_len())
             .sum::<usize>();
 
-        VarSizeInt::try_from(
-            session_expiry_interval_len
-                + reason_string_len
-                + server_reference_len
-                + user_property_len,
-        )
-        .unwrap()
+        VarSizeInt::try_from(session_expiry_interval_len + reason_string_len + user_property_len)
+            .unwrap()
     }
 
     fn remaining_len(&self) -> VarSizeInt {
@@ -275,8 +264,6 @@ pub(crate) struct DisconnectTx<'a> {
     pub(crate) session_expiry_interval: SessionExpiryInterval,
     #[builder(setter(strip_option), default)]
     pub(crate) reason_string: Option<ReasonStringRef<'a>>,
-    #[builder(setter(strip_option), default)]
-    pub(crate) server_reference: Option<ServerReferenceRef<'a>>,
     #[builder(setter(custom), default)]
     pub(crate) user_property: Vec<UserPropertyRef<'a>>,
 }
@@ -309,10 +296,6 @@ impl<'a> Encode for DisconnectTx<'a> {
         }
 
         if let Some(val) = self.reason_string {
-            encoder.encode(val);
-        }
-
-        if let Some(val) = self.server_reference {
             encoder.encode(val);
         }
 
@@ -365,7 +348,7 @@ mod test {
             ReasonString::from(UTF8String(Bytes::from_static("Success".as_bytes())))
         );
         assert_eq!(packet.user_property.len(), 1);
-        assert_eq!(packet.user_property.get("key").unwrap(), "val");
+        assert_eq!(packet.user_property.get("key").next().unwrap(), "val");
     }
 
     #[test]

@@ -3,8 +3,7 @@ use crate::{
         error::MqttError,
         message::*,
         opts::{AuthOpts, ConnectOpts, PublishOpts, SubscribeOpts, UnsubscribeOpts},
-        rsp::{AuthRsp, ConnectRsp, PublishError, SubscribeError, UnsubscribeError},
-        stream::*,
+        rsp::{AuthRsp, ConnectRsp},
         utils::*,
     },
     codec::*,
@@ -12,18 +11,19 @@ use crate::{
         base_types::{NonZero, QoS},
         utils::{Encode, SizedPacket},
     },
-    PublishData,
+    DisconnectOpts, PublishError, SubscribeRsp, UnsubscribeRsp,
 };
 use bytes::BytesMut;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use either::{Either, Left, Right};
 use futures::{
     channel::{mpsc, oneshot},
-    stream, SinkExt, Stream,
+    SinkExt,
 };
 use std::sync::Arc;
 
 /// Cloneable handle to the client [Context]. The [ContextHandle] object is used to perform MQTT operations.
+///
 #[derive(Clone)]
 pub struct ContextHandle {
     pub(crate) sender: mpsc::UnboundedSender<ContextMessage>,
@@ -35,15 +35,25 @@ impl ContextHandle {
     /// Performs connection with the broker on the protocol level. Calling this method corresponds to sending the
     /// [Connect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901033) packet.
     ///
-    /// If `authentication_method` and `authentication_data` are
-    /// set in `opts`, the extended authorization is performed, the result of calling this method
+    /// If [`authentication_method`](ConnectOpts) and [`authentication_data`](ConnectOpts) are
+    /// set in [`opts`](ConnectOpts), the extended authorization is performed, the result of calling this method
     /// is then [AuthRsp]. Otherwise, the return type is [ConnectRsp].
     ///
     /// When in extended authorization mode, the authorize method is used for subsequent
     /// authorization requests.
     ///
     /// # Arguments
-    /// `opts` - Connection options.
+    /// [`opts`](ConnectOpts) - connection options
+    ///
+    /// # Errors
+    /// Errors are returned as [MqttError] enum. Possible variants are:
+    /// - [CodecError] - invalid arguments where passed in `opts`
+    /// - [AuthError] - extended authorization failed
+    /// - [ConnectError] - connection failed
+    /// - communication errors ([SocketClosed], [ContextExited], ...)
+    ///
+    /// [CodecError] and [AuthError] represent Connack and Auth packets with reasons greater or equal 0x80.
+    ///
     pub async fn connect<'a>(
         &mut self,
         opts: ConnectOpts<'a>,
@@ -64,21 +74,31 @@ impl ContextHandle {
         self.sender.send(message).await?;
 
         match receiver.await? {
-            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::from(connack))),
-            RxPacket::Auth(auth) => Ok(Right(AuthRsp::from(auth))),
+            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::try_from(connack)?)),
+            RxPacket::Auth(auth) => Ok(Right(AuthRsp::try_from(auth)?)),
             _ => {
                 unreachable!("Unexpected packet type.");
             }
         }
     }
 
-    /// Method used for performing the extended authorization between the client and the broker. It corresponds to sending the
+    /// Performs extended authorization between the client and the broker. It corresponds to sending the
     /// [Auth](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901217) packet.
     /// User may perform multiple calls of this method, as needed, until the ConnectRsp is returned,
     /// meaning the authorization is successful.
     ///
     /// # Arguments
-    /// `opts` - Authorization options
+    /// [`opts`](AuthOpts) - authorization options
+    ///
+    /// # Errors
+    /// Errors are returned as [MqttError] enum. Possible variants are:
+    /// - [CodecError] - invalid arguments where passed in `opts`
+    /// - [AuthError] - extended authorization failed
+    /// - [ConnectError] - connection failed
+    /// - communication errors ([SocketClosed], [ContextExited], ...)
+    ///
+    /// [CodecError] and [AuthError] represent Connack and Auth packets with reasons greater or equal 0x80.
+    ///
     pub async fn authorize<'a>(
         &mut self,
         opts: AuthOpts<'a>,
@@ -99,8 +119,8 @@ impl ContextHandle {
         self.sender.send(message).await?;
 
         match receiver.await? {
-            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::from(connack))),
-            RxPacket::Auth(auth) => Ok(Right(AuthRsp::from(auth))),
+            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::try_from(connack)?)),
+            RxPacket::Auth(auth) => Ok(Right(AuthRsp::try_from(auth)?)),
             _ => {
                 unreachable!("Unexpected packet type.");
             }
@@ -109,11 +129,16 @@ impl ContextHandle {
 
     /// Performs graceful disconnection with the broker by sending the
     /// [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205) packet.
-    pub async fn disconnect(&mut self) -> Result<(), MqttError> {
-        let mut builder = DisconnectTxBuilder::default();
-        builder.reason(DisconnectReason::Success);
-
-        let packet = builder.build().unwrap();
+    ///
+    ///  # Arguments
+    /// [`opts`](DisconnectOpts) - disconnect options
+    ///
+    /// # Errors
+    /// - [CodecError] - invalid arguments where passed in `opts`
+    /// - communication errors ([SocketClosed], [ContextExited], ...)
+    ///
+    pub async fn disconnect<'a>(&mut self, opts: DisconnectOpts<'a>) -> Result<(), MqttError> {
+        let packet = opts.build()?;
 
         let mut buf = BytesMut::with_capacity(packet.packet_len());
         packet.encode(&mut buf);
@@ -126,7 +151,12 @@ impl ContextHandle {
 
     /// Sends ping to the broker by sending
     /// [Ping](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901195) packet.
-    /// This method must be called periodically if `session_expiry_interval` ([ConnectOpts]) was set during connection request.
+    /// This method MUST be called periodically if `session_expiry_interval` ([ConnectOpts]) was
+    /// set during connection request in order to maintain the session.
+    ///
+    /// # Errors
+    /// - communication errors ([SocketClosed], [ContextExited], ...)
+    ///
     pub async fn ping(&mut self) -> Result<(), MqttError> {
         let (sender, receiver) = oneshot::channel();
 
@@ -155,7 +185,8 @@ impl ContextHandle {
     /// messages is handled automatically.
     ///
     /// # Arguments
-    /// `opts` Publish message parameters
+    /// [`opts`](PublishOpts) - publish message parameters
+    ///
     pub async fn publish<'a>(&mut self, opts: PublishOpts<'a>) -> Result<(), MqttError> {
         match opts.qos.unwrap_or_default() {
             QoS::AtMostOnce => {
@@ -251,15 +282,25 @@ impl ContextHandle {
         }
     }
 
-    /// Performs subscription to the topic specified in `opts`. This corresponds to sending the
+    /// Performs subscription to the topics specified in [`opts`](SubscribeOpts). This corresponds to sending the
     /// [Subscribe](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901161) packet.
     ///
+    /// On success returns [SubscribeRsp] object containing the acknowledgment data from the broker.
+    /// This object can be transformed into an asynchronous stream of messages published to the subscribed
+    /// topics by using the [stream](SubscribeRsp) method.
+    ///
     /// # Arguments
-    /// `opts` - Subscription options
+    /// [`opts`](SubscribeOpts) - subscription options
+    ///
+    /// # Errors
+    /// - communication errors ([SocketClosed], [ContextExited], ...)
+    ///
+    /// Per-topic [reason codes](SubackReason) are retrieved with the [payload](SubscribeRsp) method.
+    ///
     pub async fn subscribe<'a>(
         &mut self,
         opts: SubscribeOpts<'a>,
-    ) -> Result<impl Stream<Item = PublishData>, MqttError> {
+    ) -> Result<SubscribeRsp, MqttError> {
         let (sender, receiver) = oneshot::channel();
         let (str_sender, str_receiver) = mpsc::unbounded();
 
@@ -286,29 +327,31 @@ impl ContextHandle {
         self.sender.send(message).await?;
 
         if let RxPacket::Suback(suback) = receiver.await? {
-            let reason = suback.payload.first().copied().unwrap();
-            if reason as u8 >= 0x80 {
-                return Err(SubscribeError { reason }.into());
-            }
-
-            return Ok(Box::pin(stream::unfold(
-                SubscribeStreamState {
-                    receiver: str_receiver,
-                    sender: self.sender.clone(),
-                },
-                |mut state| async { state.impl_next().await.map(move |data| (data, state)) },
-            )));
+            return Ok(SubscribeRsp {
+                packet: suback,
+                receiver: str_receiver,
+                sender: self.sender.clone(),
+            });
         }
 
         unreachable!("Unexpected packet type.");
     }
 
-    /// Unsubscribes from the topic specified in `opts`. This corresponds to sending the
+    /// Unsubscribes from the topics specified in [`opts`](UnsubscribeOpts). This corresponds to sending the
     /// [Unsubscribe](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901179) packet.
     ///
     /// # Arguments
-    /// `opts` - Subscription options
-    pub async fn unsubscribe<'a>(&mut self, opts: UnsubscribeOpts<'a>) -> Result<(), MqttError> {
+    /// [`opts`](UnsubscribeOpts) - unsubscribe options
+    ///
+    /// # Errors
+    /// - communication errors ([SocketClosed], [ContextExited], ...)
+    ///
+    /// Per-topic [reason codes](UnsubackReason) are retrieved with the [payload](UnsubscribeRsp) method.
+    ///
+    pub async fn unsubscribe<'a>(
+        &mut self,
+        opts: UnsubscribeOpts<'a>,
+    ) -> Result<UnsubscribeRsp, MqttError> {
         let (sender, receiver) = oneshot::channel();
 
         let packet = opts
@@ -327,12 +370,7 @@ impl ContextHandle {
         self.sender.send(message).await?;
 
         if let RxPacket::Unsuback(unsuback) = receiver.await? {
-            let reason = unsuback.payload.first().copied().unwrap();
-            if reason as u8 >= 0x80 {
-                return Err(UnsubscribeError { reason }.into());
-            }
-
-            return Ok(());
+            return Ok(UnsubscribeRsp { packet: unsuback });
         }
 
         unreachable!("Unexpected packet type.");

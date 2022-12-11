@@ -90,7 +90,7 @@ impl TryDecode for ConnectReason {
     }
 }
 
-#[derive(Builder)]
+#[derive(Builder, Clone)]
 #[builder(build_fn(error = "CodecError"))]
 pub(crate) struct ConnackRx {
     // Connack variable header

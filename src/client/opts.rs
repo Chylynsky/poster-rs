@@ -2,6 +2,7 @@ use crate::{
     codec::*,
     core::{base_types::*, error::CodecError, properties::*},
 };
+use core::time::Duration;
 
 #[derive(Default)]
 pub struct ConnectOpts<'a> {
@@ -198,11 +199,48 @@ impl<'a> AuthOpts<'a> {
 }
 
 #[derive(Default)]
+pub struct DisconnectOpts<'a> {
+    builder: DisconnectTxBuilder<'a>,
+}
+
+impl<'a> DisconnectOpts<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn reason(mut self, reason: DisconnectReason) -> Self {
+        self.builder.reason(reason);
+        self
+    }
+
+    pub fn session_expiry_interval(mut self, val: Duration) -> Self {
+        self.builder
+            .session_expiry_interval(SessionExpiryInterval::from(
+                u32::try_from(val.as_secs()).unwrap(),
+            ));
+        self
+    }
+
+    pub fn reason_string(mut self, val: &'a str) -> Self {
+        self.builder
+            .reason_string(ReasonStringRef::from(UTF8StringRef(val)));
+        self
+    }
+
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
+        self.builder
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
+        self
+    }
+
+    pub(crate) fn build(self) -> Result<DisconnectTx<'a>, CodecError> {
+        self.builder.build()
+    }
+}
+
+#[derive(Default)]
 pub struct SubscribeOpts<'a> {
     builder: SubscribeTxBuilder<'a>,
-
-    topic: UTF8StringRef<'a>,
-    opts: SubscriptionOptions,
 }
 
 impl<'a> SubscribeOpts<'a> {
@@ -210,23 +248,8 @@ impl<'a> SubscribeOpts<'a> {
         Self::default()
     }
 
-    pub fn topic(mut self, val: &'a str) -> Self {
-        self.topic = UTF8StringRef(val);
-        self
-    }
-
-    pub fn no_local(mut self, val: bool) -> Self {
-        self.opts.no_local = val;
-        self
-    }
-
-    pub fn retain_as_published(mut self, val: bool) -> Self {
-        self.opts.retain_as_published = val;
-        self
-    }
-
-    pub fn retain_handling(mut self, val: RetainHandling) -> Self {
-        self.opts.retain_handling = val;
+    pub fn subscription(mut self, topic: &'a str, opts: SubscriptionOptions) -> Self {
+        self.builder.payload((UTF8StringRef(topic), opts));
         self
     }
 
@@ -253,9 +276,7 @@ impl<'a> SubscribeOpts<'a> {
     }
 
     pub(crate) fn build(self) -> Result<SubscribeTx<'a>, CodecError> {
-        let mut opts = self;
-        opts.builder.payload((opts.topic, opts.opts));
-        opts.builder.build()
+        self.builder.build()
     }
 }
 
@@ -364,14 +385,14 @@ impl<'a> UnsubscribeOpts<'a> {
         Self::default()
     }
 
-    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
-        self.builder
-            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
+    pub fn topic(mut self, val: &'a str) -> Self {
+        self.builder.payload(UTF8StringRef(val));
         self
     }
 
-    pub fn topic(mut self, val: &'a str) -> Self {
-        self.builder.payload(UTF8StringRef(val));
+    pub fn user_property(mut self, (key, val): (&'a str, &'a str)) -> Self {
+        self.builder
+            .user_property(UserPropertyRef::from(UTF8StringPairRef(key, val)));
         self
     }
 

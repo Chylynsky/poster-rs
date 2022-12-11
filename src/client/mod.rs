@@ -7,8 +7,8 @@ mod rsp;
 mod stream;
 mod utils;
 
-pub use context::*;
+pub use context::Context;
 pub use error::*;
-pub use handle::*;
+pub use handle::ContextHandle;
 pub use opts::*;
 pub use rsp::*;

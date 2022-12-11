@@ -1,5 +1,3 @@
-use bytes::{Bytes, BytesMut};
-
 use crate::{
     codec::*,
     core::{
@@ -7,6 +5,7 @@ use crate::{
         utils::{Encode, PacketID, SizedPacket, TryDecode},
     },
 };
+use bytes::{Bytes, BytesMut};
 
 pub(crate) enum RxPacket {
     Connack(ConnackRx),

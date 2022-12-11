@@ -1,20 +1,35 @@
 use crate::{
-    client::error::MqttError,
+    client::{error::ConnectError, message::ContextMessage, stream::SubscribeStreamState},
     codec::*,
     core::{
         base_types::{NonZero, QoS},
         collections::UserProperties,
     },
+    AuthError,
 };
-use std::{error::Error, fmt::Display, str};
+use futures::{
+    channel::mpsc::{self},
+    stream, Stream,
+};
+use std::str;
 
 pub struct ConnectRsp {
     packet: ConnackRx,
 }
 
-impl From<ConnackRx> for ConnectRsp {
-    fn from(packet: ConnackRx) -> Self {
-        Self { packet }
+impl TryFrom<ConnackRx> for ConnectRsp {
+    type Error = ConnectError;
+
+    fn try_from(packet: ConnackRx) -> Result<Self, Self::Error> {
+        if packet.reason as u8 >= 0x80 {
+            return Err(ConnectError::from(packet));
+        }
+
+        assert!(
+            bool::from(packet.subscription_identifier_available),
+            "Subscription identifier support is required. Check your broker settings."
+        );
+        Ok(Self { packet })
     }
 }
 
@@ -137,9 +152,15 @@ pub struct AuthRsp {
     packet: AuthRx,
 }
 
-impl From<AuthRx> for AuthRsp {
-    fn from(packet: AuthRx) -> Self {
-        Self { packet }
+impl TryFrom<AuthRx> for AuthRsp {
+    type Error = AuthError;
+
+    fn try_from(packet: AuthRx) -> Result<Self, Self::Error> {
+        if packet.reason as u8 >= 0x80 {
+            return Err(AuthError::from(packet));
+        }
+
+        Ok(Self { packet })
     }
 }
 
@@ -181,109 +202,90 @@ impl AuthRsp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum PublishError {
-    Puback(PubackReason),
-    Pubrec(PubrecReason),
-    Pubcomp(PubcompReason),
+/// Response to the subscription request, representing the Suback packet.
+///
+/// In order to receive messages published on the subscribed topics use
+/// the [stream](SubscribeRsp::stream) method.
+///
+pub struct SubscribeRsp {
+    pub(crate) packet: SubackRx,
+    pub(crate) receiver: mpsc::UnboundedReceiver<RxPacket>,
+    pub(crate) sender: mpsc::UnboundedSender<ContextMessage>,
 }
 
-impl From<PublishError> for MqttError {
-    fn from(err: PublishError) -> Self {
-        MqttError::PublishError(err)
+impl SubscribeRsp {
+    /// Transforms this response into the asynchronous stream of messages
+    /// published to the subscribed topics.
+    ///
+    pub fn stream(self) -> impl Stream<Item = PublishData> {
+        Box::pin(stream::unfold(
+            SubscribeStreamState {
+                receiver: self.receiver,
+                sender: self.sender,
+            },
+            |mut state| async { state.impl_next().await.map(move |data| (data, state)) },
+        ))
+    }
+
+    /// Accesses reason string property.
+    ///
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    /// Accesses user properties.
+    ///
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
+    }
+
+    /// Accesses the payload. Payload is a list of [SubackReason] codes,
+    /// representing the subscription result for each subscribed topic.
+    ///
+    pub fn payload(&self) -> &[SubackReason] {
+        &self.packet.payload
     }
 }
 
-impl Error for PublishError {}
+/// Response to the subscription request, representing the Suback packet.
+///
+/// In order to receive messages published on the subscribed topics use
+/// the [stream](SubscribeRsp::stream) method.
+///
+pub struct UnsubscribeRsp {
+    pub(crate) packet: UnsubackRx,
+}
 
-impl Display for PublishError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Puback(reason) => write!(
-                f,
-                "{{ \"type\": \"PublishError\", \"message\": \"QoS 1 publish error: {} [{:?}]\" }}",
-                *reason as u8, reason,
-            ),
-
-            Self::Pubrec(reason) => write!(
-                f,
-                "{{ \"type\": \"PublishError\", \"message\": \"QoS 2 publish error: {} [{:?}]\" }}",
-                *reason as u8, reason,
-            ),
-
-            Self::Pubcomp(reason) => write!(
-                f,
-                "{{ \"type\": \"PublishError\", \"message\": \"QoS 2 publish error: {} [{:?}]\" }}",
-                *reason as u8, reason,
-            ),
-        }
+impl UnsubscribeRsp {
+    /// Accesses reason string property.
+    ///
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
     }
-}
 
-impl From<PubackReason> for PublishError {
-    fn from(reason: PubackReason) -> Self {
-        debug_assert!(reason as u8 >= 0x80);
-        Self::Puback(reason)
+    /// Accesses user properties.
+    ///
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
     }
-}
 
-impl From<PubrecReason> for PublishError {
-    fn from(reason: PubrecReason) -> Self {
-        debug_assert!(reason as u8 >= 0x80);
-        Self::Pubrec(reason)
-    }
-}
-
-impl From<PubcompReason> for PublishError {
-    fn from(reason: PubcompReason) -> Self {
-        debug_assert!(reason as u8 >= 0x80);
-        Self::Pubcomp(reason)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct UnsubscribeError {
-    pub reason: UnsubackReason,
-}
-
-impl From<UnsubscribeError> for MqttError {
-    fn from(err: UnsubscribeError) -> Self {
-        MqttError::UnsubscribeError(err)
-    }
-}
-
-impl Error for UnsubscribeError {}
-
-impl Display for UnsubscribeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ \"type\": \"UnsubscribeError\", \"message\": \"unsubscribe error: {} [{:?}]\" }}",
-            self.reason as u8, self.reason,
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct SubscribeError {
-    pub reason: SubackReason,
-}
-
-impl From<SubscribeError> for MqttError {
-    fn from(err: SubscribeError) -> Self {
-        MqttError::SubscribeError(err)
-    }
-}
-
-impl Error for SubscribeError {}
-
-impl Display for SubscribeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ \"type\": \"SubscribeError\", \"message\": \"subscribe error: {} [{:?}]\" }}",
-            self.reason as u8, self.reason,
-        )
+    /// Accesses the payload. Payload is a list of [SubackReason] codes,
+    /// representing the subscription result for each subscribed topic.
+    ///
+    pub fn payload(&self) -> &[UnsubackReason] {
+        &self.packet.payload
     }
 }
 

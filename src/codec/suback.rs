@@ -223,7 +223,7 @@ mod test {
             ))))
         );
         assert_eq!(packet.user_property.len(), 1);
-        assert_eq!(packet.user_property.get("key").unwrap(), "val");
+        assert_eq!(packet.user_property.get("key").next().unwrap(), "val");
         assert_eq!(packet.payload.len(), 1);
         assert_eq!(packet.payload[0], SubackReason::GranteedQoS2)
     }

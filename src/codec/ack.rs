@@ -285,7 +285,7 @@ pub(crate) mod test {
             "Success".as_bytes()
         );
         assert_eq!(packet.user_property.len(), 1);
-        assert_eq!(packet.user_property.get("key").unwrap(), "val");
+        assert_eq!(packet.user_property.get("key").next().unwrap(), "val");
     }
 
     pub(crate) fn from_bytes_short_impl<ReasonT>()

@@ -194,7 +194,7 @@ impl<'a> Encode for AuthTx<'a> {
     }
 }
 
-#[derive(Builder, Default)]
+#[derive(Builder, Default, Clone)]
 #[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
 pub(crate) struct AuthRx {
     #[builder(default)]

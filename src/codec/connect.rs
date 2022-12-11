@@ -184,7 +184,7 @@ impl<'a> ConnectTx<'a> {
                     .map(ByteLen::byte_len)
                     .unwrap_or(0)
                 + self
-                    .user_property
+                    .will_user_property
                     .iter()
                     .map(ByteLen::byte_len)
                     .sum::<usize>(),
@@ -344,13 +344,11 @@ impl<'a> Encode for ConnectTx<'a> {
             if let Some(val) = self.will_correlation_data {
                 encoder.encode(val)
             }
-        }
 
-        for val in self.user_property.iter().copied() {
-            encoder.encode(val)
-        }
+            for val in self.will_user_property.iter().copied() {
+                encoder.encode(val)
+            }
 
-        if will_flag != 0 {
             if let Some(val) = self.will_topic {
                 encoder.encode(val)
             }

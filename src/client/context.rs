@@ -23,8 +23,6 @@ use std::{collections::VecDeque, sync::Arc};
 
 // TODO:
 // - Outbound quota
-// - Accessing user properties
-// - Automatic pings
 // - Handle packet or subscription IDs in use
 
 /// Client context. It is responsible for socket management and direct communication with the broker.
