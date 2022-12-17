@@ -21,11 +21,8 @@ use futures::{
 };
 use std::{collections::VecDeque, sync::Arc};
 
-// TODO:
-// - Outbound quota
-// - Handle packet or subscription IDs in use
-
 /// Client context. It is responsible for socket management and direct communication with the broker.
+///
 pub struct Context<RxStreamT, TxStreamT> {
     rx: RxPacketStream<RxStreamT>,
     tx: TxPacketStream<TxStreamT>,
@@ -37,10 +34,6 @@ pub struct Context<RxStreamT, TxStreamT> {
     message_queue: mpsc::UnboundedReceiver<ContextMessage>,
 
     resend_flag: bool,
-}
-
-impl<RxStreamT, TxStreamT> Context<RxStreamT, TxStreamT> {
-    pub const DEFAULT_BUF_SIZE: usize = 2048;
 }
 
 impl<RxStreamT, TxStreamT> Context<RxStreamT, TxStreamT>
@@ -57,12 +50,13 @@ where
     /// # Note
     /// User is responsible for making sure that at the point of calling this method,
     /// both the `rx` and `tx` are connected to the broker and ready for communication.
+    ///
     pub fn new(rx: RxStreamT, tx: TxStreamT) -> (Self, ContextHandle) {
         let (sender, receiver) = mpsc::unbounded();
 
         (
             Self {
-                rx: RxPacketStream::with_capacity(Self::DEFAULT_BUF_SIZE, rx),
+                rx: RxPacketStream::with_capacity(256, rx),
                 tx: TxPacketStream::from(tx),
                 awaiting_ack: VecDeque::new(),
                 subscriptions: VecDeque::new(),
@@ -82,6 +76,7 @@ where
     /// graceful disconnection or error. Successful disconnection via [disconnect] method or
     /// receiving a [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205)
     /// packet with reason a code equal to 0 (success) is considered a graceful disconnection.
+    ///
     pub async fn run(&mut self) -> Result<(), MqttError>
     where
         RxStreamT: AsyncRead + Unpin,

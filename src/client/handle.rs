@@ -285,8 +285,10 @@ impl ContextHandle {
     /// Performs subscription to the topics specified in [`opts`](SubscribeOpts). This corresponds to sending the
     /// [Subscribe](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901161) packet.
     ///
+    /// QoS>1 messages are acknowledged automatically.
+    ///
     /// On success returns [SubscribeRsp] object containing the acknowledgment data from the broker.
-    /// This object can be transformed into an asynchronous stream of messages published to the subscribed
+    /// This object can be transformed into the asynchronous stream of messages published to the subscribed
     /// topics by using the [stream](SubscribeRsp) method.
     ///
     /// # Arguments

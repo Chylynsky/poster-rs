@@ -245,8 +245,9 @@ impl SubscribeRsp {
         &self.packet.user_property
     }
 
-    /// Accesses the payload. Payload is a list of [SubackReason] codes,
-    /// representing the subscription result for each subscribed topic.
+    /// Accesses the payload being a list of [SubackReason] codes.
+    /// Each reason code represents the result of the subscribe operation
+    /// for the given topic.
     ///
     pub fn payload(&self) -> &[SubackReason] {
         &self.packet.payload

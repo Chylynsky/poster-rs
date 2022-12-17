@@ -24,7 +24,7 @@ enum PacketStreamState {
 pub(crate) struct RxPacketStream<StreamT> {
     stream: StreamT,
     buf: BytesMut,
-    offset: usize,
+    size: usize,
 
     packet: Range<usize>,
 
@@ -35,8 +35,8 @@ impl<StreamT> From<StreamT> for RxPacketStream<StreamT> {
     fn from(stream: StreamT) -> Self {
         Self {
             stream,
-            buf: BytesMut::with_capacity(2048),
-            offset: 0,
+            buf: BytesMut::with_capacity(256),
+            size: 0,
             packet: 0..0,
             state: PacketStreamState::Idle,
         }
@@ -48,7 +48,7 @@ impl<StreamT> RxPacketStream<StreamT> {
         Self {
             stream: inner,
             buf: BytesMut::with_capacity(capacity),
-            offset: 0,
+            size: 0,
             packet: 0..0,
             state: PacketStreamState::Idle,
         }
@@ -66,63 +66,10 @@ impl<StreamT> RxPacketStream<StreamT> {
         (
             &mut self.stream,
             &mut self.buf,
-            &mut self.offset,
+            &mut self.size,
             &mut self.packet,
             &mut self.state,
         )
-    }
-
-    fn step(&mut self, size: usize) -> Option<Result<Bytes, CodecError>> {
-        match self.state {
-            PacketStreamState::Idle => {
-                self.offset = size;
-                self.state = PacketStreamState::ReadPacketLen;
-                self.step(0) // Size is already consumed for setting the offset
-            }
-            PacketStreamState::ReadPacketLen => {
-                self.offset += size;
-
-                // We need a packet ID and at least one byte encoding the remaiing length.
-                if self.offset < 2 {
-                    return None;
-                }
-
-                // Omit packet ID, try to read the remaining length.
-                let maybe_remaining_len = VarSizeInt::try_from(&self.buf[1..self.offset])
-                    .map(Some)
-                    .or_else(|err| {
-                        if let ConversionError::InsufficientBufferSize(_) = err {
-                            return Ok(None); // Need to read more data
-                        }
-                        Err(err)
-                    });
-
-                if let Err(err) = maybe_remaining_len {
-                    return Some(Err(err.into()));
-                }
-
-                if let Some(remaining_len) = maybe_remaining_len.unwrap() {
-                    // Packet ID (1 byte), size of Variable Byte Integer
-                    // encoding the remaining length and its value.
-                    self.packet.end = 1 + remaining_len.len() + remaining_len.value() as usize;
-                    self.state = PacketStreamState::ReadPacketData;
-                    return self.step(0);
-                }
-
-                None
-            }
-            PacketStreamState::ReadPacketData => {
-                self.offset += size;
-
-                if self.offset < self.packet.end {
-                    return None;
-                }
-
-                self.offset = 0;
-                self.state = PacketStreamState::Idle;
-                Some(Ok(self.buf.split_to(self.packet.end).freeze()))
-            }
-        }
     }
 }
 
@@ -133,35 +80,77 @@ where
     type Item = Result<RxPacket, CodecError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        const CHUNK_SIZE: usize = 2048;
+        const CHUNK_SIZE: usize = 128;
 
-        let (mut stream, buf, offset, _, _) = self.split_borrows_mut();
-        buf.resize(*offset + CHUNK_SIZE, 0);
+        let (mut stream, buf, size, packet, state) = self.split_borrows_mut();
 
-        if let Poll::Ready(result) =
-            Pin::new(&mut stream).poll_read(cx, &mut buf[*offset..*offset + CHUNK_SIZE])
-        {
-            if result.is_err() {
-                return Poll::Ready(None);
+        match *state {
+            PacketStreamState::Idle => {
+                buf.resize(*size + CHUNK_SIZE, 0);
+
+                if let Poll::Ready(result) = Pin::new(&mut stream)
+                    .poll_read(cx, &mut buf[*size..*size + CHUNK_SIZE])
+                    .map(|res| res.ok().filter(|&size| size != 0 /* EOF */))
+                {
+                    if result.is_none() {
+                        return Poll::Ready(None);
+                    }
+
+                    *size += result.unwrap();
+
+                    // We need to be able to read at least fixed header and one byte of size to proceed.
+                    if *size >= 2 {
+                        *state = PacketStreamState::ReadPacketLen;
+                        return self.poll_next(cx);
+                    }
+                }
+
+                return Poll::Pending;
             }
+            PacketStreamState::ReadPacketLen => {
+                // Omit packet ID, try to read the remaining length.
+                let maybe_remaining_len =
+                    VarSizeInt::try_from(&buf[1..]).map(Some).or_else(|err| {
+                        if let ConversionError::InsufficientBufferSize(_) = err {
+                            return Ok(None); // Need to read more data
+                        }
+                        Err(err)
+                    });
 
-            let size = result.unwrap();
-            if size == 0 {
-                return Poll::Ready(None); // EOF
+                if let Err(_) = maybe_remaining_len {
+                    return Poll::Ready(None);
+                }
+
+                if let Some(remaining_len) = maybe_remaining_len.unwrap() {
+                    // Fixed header (1 byte), size of Variable Byte Integer
+                    // encoding the remaining length and its value.
+                    packet.start = 0;
+                    packet.end = 1 + remaining_len.len() + remaining_len.value() as usize;
+                    *state = PacketStreamState::ReadPacketData;
+                    return self.poll_next(cx);
+                }
+
+                *state = PacketStreamState::Idle;
+                return self.poll_next(cx);
             }
+            PacketStreamState::ReadPacketData => {
+                if *size < packet.end {
+                    *state = PacketStreamState::Idle;
+                    return self.poll_next(cx);
+                }
 
-            if let Some(packet) = self
-                .step(size)
-                .map(|maybe_buf| maybe_buf.and_then(RxPacket::try_decode))
-            {
-                cx.waker().wake_by_ref();
-                return Poll::Ready(Some(packet));
+                *size -= packet.len();
+                if *size != 0 {
+                    *state = PacketStreamState::ReadPacketLen;
+                } else {
+                    *state = PacketStreamState::Idle;
+                }
+
+                return Poll::Ready(Some(RxPacket::try_decode(
+                    buf.split_to(packet.end).freeze(),
+                )));
             }
-
-            cx.waker().wake_by_ref();
         }
-
-        Poll::Pending
     }
 }
 
