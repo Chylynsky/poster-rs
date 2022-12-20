@@ -737,14 +737,26 @@ mod test {
             );
         }
 
-        fn utf8_string_test<T>(property: T, expected: Vec<u8>)
+        fn utf8_string_test<T>(property: T, expected: &[u8])
         where
             T: ByteLen + PropertyID + Encode,
         {
             let mut buf = BytesMut::new();
             property.encode(&mut buf);
             assert_eq!(
-                &[&[T::PROPERTY_ID], &expected[..]].concat(),
+                &[&[T::PROPERTY_ID], expected].concat(),
+                &buf.split().freeze()
+            );
+        }
+
+        fn binary_test<T>(property: T, expected: &[u8])
+        where
+            T: ByteLen + PropertyID + Encode,
+        {
+            let mut buf = BytesMut::new();
+            property.encode(&mut buf);
+            assert_eq!(
+                &[&[T::PROPERTY_ID], expected].concat(),
                 &buf.split().freeze()
             );
         }
@@ -816,27 +828,61 @@ mod test {
         }
 
         #[test]
+        fn binary() {
+            const INPUT_VAL: [u8; 3] = [1, 2, 3];
+            const EXPECTED_BUF: [u8; 5] = [0, 3, 1, 2, 3];
+            let input = Binary(Bytes::from_static(&INPUT_VAL));
+
+            binary_test(CorrelationData(input.clone()), &EXPECTED_BUF[..]);
+            binary_test(AuthenticationData(input.clone()), &EXPECTED_BUF[..]);
+            binary_test(CorrelationDataRef(BinaryRef(&INPUT_VAL)), &EXPECTED_BUF[..]);
+            binary_test(
+                AuthenticationDataRef(BinaryRef(&INPUT_VAL)),
+                &EXPECTED_BUF[..],
+            );
+        }
+
+        #[test]
+        fn binary_ref() {
+            const INPUT_VAL: [u8; 3] = [1, 2, 3];
+            const EXPECTED_BUF: [u8; 5] = [0, 3, 1, 2, 3];
+            let input = BinaryRef(&INPUT_VAL);
+
+            binary_test(CorrelationDataRef(input), &EXPECTED_BUF[..]);
+            binary_test(AuthenticationDataRef(input), &EXPECTED_BUF[..]);
+        }
+
+        #[test]
         fn utf8_string() {
             const INPUT_VAL: &str = "val";
             const EXPECTED_BUF: [u8; 5] = [0, 3, b'v', b'a', b'l'];
             let input_str = UTF8String(Bytes::from_static(INPUT_VAL.as_bytes()));
 
-            utf8_string_test(ContentType(input_str.clone()), Vec::from(EXPECTED_BUF));
-            utf8_string_test(ResponseTopic(input_str.clone()), Vec::from(EXPECTED_BUF));
+            utf8_string_test(ContentType(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ResponseTopic(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(AssignedClientIdentifier(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(AuthenticationMethod(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ResponseInformation(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ServerReference(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ReasonString(input_str.clone()), &EXPECTED_BUF);
+        }
+
+        #[test]
+        fn utf8_string_ref() {
+            const INPUT_VAL: &str = "val";
+            const EXPECTED_BUF: [u8; 5] = [0, 3, b'v', b'a', b'l'];
+            let input_str = UTF8StringRef(&INPUT_VAL);
+
+            utf8_string_test(ContentTypeRef(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ResponseTopicRef(input_str.clone()), &EXPECTED_BUF);
             utf8_string_test(
-                AssignedClientIdentifier(input_str.clone()),
-                Vec::from(EXPECTED_BUF),
+                AssignedClientIdentifierRef(input_str.clone()),
+                &EXPECTED_BUF,
             );
-            utf8_string_test(
-                AuthenticationMethod(input_str.clone()),
-                Vec::from(EXPECTED_BUF),
-            );
-            utf8_string_test(
-                ResponseInformation(input_str.clone()),
-                Vec::from(EXPECTED_BUF),
-            );
-            utf8_string_test(ServerReference(input_str.clone()), Vec::from(EXPECTED_BUF));
-            utf8_string_test(ReasonString(input_str), Vec::from(EXPECTED_BUF));
+            utf8_string_test(AuthenticationMethodRef(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ResponseInformationRef(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ServerReferenceRef(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ReasonStringRef(input_str), &EXPECTED_BUF);
         }
 
         #[test]
@@ -863,6 +909,32 @@ mod test {
             );
             let mut buf = BytesMut::new();
             let property = UserProperty(input_pair);
+            property.encode(&mut buf);
+
+            assert_eq!(&EXPECTED_BUF[..], buf.split().freeze());
+        }
+
+        #[test]
+        fn utf8_string_pair_ref() {
+            const INPUT_KEY: &str = "key";
+            const INPUT_VAL: &str = "val";
+            const EXPECTED_BUF: [u8; 11] = [
+                UserProperty::PROPERTY_ID,
+                0,
+                3,
+                b'k',
+                b'e',
+                b'y',
+                0,
+                3,
+                b'v',
+                b'a',
+                b'l',
+            ];
+
+            let input_pair = UTF8StringPairRef(&INPUT_KEY, &INPUT_VAL);
+            let mut buf = BytesMut::new();
+            let property = UserPropertyRef(input_pair);
             property.encode(&mut buf);
 
             assert_eq!(&EXPECTED_BUF[..], buf.split().freeze());

@@ -307,12 +307,6 @@ impl<'a> PublishOpts<'a> {
         self
     }
 
-    pub fn packet_identifier(mut self, val: u16) -> Self {
-        self.builder
-            .packet_identifier(NonZero::try_from(val).unwrap());
-        self
-    }
-
     pub fn payload_format_indicator(mut self, val: bool) -> Self {
         self.builder
             .payload_format_indicator(PayloadFormatIndicator::from(val));
@@ -331,15 +325,15 @@ impl<'a> PublishOpts<'a> {
         self
     }
 
-    pub fn subscription_identifier(mut self, val: u32) -> Self {
-        self.builder.subscription_identifier(
-            VarSizeInt::try_from(val)
-                .and_then(NonZero::try_from)
-                .map(SubscriptionIdentifier::from)
-                .unwrap(),
-        );
-        self
-    }
+    // pub fn subscription_identifier(mut self, val: u32) -> Self {
+    //     self.builder.subscription_identifier(
+    //         VarSizeInt::try_from(val)
+    //             .and_then(NonZero::try_from)
+    //             .map(SubscriptionIdentifier::from)
+    //             .unwrap(),
+    //     );
+    //     self
+    // }
 
     pub fn correlation_data(mut self, val: &'a [u8]) -> Self {
         self.builder
@@ -367,6 +361,12 @@ impl<'a> PublishOpts<'a> {
 
     pub fn data(mut self, val: &'a [u8]) -> Self {
         self.builder.payload(PayloadRef(val));
+        self
+    }
+
+    pub(crate) fn packet_identifier(mut self, val: u16) -> Self {
+        self.builder
+            .packet_identifier(NonZero::try_from(val).unwrap());
         self
     }
 

@@ -598,11 +598,9 @@ impl TryFrom<u8> for NonZero<u8> {
     }
 }
 
-impl TryFrom<NonZero<u8>> for u8 {
-    type Error = ConversionError;
-
-    fn try_from(val: NonZero<u8>) -> Result<Self, Self::Error> {
-        Ok(val.get())
+impl From<NonZero<u8>> for u8 {
+    fn from(val: NonZero<u8>) -> Self {
+        val.get()
     }
 }
 
@@ -638,11 +636,9 @@ impl TryFrom<u16> for NonZero<u16> {
     }
 }
 
-impl TryFrom<NonZero<u16>> for u16 {
-    type Error = ConversionError;
-
-    fn try_from(val: NonZero<u16>) -> Result<Self, Self::Error> {
-        Ok(val.get())
+impl From<NonZero<u16>> for u16 {
+    fn from(val: NonZero<u16>) -> Self {
+        val.get()
     }
 }
 
@@ -678,11 +674,9 @@ impl TryFrom<u32> for NonZero<u32> {
     }
 }
 
-impl TryFrom<NonZero<u32>> for u32 {
-    type Error = ConversionError;
-
-    fn try_from(val: NonZero<u32>) -> Result<Self, Self::Error> {
-        Ok(val.get())
+impl From<NonZero<u32>> for u32 {
+    fn from(val: NonZero<u32>) -> Self {
+        val.get()
     }
 }
 
@@ -1010,9 +1004,25 @@ mod test {
         }
 
         #[test]
+        fn binary_ref() {
+            const VALUE: [u8; 8] = [
+                /* SIZE: */ 0x00, 0x06, /* DATA: */ 0x00, 0x04, 0x03, 0x76, 0x61, 0x6c,
+            ];
+            let binary = BinaryRef(&VALUE[2..]);
+            assert_eq!(VALUE.len(), binary.byte_len());
+        }
+
+        #[test]
         fn payload() {
             const VALUE: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
             let payload = Payload(Bytes::from_static(&VALUE));
+            assert_eq!(VALUE.len(), payload.byte_len());
+        }
+
+        #[test]
+        fn payload_ref() {
+            const VALUE: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
+            let payload = PayloadRef(&VALUE);
             assert_eq!(VALUE.len(), payload.byte_len());
         }
 
@@ -1024,6 +1034,13 @@ mod test {
         }
 
         #[test]
+        fn string_ref() {
+            const INPUT: &str = "val";
+            let utf8_str = UTF8StringRef(INPUT);
+            assert_eq!(INPUT.len() + 2, utf8_str.byte_len());
+        }
+
+        #[test]
         fn string_pair() {
             const KEY: &str = "key";
             const VAL: &str = "val";
@@ -1031,6 +1048,15 @@ mod test {
                 Bytes::from_static(KEY.as_bytes()),
                 Bytes::from_static(VAL.as_bytes()),
             );
+
+            assert_eq!(4 + KEY.len() + VAL.len(), utf8_str_pair.byte_len());
+        }
+
+        #[test]
+        fn string_pair_ref() {
+            const KEY: &str = "key";
+            const VAL: &str = "val";
+            let utf8_str_pair = UTF8StringPairRef(KEY, VAL);
 
             assert_eq!(4 + KEY.len() + VAL.len(), utf8_str_pair.byte_len());
         }
@@ -1101,10 +1127,30 @@ mod test {
         }
 
         #[test]
+        fn binary_ref() {
+            const VALUE: [u8; 8] = [
+                /* SIZE: */ 0x00, 0x06, /* DATA: */ 0x00, 0x04, 0x03, 0x76, 0x61, 0x6c,
+            ];
+            let mut buf = BytesMut::new();
+            BinaryRef(&VALUE[2..]).encode(&mut buf);
+
+            assert_eq!(&VALUE[..], &buf.split().freeze());
+        }
+
+        #[test]
         fn payload() {
             const VALUE: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
             let mut buf = BytesMut::new();
             Payload(Bytes::from_static(&VALUE)).encode(&mut buf);
+
+            assert_eq!(&VALUE[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn payload_ref() {
+            const VALUE: [u8; 6] = [0x00, 0x04, 0x03, 0x76, 0x61, 0x6c];
+            let mut buf = BytesMut::new();
+            PayloadRef(&VALUE).encode(&mut buf);
 
             assert_eq!(&VALUE[..], &buf.split().freeze());
         }
@@ -1116,6 +1162,17 @@ mod test {
 
             let mut buf = BytesMut::new();
             UTF8String(Bytes::from_static(INPUT.as_bytes())).encode(&mut buf);
+
+            assert_eq!(&EXPECTED_VAL[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn string_ref() {
+            const INPUT: &str = "val";
+            const EXPECTED_VAL: [u8; 5] = [0x00, 0x03, b'v', b'a', b'l'];
+
+            let mut buf = BytesMut::new();
+            UTF8StringRef(INPUT).encode(&mut buf);
 
             assert_eq!(&EXPECTED_VAL[..], &buf.split().freeze());
         }
@@ -1133,6 +1190,19 @@ mod test {
                 Bytes::from_static(VAL.as_bytes()),
             )
             .encode(&mut buf);
+
+            assert_eq!(&EXPECTED_VAL[..], &buf.split().freeze());
+        }
+
+        #[test]
+        fn string_pair_ref() {
+            const KEY: &str = "key";
+            const VAL: &str = "val";
+            const EXPECTED_VAL: [u8; 10] =
+                [0x00, 0x03, b'k', b'e', b'y', 0x00, 0x03, b'v', b'a', b'l'];
+
+            let mut buf = BytesMut::new();
+            UTF8StringPairRef(KEY, VAL).encode(&mut buf);
 
             assert_eq!(&EXPECTED_VAL[..], &buf.split().freeze());
         }

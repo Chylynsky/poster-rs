@@ -177,8 +177,8 @@ pub(crate) struct PublishTx<'a> {
     pub(crate) topic_alias: Option<TopicAlias>,
     #[builder(setter(strip_option), default)]
     pub(crate) message_expiry_interval: Option<MessageExpiryInterval>,
-    #[builder(setter(strip_option), default)]
-    pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
+    // #[builder(setter(strip_option), default)]
+    // pub(crate) subscription_identifier: Option<SubscriptionIdentifier>,
     #[builder(setter(strip_option), default)]
     pub(crate) correlation_data: Option<CorrelationDataRef<'a>>,
     #[builder(setter(strip_option), default)]
@@ -239,11 +239,11 @@ impl<'a> PublishTx<'a> {
                     .as_ref()
                     .map(|val| val.byte_len())
                     .unwrap_or(0)
-                + self
-                    .subscription_identifier
-                    .as_ref()
-                    .map(|val| val.byte_len())
-                    .unwrap_or(0)
+                // + self
+                //     .subscription_identifier
+                //     .as_ref()
+                //     .map(|val| val.byte_len())
+                //     .unwrap_or(0)
                 + self
                     .correlation_data
                     .as_ref()
@@ -327,9 +327,9 @@ impl<'a> Encode for PublishTx<'a> {
             encoder.encode(val);
         }
 
-        if let Some(val) = self.subscription_identifier {
-            encoder.encode(val);
-        }
+        // if let Some(val) = self.subscription_identifier {
+        //     encoder.encode(val);
+        // }
 
         if let Some(val) = self.correlation_data {
             encoder.encode(val);

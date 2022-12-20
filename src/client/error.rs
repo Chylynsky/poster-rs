@@ -12,7 +12,7 @@ use std::{
     error::Error,
     fmt::{self, Display},
     io, str,
-    time::Duration,
+    time::{Duration, SystemTimeError},
 };
 
 #[derive(Debug, Clone)]
@@ -157,6 +157,14 @@ impl From<&str> for InternalError {
     fn from(s: &str) -> Self {
         Self {
             msg: String::from(s),
+        }
+    }
+}
+
+impl From<SystemTimeError> for InternalError {
+    fn from(err: SystemTimeError) -> Self {
+        Self {
+            msg: err.to_string(),
         }
     }
 }
@@ -460,6 +468,12 @@ impl Error for MqttError {}
 impl From<InternalError> for MqttError {
     fn from(err: InternalError) -> Self {
         Self::InternalError(err)
+    }
+}
+
+impl From<SystemTimeError> for MqttError {
+    fn from(err: SystemTimeError) -> Self {
+        Self::InternalError(err.into())
     }
 }
 
