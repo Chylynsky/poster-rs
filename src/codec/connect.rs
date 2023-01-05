@@ -13,59 +13,60 @@ use derive_builder::Builder;
 #[builder(build_fn(error = "CodecError", validate = "Self::validate"))]
 pub(crate) struct ConnectTx<'a> {
     #[builder(default)]
-    keep_alive: u16,
+    pub(crate) keep_alive: u16,
 
     #[builder(setter(strip_option), default)]
-    session_expiry_interval: Option<SessionExpiryInterval>,
+    pub(crate) session_expiry_interval: Option<SessionExpiryInterval>,
     #[builder(setter(strip_option), default)]
-    receive_maximum: Option<ReceiveMaximum>,
+    pub(crate) receive_maximum: Option<ReceiveMaximum>,
     #[builder(setter(strip_option), default)]
-    maximum_packet_size: Option<MaximumPacketSize>,
+    pub(crate) maximum_packet_size: Option<MaximumPacketSize>,
     #[builder(setter(strip_option), default)]
-    topic_alias_maximum: Option<TopicAliasMaximum>,
+    pub(crate) topic_alias_maximum: Option<TopicAliasMaximum>,
     #[builder(setter(strip_option), default)]
-    request_response_information: Option<RequestResponseInformation>,
+    pub(crate) request_response_information: Option<RequestResponseInformation>,
     #[builder(setter(strip_option), default)]
-    request_problem_information: Option<RequestProblemInformation>,
+    pub(crate) request_problem_information: Option<RequestProblemInformation>,
     #[builder(setter(strip_option), default)]
-    authentication_method: Option<AuthenticationMethodRef<'a>>,
+    pub(crate) authentication_method: Option<AuthenticationMethodRef<'a>>,
     #[builder(setter(strip_option), default)]
-    authentication_data: Option<AuthenticationDataRef<'a>>,
+    pub(crate) authentication_data: Option<AuthenticationDataRef<'a>>,
     #[builder(setter(custom), default)]
-    user_property: Vec<UserPropertyRef<'a>>,
+    pub(crate) user_property: Vec<UserPropertyRef<'a>>,
 
     #[builder(default)]
-    will_qos: QoS,
+    pub(crate) will_qos: QoS,
     #[builder(default)]
-    will_retain: bool,
+    pub(crate) will_retain: bool,
     #[builder(default)]
-    clean_start: bool,
+    pub(crate) clean_start: bool,
 
-    client_identifier: UTF8StringRef<'a>,
+    #[builder(default)]
+    pub(crate) client_identifier: UTF8StringRef<'a>,
 
     #[builder(setter(strip_option), default)]
-    will_delay_interval: Option<WillDelayInterval>,
+    pub(crate) will_delay_interval: Option<WillDelayInterval>,
     #[builder(setter(strip_option), default)]
-    will_payload_format_indicator: Option<PayloadFormatIndicator>,
+    pub(crate) will_payload_format_indicator: Option<PayloadFormatIndicator>,
     #[builder(setter(strip_option), default)]
-    will_message_expiry_interval: Option<MessageExpiryInterval>,
+    pub(crate) will_message_expiry_interval: Option<MessageExpiryInterval>,
     #[builder(setter(strip_option), default)]
-    will_content_type: Option<ContentTypeRef<'a>>,
+    pub(crate) will_content_type: Option<ContentTypeRef<'a>>,
     #[builder(setter(strip_option), default)]
-    will_reponse_topic: Option<ResponseTopicRef<'a>>,
+    pub(crate) will_response_topic: Option<ResponseTopicRef<'a>>,
     #[builder(setter(strip_option), default)]
-    will_correlation_data: Option<CorrelationDataRef<'a>>,
+    pub(crate) will_correlation_data: Option<CorrelationDataRef<'a>>,
     #[builder(setter(custom), default)]
-    will_user_property: Vec<UserPropertyRef<'a>>,
+    pub(crate) will_user_property: Vec<UserPropertyRef<'a>>,
 
     #[builder(setter(strip_option), default)]
-    will_topic: Option<UTF8StringRef<'a>>,
+    pub(crate) will_topic: Option<UTF8StringRef<'a>>,
     #[builder(setter(strip_option), default)]
-    will_payload: Option<BinaryRef<'a>>,
+    pub(crate) will_payload: Option<BinaryRef<'a>>,
     #[builder(setter(strip_option), default)]
-    username: Option<UTF8StringRef<'a>>,
+    pub(crate) username: Option<UTF8StringRef<'a>>,
     #[builder(setter(strip_option), default)]
-    password: Option<BinaryRef<'a>>,
+    pub(crate) password: Option<BinaryRef<'a>>,
 }
 
 impl<'a> ConnectTxBuilder<'a> {
@@ -174,7 +175,7 @@ impl<'a> ConnectTx<'a> {
                     .map(ByteLen::byte_len)
                     .unwrap_or(0)
                 + self
-                    .will_reponse_topic
+                    .will_response_topic
                     .as_ref()
                     .map(ByteLen::byte_len)
                     .unwrap_or(0)
@@ -337,7 +338,7 @@ impl<'a> Encode for ConnectTx<'a> {
                 encoder.encode(val)
             }
 
-            if let Some(val) = self.will_reponse_topic {
+            if let Some(val) = self.will_response_topic {
                 encoder.encode(val)
             }
 

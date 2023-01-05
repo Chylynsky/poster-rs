@@ -5,8 +5,10 @@ use crate::{
         utils::*,
     },
     codec::{PubackTxBuilder, PubcompTxBuilder, PubrecTxBuilder, RxPacket, TxPacket},
-    core::utils::{Encode, SizedPacket},
-    QoS,
+    core::{
+        utils::{Encode, SizedPacket},
+        QoS,
+    },
 };
 use bytes::BytesMut;
 use futures::{

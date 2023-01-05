@@ -9,6 +9,9 @@ use crate::{
 };
 use core::mem;
 
+/// Reason for PUBACK packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PubackReason {
     Success = 0x00,

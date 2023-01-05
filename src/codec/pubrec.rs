@@ -8,6 +8,9 @@ use crate::{
     },
 };
 
+/// Reason for PUBREC packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PubrecReason {
     Success = 0x00,

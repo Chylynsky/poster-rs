@@ -12,10 +12,20 @@ use bytes::{BufMut, Bytes, BytesMut};
 use core::mem;
 use derive_builder::Builder;
 
+/// Reason for AUTH packet.
+///
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AuthReason {
+    /// Success
+    ///
     Success = 0x00,
+
+    /// Continue authentication
+    ///
     ContinueAuthentication = 0x18,
+
+    /// Re-authenticate
+    ///
     ReAuthenticate = 0x19,
 }
 

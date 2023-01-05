@@ -435,11 +435,21 @@ impl Encode for u8 {
     }
 }
 
+/// Enum representing Quality Of Service
+///
 #[allow(clippy::enum_variant_names)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum QoS {
+    /// At most once QoS
+    ///
     AtMostOnce = 0,
+
+    /// At least once QoS
+    ///
     AtLeastOnce = 1,
+
+    /// Exactly once QoS
+    ///
     ExactlyOnce = 2,
 }
 

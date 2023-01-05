@@ -12,6 +12,9 @@ use bytes::Bytes;
 use core::mem;
 use derive_builder::Builder;
 
+/// Reason for CONNACK packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ConnectReason {
     Success = 0x00,
@@ -114,8 +117,8 @@ pub(crate) struct ConnackRx {
     pub(crate) receive_maximum: ReceiveMaximum,
     #[builder(default)]
     pub(crate) topic_alias_maximum: TopicAliasMaximum,
-    #[builder(default)]
-    pub(crate) session_expiry_interval: SessionExpiryInterval,
+    #[builder(setter(strip_option), default)]
+    pub(crate) session_expiry_interval: Option<SessionExpiryInterval>,
     #[builder(setter(strip_option), default)]
     pub(crate) maximum_packet_size: Option<MaximumPacketSize>,
     #[builder(setter(strip_option), default)]
@@ -425,7 +428,7 @@ mod test {
         assert!(!result.session_present);
         assert_eq!(result.reason, ConnectReason::Success);
         assert_eq!(
-            result.session_expiry_interval,
+            result.session_expiry_interval.unwrap(),
             SessionExpiryInterval::from(900)
         );
         assert_eq!(

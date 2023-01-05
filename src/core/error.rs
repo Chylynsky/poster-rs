@@ -2,6 +2,8 @@ use core::fmt;
 use derive_builder::UninitializedFieldError;
 use std::{error::Error, str::Utf8Error};
 
+/// Invalid value was supplied.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidValue;
 
@@ -13,6 +15,8 @@ impl fmt::Display for InvalidValue {
 
 impl Error for InvalidValue {}
 
+/// Unaccepted value `0` was supplied.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct ValueIsZero;
 
@@ -24,6 +28,8 @@ impl fmt::Display for ValueIsZero {
 
 impl Error for ValueIsZero {}
 
+/// Value exceedes the allowed maximum.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct ValueExceedesMaximum;
 
@@ -35,6 +41,8 @@ impl fmt::Display for ValueExceedesMaximum {
 
 impl Error for ValueExceedesMaximum {}
 
+/// Invalid byte encoding was found.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidEncoding;
 
@@ -46,6 +54,8 @@ impl fmt::Display for InvalidEncoding {
 
 impl Error for InvalidEncoding {}
 
+/// Size of the supplied buffer is too small.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InsufficientBufferSize;
 
@@ -57,13 +67,32 @@ impl fmt::Display for InsufficientBufferSize {
 
 impl Error for InsufficientBufferSize {}
 
+/// General error type for conversion errors.
+///
 #[derive(Debug, Clone)]
 pub enum ConversionError {
+    /// See [InvalidValue].
+    ///
     InvalidValue(InvalidValue),
+
+    /// See [ValueIsZero].
+    ///
     ValueIsZero(ValueIsZero),
+
+    /// See [ValueExceedesMaximum].
+    ///
     ValueExceedesMaximum(ValueExceedesMaximum),
+
+    /// See [InvalidEncoding].
+    ///
     InvalidEncoding(InvalidEncoding),
+
+    /// See [Utf8Error].
+    ///
     Utf8Error(Utf8Error),
+
+    /// See [InsufficientBufferSize].
+    ///
     InsufficientBufferSize(InsufficientBufferSize),
 }
 
@@ -142,6 +171,8 @@ impl From<InsufficientBufferSize> for ConversionError {
     }
 }
 
+/// Invalid property identifier found in an incoming packet.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidPropertyId;
 
@@ -153,6 +184,9 @@ impl fmt::Display for InvalidPropertyId {
 
 impl Error for InvalidPropertyId {}
 
+/// General error type for property errors.
+///
+#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum PropertyError {
     ConversionError(ConversionError),
@@ -186,6 +220,8 @@ impl From<InvalidPropertyId> for PropertyError {
     }
 }
 
+/// Found property that is not valid for the incoming packet.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct UnexpectedProperty;
 
@@ -197,6 +233,8 @@ impl fmt::Display for UnexpectedProperty {
 
 impl Error for UnexpectedProperty {}
 
+/// Header of the incoming packet is invalid.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidPacketHeader;
 
@@ -208,6 +246,8 @@ impl fmt::Display for InvalidPacketHeader {
 
 impl Error for InvalidPacketHeader {}
 
+/// Size of the incoming packet is not valid.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidPacketSize;
 
@@ -219,6 +259,8 @@ impl fmt::Display for InvalidPacketSize {
 
 impl Error for InvalidPacketSize {}
 
+/// Declared propery length of the incoming packet is not valid.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidPropertyLength;
 
@@ -230,6 +272,8 @@ impl fmt::Display for InvalidPropertyLength {
 
 impl Error for InvalidPropertyLength {}
 
+/// Mandatory property is missing in the packet.
+///
 #[derive(Debug, Clone, Copy)]
 pub struct MandatoryPropertyMissing;
 
@@ -241,6 +285,9 @@ impl fmt::Display for MandatoryPropertyMissing {
 
 impl Error for MandatoryPropertyMissing {}
 
+/// General error type for the packet codec.
+///
+#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub enum CodecError {
     ConversionError(ConversionError),

@@ -1,8 +1,9 @@
 use crate::{
-    codec::{AuthRx, ConnackRx, DisconnectRx},
+    codec::{
+        AuthReason, AuthRx, ConnackRx, ConnectReason, DisconnectReason, DisconnectRx, PubackReason,
+        PubcompReason, PubrecReason,
+    },
     core::{collections::UserProperties, error::CodecError},
-    AuthReason, ConnectReason, DisconnectReason, PubackReason, PubcompReason, PubrecReason,
-    SubackReason, UnsubackReason,
 };
 use futures::channel::{
     mpsc::{SendError, TrySendError},
@@ -15,6 +16,8 @@ use std::{
     time::{Duration, SystemTimeError},
 };
 
+/// Socket was closed.
+///
 #[derive(Debug, Clone)]
 pub struct SocketClosed;
 
@@ -32,6 +35,9 @@ impl From<io::Error> for SocketClosed {
     }
 }
 
+/// Error indicating that [ContextHandle](super::handle::ContextHandle) object
+/// required for completing the operation was dropped.
+///
 #[derive(Debug, Clone)]
 pub struct HandleClosed;
 
@@ -55,6 +61,9 @@ impl From<SendError> for HandleClosed {
     }
 }
 
+/// Error indicating that client [Context](super::context::Context) has
+/// exited ([run](super::context::Context::run) has returned).
+///
 #[derive(Debug, Clone)]
 pub struct ContextExited;
 
@@ -72,20 +81,29 @@ impl<T> From<TrySendError<T>> for ContextExited {
     }
 }
 
+/// Broker has terminated the connection by sending DISCONNECT packet.
+/// Accesses data in DISCONNECT packet.
+///
 #[derive(Clone)]
 pub struct Disconnected {
     packet: DisconnectRx,
 }
 
 impl Disconnected {
+    /// Accesses reason value.
+    ///
     pub fn reason(&self) -> DisconnectReason {
         self.packet.reason
     }
 
+    /// Accesses session expiry interval.
+    ///
     pub fn session_expiry_interval(&self) -> Duration {
         Duration::from_secs(u64::from(u32::from(self.packet.session_expiry_interval)))
     }
 
+    /// Accesses reason string.
+    ///
     pub fn reason_string(&self) -> Option<&str> {
         self.packet
             .reason_string
@@ -96,6 +114,8 @@ impl Disconnected {
             .and_then(Result::ok)
     }
 
+    /// Accesses server reference.
+    ///
     pub fn server_reference(&self) -> Option<&str> {
         self.packet
             .server_reference
@@ -106,6 +126,8 @@ impl Disconnected {
             .and_then(Result::ok)
     }
 
+    /// Accesses user properties.
+    ///
     pub fn user_properties(&self) -> &UserProperties {
         &self.packet.user_property
     }
@@ -118,7 +140,6 @@ impl fmt::Debug for Disconnected {
             .field("session_expiry_interval", &self.session_expiry_interval())
             .field("reason_string", &self.reason_string())
             .field("server_reference", &self.server_reference())
-            .field("user_properties", &self.user_properties())
             .finish()
     }
 }
@@ -136,6 +157,9 @@ impl fmt::Display for Disconnected {
 
 impl Error for Disconnected {}
 
+/// Struct representing internal errors. In general, these should not happen and should
+/// be trated as an implementation defect.
+///
 #[derive(Debug, Clone)]
 pub struct InternalError {
     msg: String,
@@ -169,6 +193,9 @@ impl From<SystemTimeError> for InternalError {
     }
 }
 
+/// Broker has sent more QoS>0 PUBLISH packets than specified in the connection request
+/// [receive_maximum](super::opts::ConnectOpts::receive_maximum).
+///
 #[derive(Debug, Clone, Copy)]
 pub struct QuotaExceeded;
 
@@ -181,16 +208,39 @@ impl fmt::Display for QuotaExceeded {
     }
 }
 
+/// Client attemps to send more data to the server than
+/// [maximum packet size](super::rsp::ConnectRsp::maximum_packet_size)
+/// property allows.
+///
+#[derive(Debug, Clone, Copy)]
+pub struct MaximumPacketSizeExceeded;
+
+impl fmt::Display for MaximumPacketSizeExceeded {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{{ \"type\": \"MaximumPacketSizeExceeded\", \"message\": \"packet too large\" }}"
+        )
+    }
+}
+
+/// Connection could not be established with the server. Accesses
+/// CONNACK packet with reason value greater or equal 0x80.
+///
 #[derive(Clone)]
 pub struct ConnectError {
     packet: ConnackRx,
 }
 
 impl ConnectError {
+    /// Accesses reason value.
+    ///
     pub fn reason(&self) -> ConnectReason {
         self.packet.reason
     }
 
+    /// Accesses reason string.
+    ///
     pub fn reason_string(&self) -> Option<&str> {
         self.packet
             .reason_string
@@ -201,6 +251,8 @@ impl ConnectError {
             .and_then(Result::ok)
     }
 
+    /// Accesses server reference.
+    ///
     pub fn server_reference(&self) -> Option<&str> {
         self.packet
             .server_reference
@@ -211,6 +263,8 @@ impl ConnectError {
             .and_then(Result::ok)
     }
 
+    /// Accesses user properties.
+    ///
     pub fn user_properties(&self) -> &UserProperties {
         &self.packet.user_property
     }
@@ -222,7 +276,6 @@ impl fmt::Debug for ConnectError {
             .field("reason", &self.reason())
             .field("reason_string", &self.reason_string())
             .field("server_reference", &self.server_reference())
-            .field("user_properties", &self.user_properties())
             .finish()
     }
 }
@@ -253,16 +306,23 @@ impl From<ConnectError> for MqttError {
     }
 }
 
+/// Extended authorization was refused by the broker.
+/// Accesses AUTH packet with reason value greater or equal 0x80.
+///
 #[derive(Clone)]
 pub struct AuthError {
     packet: AuthRx,
 }
 
 impl AuthError {
+    /// Accesses reason value.
+    ///
     pub fn reason(&self) -> AuthReason {
         self.packet.reason
     }
 
+    /// Accesses reason string.
+    ///
     pub fn reason_string(&self) -> Option<&str> {
         self.packet
             .reason_string
@@ -273,6 +333,8 @@ impl AuthError {
             .and_then(Result::ok)
     }
 
+    /// Accesses user properties.
+    ///
     pub fn user_properties(&self) -> &UserProperties {
         &self.packet.user_property
     }
@@ -283,7 +345,6 @@ impl fmt::Debug for AuthError {
         f.debug_struct("AuthError")
             .field("reason", &self.reason())
             .field("reason_string", &self.reason_string())
-            .field("user_properties", &self.user_properties())
             .finish()
     }
 }
@@ -314,10 +375,20 @@ impl From<AuthError> for MqttError {
     }
 }
 
+/// Publish with QoS>0 failed.
+///
 #[derive(Debug, Clone, Copy)]
 pub enum PublishError {
+    /// Reason of PUBACK packet (QoS == 1 publish failed).
+    ///
     Puback(PubackReason),
+
+    /// Reason of PUBREC packet (QoS == 2 publish step 1 failed).
+    ///
     Pubrec(PubrecReason),
+
+    /// Reason of PUBCOMP packet (QoS == 2 publish step 2 failed).
+    ///
     Pubcomp(PubcompReason),
 }
 
@@ -374,66 +445,53 @@ impl From<PubcompReason> for PublishError {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct UnsubscribeError {
-    pub reason: UnsubackReason,
-}
-
-impl From<UnsubscribeError> for MqttError {
-    fn from(err: UnsubscribeError) -> Self {
-        MqttError::UnsubscribeError(err)
-    }
-}
-
-impl Error for UnsubscribeError {}
-
-impl Display for UnsubscribeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ \"type\": \"UnsubscribeError\", \"message\": \"unsubscribe error: {} [{:?}]\" }}",
-            self.reason as u8, self.reason,
-        )
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct SubscribeError {
-    pub reason: SubackReason,
-}
-
-impl From<SubscribeError> for MqttError {
-    fn from(err: SubscribeError) -> Self {
-        MqttError::SubscribeError(err)
-    }
-}
-
-impl Error for SubscribeError {}
-
-impl Display for SubscribeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ \"type\": \"SubscribeError\", \"message\": \"subscribe error: {} [{:?}]\" }}",
-            self.reason as u8, self.reason,
-        )
-    }
-}
-
+/// Main library error type. All other errors are converted to this type before being returned to the user.
+///
 #[derive(Debug, Clone)]
 pub enum MqttError {
+    /// See [InternalError](crate::client::error::InternalError)
+    ///
     InternalError(InternalError),
+
+    /// See [ConnectError](crate::client::error::ConnectError)
+    ///
     ConnectError(ConnectError),
+
+    /// See [AuthError](crate::client::error::AuthError)
+    ///
     AuthError(AuthError),
+
+    /// See [PublishError](crate::client::error::PublishError)
+    ///
     PublishError(PublishError),
-    UnsubscribeError(UnsubscribeError),
-    SubscribeError(SubscribeError),
+
+    /// See [SocketClosed](crate::client::error::SocketClosed)
+    ///
     SocketClosed(SocketClosed),
+
+    /// See [HandleClosed](crate::client::error::HandleClosed)
+    ///
     HandleClosed(HandleClosed),
+
+    /// See [ContextExited](crate::client::error::ContextExited)
+    ///
     ContextExited(ContextExited),
+
+    /// See [Disconnected](crate::client::error::Disconnected)
+    ///
     Disconnected(Disconnected),
+
+    /// See [CodecError](crate::core::error::CodecError)
+    ///
     CodecError(CodecError),
+
+    /// See [QuotaExceeded](crate::client::error::QuotaExceeded)
+    ///
     QuotaExceeded(QuotaExceeded),
+
+    /// See [MaximumPacketSizeExceeded](crate::client::error::MaximumPacketSizeExceeded)
+    ///
+    MaximumPacketSizeExceeded(MaximumPacketSizeExceeded),
 }
 
 impl fmt::Display for MqttError {
@@ -443,8 +501,6 @@ impl fmt::Display for MqttError {
             Self::ConnectError(err) => write!(f, "{}", err),
             Self::AuthError(err) => write!(f, "{}", err),
             Self::CodecError(err) => write!(f, "{}", err),
-            Self::UnsubscribeError(err) => write!(f, "{}", err),
-            Self::SubscribeError(err) => write!(f, "{}", err),
             Self::PublishError(err) => write!(f, "{}", err),
             Self::SocketClosed(err) => {
                 write!(f, "{{ \"type\": \"MqttError\", \"message\": \"{}\" }}", err)
@@ -459,6 +515,7 @@ impl fmt::Display for MqttError {
                 write!(f, "{{ \"type\": \"MqttError\", \"message\": \"{}\" }}", err)
             }
             Self::QuotaExceeded(err) => write!(f, "{}", err),
+            Self::MaximumPacketSizeExceeded(err) => write!(f, "{}", err),
         }
     }
 }
@@ -540,5 +597,11 @@ impl From<DisconnectRx> for MqttError {
 impl From<QuotaExceeded> for MqttError {
     fn from(err: QuotaExceeded) -> Self {
         Self::QuotaExceeded(err)
+    }
+}
+
+impl From<MaximumPacketSizeExceeded> for MqttError {
+    fn from(err: MaximumPacketSizeExceeded) -> Self {
+        Self::MaximumPacketSizeExceeded(err)
     }
 }

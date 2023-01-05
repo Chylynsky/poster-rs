@@ -8,6 +8,9 @@ use crate::{
 use bytes::{Bytes, BytesMut};
 use core::mem;
 
+/// Reason for PUBCOMP packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PubcompReason {
     Success = 0x00,

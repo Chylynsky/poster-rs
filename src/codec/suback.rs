@@ -12,6 +12,9 @@ use bytes::Bytes;
 
 use derive_builder::Builder;
 
+/// Reason for SUBACK packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SubackReason {
     GranteedQoS0 = 0x00,

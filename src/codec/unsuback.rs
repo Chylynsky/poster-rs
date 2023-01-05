@@ -12,6 +12,9 @@ use bytes::Bytes;
 
 use derive_builder::Builder;
 
+/// Reason for UNSUBACK packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum UnsubackReason {
     Success = 0x00,

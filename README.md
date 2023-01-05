@@ -1,14 +1,15 @@
 # Poster-rs 📬
-## Zero-copy, RX-style MQTT5 client library
+## MQTT5 client library
 
-Poster-rs is a robust, async MQTT5 client library for rust.
+Poster-rs is an async MQTT5 client library written in rust, designed having efficiency and operation locality in mind.
 
 ## Features
 
-- MQTT 5 support
-- Runtime agnostic (see examples for tokio, smol and async-std)
+- MQTT 5
+- Runtime agnostic
 - Zero-copy
 - Per-subscription async streams
+- No unsafe code
 
 ## Quickstart
 
@@ -18,10 +19,10 @@ TODO
 
 Poster-rs depends on the below crates:
 
-- [futures] - Enables runtime agnostic API
-- [bytes] - Raw data and buffer management
-- [either] - Utility for handling "unions" of two different types
-- [derive_builder] - Implements Builder pattern without code bloat
+- [futures](https://docs.rs/futures/latest/futures/) - Enables runtime agnostic API
+- [bytes](https://docs.rs/bytes/latest/bytes/) - Raw data and buffer management
+- [either](https://docs.rs/either/latest/either/) - Utility for handling "unions" of two different types
+- [derive_builder](https://docs.rs/derive_builder/latest/derive_builder/) - Implements Builder pattern without code bloat
 
 ## License
 

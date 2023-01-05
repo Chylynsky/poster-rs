@@ -1,18 +1,24 @@
 use crate::{
-    client::{error::ConnectError, message::ContextMessage, stream::SubscribeStreamState},
+    client::{
+        error::{AuthError, ConnectError},
+        message::ContextMessage,
+        stream::SubscribeStreamState,
+    },
     codec::*,
     core::{
         base_types::{NonZero, QoS},
         collections::UserProperties,
     },
-    AuthError,
 };
 use futures::{
     channel::mpsc::{self},
     stream, Stream,
 };
-use std::str;
+use std::{str, time::Duration};
 
+/// Response from connection request.
+/// Accesses data in CONNACK packet.
+///
 pub struct ConnectRsp {
     packet: ConnackRx,
 }
@@ -34,50 +40,82 @@ impl TryFrom<ConnackRx> for ConnectRsp {
 }
 
 impl ConnectRsp {
+    /// Accesses session present flag.
+    ///
     pub fn session_present(&self) -> bool {
         self.packet.session_present
     }
 
+    /// Accesses reason value.
+    ///
     pub fn reason(&self) -> ConnectReason {
         self.packet.reason
     }
 
+    /// Accesses flag representing if wildcard subscriptions are available.
+    ///
     pub fn wildcard_subscription_available(&self) -> bool {
         bool::from(self.packet.wildcard_subscription_available)
     }
 
+    /// Accesses flag representing if subscription identifiers are available.
+    ///
     pub fn subscription_identifier_available(&self) -> bool {
         bool::from(self.packet.subscription_identifier_available)
     }
 
+    /// Accesses flag representing if shared subscriptions are available.
+    ///
     pub fn shared_subscription_available(&self) -> bool {
         bool::from(self.packet.shared_subscription_available)
     }
 
+    /// Accesses maximum QoS value.
+    ///
     pub fn maximum_qos(&self) -> QoS {
         QoS::from(self.packet.maximum_qos)
     }
 
+    /// Accesses flag representing if retain is available.
+    ///
     pub fn retain_available(&self) -> bool {
         bool::from(self.packet.retain_available)
     }
 
-    pub fn server_keep_alive(&self) -> Option<u16> {
-        self.packet.server_keep_alive.map(u16::from)
+    /// Accesses server keep alive.
+    ///
+    pub fn server_keep_alive(&self) -> Option<Duration> {
+        self.packet
+            .server_keep_alive
+            .map(u16::from)
+            .map(u64::from)
+            .map(Duration::from_secs)
     }
 
+    /// Accesses server receive maximum value.
+    ///
     pub fn receive_maximum(&self) -> u16 {
         NonZero::from(self.packet.receive_maximum).get()
     }
 
+    /// Accesses topic alias maximum value.
+    ///
     pub fn topic_alias_maximum(&self) -> u16 {
         u16::from(self.packet.topic_alias_maximum)
     }
 
-    pub fn session_expiry_interval(&self) -> u32 {
-        u32::from(self.packet.session_expiry_interval)
+    /// Accesses session expiry interval value.
+    ///
+    pub fn session_expiry_interval(&self) -> Option<Duration> {
+        self.packet
+            .session_expiry_interval
+            .map(u32::from)
+            .map(u64::from)
+            .map(Duration::from_secs)
     }
 
+    /// Accesses server maximum packet size.
+    ///
     pub fn maximum_packet_size(&self) -> Option<u32> {
         self.packet
             .maximum_packet_size
@@ -85,6 +123,8 @@ impl ConnectRsp {
             .map(|val| val.get())
     }
 
+    /// Accesses client identifier assigned by the server.
+    ///
     pub fn assigned_client_identifier(&self) -> Option<&str> {
         self.packet
             .assigned_client_identifier
@@ -95,6 +135,8 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses reason string.
+    ///
     pub fn reason_string(&self) -> Option<&str> {
         self.packet
             .reason_string
@@ -105,6 +147,8 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses response information.
+    ///
     pub fn response_information(&self) -> Option<&str> {
         self.packet
             .response_information
@@ -115,6 +159,8 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses server reference.
+    ///
     pub fn server_reference(&self) -> Option<&str> {
         self.packet
             .server_reference
@@ -125,6 +171,8 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses authentication method.
+    ///
     pub fn authentication_method(&self) -> Option<&str> {
         self.packet
             .authentication_method
@@ -135,6 +183,8 @@ impl ConnectRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses authentication data.
+    ///
     pub fn authentication_data(&self) -> Option<&[u8]> {
         self.packet
             .authentication_data
@@ -143,11 +193,16 @@ impl ConnectRsp {
             .map(|val| val.0.as_ref())
     }
 
+    /// Accesses user properties.
+    ///
     pub fn user_properties(&self) -> &UserProperties {
         &self.packet.user_property
     }
 }
 
+/// Response from connection request, if extended authorization is performed.
+/// Accesses data in AUTH packet.
+///
 pub struct AuthRsp {
     packet: AuthRx,
 }
@@ -165,10 +220,14 @@ impl TryFrom<AuthRx> for AuthRsp {
 }
 
 impl AuthRsp {
+    /// Accesses reason value.
+    ///
     pub fn reason(&self) -> AuthReason {
         self.packet.reason
     }
 
+    /// Accesses reason string.
+    ///
     pub fn reason_string(&self) -> Option<&str> {
         self.packet
             .reason_string
@@ -179,6 +238,8 @@ impl AuthRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses authentication method.
+    ///
     pub fn authentication_method(&self) -> Option<&str> {
         self.packet
             .authentication_method
@@ -189,6 +250,8 @@ impl AuthRsp {
             .and_then(Result::ok)
     }
 
+    /// Accesses authentication data.
+    ///
     pub fn authentication_data(&self) -> Option<&[u8]> {
         self.packet
             .authentication_data
@@ -197,6 +260,8 @@ impl AuthRsp {
             .map(|val| val.0.as_ref())
     }
 
+    /// Accesses user properties.
+    ///
     pub fn user_properties(&self) -> &UserProperties {
         &self.packet.user_property
     }
@@ -254,10 +319,7 @@ impl SubscribeRsp {
     }
 }
 
-/// Response to the subscription request, representing the Suback packet.
-///
-/// In order to receive messages published on the subscribed topics use
-/// the [stream](SubscribeRsp::stream) method.
+/// Response to the unsubscribe request, representing the UNSUBACK packet.
 ///
 pub struct UnsubscribeRsp {
     pub(crate) packet: UnsubackRx,
@@ -290,6 +352,8 @@ impl UnsubscribeRsp {
     }
 }
 
+/// Accesses data in the incoming PUBLISH packet.
+///
 pub struct PublishData {
     packet: PublishRx,
 }
@@ -301,26 +365,38 @@ impl From<PublishRx> for PublishData {
 }
 
 impl PublishData {
+    /// Accesses duplicate flag.
+    ///
     pub fn dup(&self) -> bool {
         self.packet.dup
     }
 
+    /// Accesses retain flag.
+    ///
     pub fn retain(&self) -> bool {
         self.packet.retain
     }
 
+    /// Accesses QoS value.
+    ///
     pub fn qos(&self) -> QoS {
         self.packet.qos
     }
 
+    /// Accesses topic name.
+    ///
     pub fn topic_name(&self) -> &str {
         str::from_utf8(self.packet.topic_name.0.as_ref()).unwrap()
     }
 
+    /// Accesses payload format indicator.
+    ///
     pub fn payload_format_indicator(&self) -> Option<bool> {
         self.packet.payload_format_indicator.map(bool::from)
     }
 
+    /// Accesses topic alias.
+    ///
     pub fn topic_alias(&self) -> Option<u16> {
         self.packet
             .topic_alias
@@ -328,18 +404,18 @@ impl PublishData {
             .map(|val| val.get())
     }
 
-    pub fn message_expiry_interval(&self) -> Option<u32> {
-        self.packet.message_expiry_interval.map(u32::from)
-    }
-
-    pub fn subscription_identifier(&self) -> Option<u32> {
+    /// Accesses message expiry interval.
+    ///
+    pub fn message_expiry_interval(&self) -> Option<Duration> {
         self.packet
-            .subscription_identifier
-            .map(NonZero::from)
-            .map(|val| val.get())
-            .map(|val| val.value())
+            .message_expiry_interval
+            .map(u32::from)
+            .map(u64::from)
+            .map(Duration::from_secs)
     }
 
+    /// Accesses correlation data.
+    ///
     pub fn correlation_data(&self) -> Option<&[u8]> {
         self.packet
             .correlation_data
@@ -348,6 +424,8 @@ impl PublishData {
             .map(|val| val.0.as_ref())
     }
 
+    /// Accesses response topic.
+    ///
     pub fn response_topic(&self) -> Option<&str> {
         self.packet
             .response_topic
@@ -358,6 +436,8 @@ impl PublishData {
             .and_then(Result::ok)
     }
 
+    /// Accesses content type.
+    ///
     pub fn content_type(&self) -> Option<&str> {
         self.packet
             .content_type
@@ -368,11 +448,23 @@ impl PublishData {
             .and_then(Result::ok)
     }
 
+    /// Accesses payload.
+    ///
     pub fn payload(&self) -> &[u8] {
         self.packet.payload.0.as_ref()
     }
 
+    /// Accesses user properties.
+    ///
     pub fn user_properties(&self) -> &UserProperties {
         &self.packet.user_property
+    }
+
+    pub(crate) fn subscription_identifier(&self) -> Option<u32> {
+        self.packet
+            .subscription_identifier
+            .map(NonZero::from)
+            .map(|val| val.get())
+            .map(|val| val.value())
     }
 }

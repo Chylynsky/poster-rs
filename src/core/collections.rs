@@ -1,5 +1,5 @@
 use crate::core::{base_types::UTF8StringPair, properties::UserProperty};
-use std::{fmt, str};
+use core::str;
 
 /// Map collection for reading user properties as key-value pairs from packets.
 #[derive(Clone, Debug, Default)]
@@ -76,15 +76,6 @@ impl UserProperties {
     }
 }
 
-impl fmt::Display for UserProperties {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{")?;
-        self.iter()
-            .try_for_each(|(key, val)| write!(f, "\"{}\": \"{}\"", key, val))?;
-        write!(f, "}}")
-    }
-}
-
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
@@ -137,27 +128,4 @@ mod test {
             [("key0", "val0"), ("key1", "val1"), ("key1", "val2")]
         );
     }
-
-    // #[test]
-    // fn display() {
-    //     let mut properties = UserProperties::new();
-    //     assert_eq!(format!("{}", properties), "{}");
-
-    //     properties.push(UserProperty::from(UTF8StringPair(
-    //         Bytes::from_static("key0".as_bytes()),
-    //         Bytes::from_static("val0".as_bytes()),
-    //     )));
-
-    //     assert_eq!(format!("{}", properties), "{\"key0\": \"val0\"}");
-
-    //     properties.push(UserProperty::from(UTF8StringPair(
-    //         Bytes::from_static("key1".as_bytes()),
-    //         Bytes::from_static("val1".as_bytes()),
-    //     )));
-
-    //     assert_eq!(
-    //         format!("{}", properties),
-    //         "{\"key0\": \"val0\", \"key1\": \"val1\"}"
-    //     );
-    // }
 }

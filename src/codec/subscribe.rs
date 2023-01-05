@@ -8,18 +8,41 @@ use bytes::BytesMut;
 use core::mem;
 use derive_builder::Builder;
 
+/// Retain handling for [SubscriptionOptions].
+///
 #[derive(Clone, Copy)]
 pub enum RetainHandling {
+    /// Send retained messages at the time of the subscribe.
+    ///
     SendOnSubscribe = 0,
+
+    /// Send retained messages at subscribe only if the subscription does not currently exist.
+    ///
     SendIfNoSubscription = 1,
+
+    /// Do not send retained messages at the time of the subscribe.
+    ///
     NoSendOnSubscribe = 2,
 }
 
+/// Subscription options set for the topic filter.
+///
 #[derive(Copy, Clone)]
 pub struct SubscriptionOptions {
+    /// Maximum Quality of Service for the topic.
+    ///
     pub maximum_qos: QoS,
+
+    ///
     pub no_local: bool,
+
+    /// Retain as published flag. Setting to `true` keeps the RETAIN flag from
+    /// incoming PUBLISH packets untouched.
+    ///
     pub retain_as_published: bool,
+
+    /// Retain handling options, see [RetainHandling].
+    ///
     pub retain_handling: RetainHandling,
 }
 

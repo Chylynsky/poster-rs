@@ -12,6 +12,9 @@ use bytes::{Bytes, BytesMut};
 use core::mem;
 use derive_builder::Builder;
 
+/// Reason for DISCONNECT packet.
+///
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DisconnectReason {
     Success = 0x00,

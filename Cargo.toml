@@ -3,12 +3,9 @@ name = "poster"
 version = "0.1.0"
 edition = "2021"
 readme = "README.md"
-description = "MQTT library for Rust."
-homepage = "https://github.com/Chylynsky/poster-rs"
+description = "MQTT 5 client library written in Rust."
 repository = "https://github.com/Chylynsky/poster-rs"
-categories = ["network-programming", "mqtt", "networking"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+categories = ["network-programming", "mqtt", "networking", "async", "client"]
 
 [dependencies]
 either = "1.8"
