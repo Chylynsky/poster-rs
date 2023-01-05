@@ -1,6 +1,6 @@
 use crate::{
     client::{
-        error::{HandleClosed, MqttError, SocketClosed},
+        error::{HandleClosed, MaximumPacketSizeExceeded, MqttError, SocketClosed},
         handle::ContextHandle,
         message::*,
         utils::*,
@@ -9,6 +9,7 @@ use crate::{
     core::{
         base_types::NonZero,
         error::{CodecError, MandatoryPropertyMissing},
+        properties::ReceiveMaximum,
         utils::PacketID,
     },
     io::{RxPacketStream, TxPacketStream},
@@ -19,24 +20,26 @@ use futures::{
     channel::{mpsc, oneshot},
     AsyncRead, AsyncWrite, FutureExt, SinkExt, StreamExt,
 };
-use std::{
-    collections::VecDeque,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 struct Session {
     awaiting_ack: VecDeque<(usize, oneshot::Sender<RxPacket>)>,
     subscriptions: VecDeque<(usize, mpsc::UnboundedSender<RxPacket>)>,
-    unackowledged: VecDeque<(usize, Bytes)>,
+    retrasmit_queue: VecDeque<(usize, Bytes)>,
+    unsent: VecDeque<ContextMessage>,
 }
 
 struct Connection {
     disconnection_timestamp: Option<SystemTime>,
-    session_expiry_interval: Duration,
+    session_expiry_interval: u32,
+
+    remote_receive_maximum: u16,
+    send_quota: u16,
+
+    remote_max_packet_size: Option<u32>,
 }
 
-/// Client context. It is responsible for socket management and direct communication with the broker.
+/// Client context. Responsible for socket management and direct communication with the broker.
 ///
 pub struct Context<RxStreamT, TxStreamT> {
     rx: RxPacketStream<RxStreamT>,
@@ -51,7 +54,7 @@ where
     RxStreamT: AsyncRead + Unpin,
     TxStreamT: AsyncWrite + Unpin,
 {
-    /// Creates a new [Context] instance.
+    /// Creates a new [Context] instance, paired with [ContextHandle].
     ///
     /// # Arguments
     /// * `rx` - Read half of the stream, must be [AsyncRead] + [Unpin].
@@ -66,17 +69,21 @@ where
 
         (
             Self {
-                rx: RxPacketStream::with_capacity(256, rx),
+                rx: RxPacketStream::from(rx),
                 tx: TxPacketStream::from(tx),
                 message_queue: receiver,
                 session: Session {
                     awaiting_ack: VecDeque::new(),
                     subscriptions: VecDeque::new(),
-                    unackowledged: VecDeque::new(),
+                    retrasmit_queue: VecDeque::new(),
+                    unsent: VecDeque::new(),
                 },
                 connection: Connection {
                     disconnection_timestamp: None,
-                    session_expiry_interval: Duration::from_secs(0),
+                    session_expiry_interval: 0,
+                    remote_receive_maximum: u16::from(NonZero::from(ReceiveMaximum::default())),
+                    send_quota: u16::from(NonZero::from(ReceiveMaximum::default())),
+                    remote_max_packet_size: None,
                 },
             },
             ContextHandle {
@@ -94,47 +101,113 @@ where
     fn session_expired(connection: &Connection) -> bool {
         debug_assert!(Self::is_reconnect(connection));
 
-        connection.session_expiry_interval
-            >= connection
-                .disconnection_timestamp
-                .and_then(|timestamp| timestamp.elapsed().ok())
-                .unwrap()
+        if connection.session_expiry_interval == 0 {
+            return true;
+        }
+
+        if connection.session_expiry_interval == u32::MAX {
+            return false;
+        }
+
+        let elapsed = connection
+            .disconnection_timestamp
+            .map(|timestamp| timestamp.elapsed().unwrap())
+            .map(|elapsed| elapsed.as_secs())
+            .map(|elapsed| {
+                if elapsed > u32::MAX as u64 {
+                    u32::MAX
+                } else {
+                    elapsed as u32
+                }
+            })
+            .unwrap();
+
+        connection.session_expiry_interval >= elapsed
+    }
+
+    fn reset_session(session: &mut Session) {
+        session.awaiting_ack.clear();
+        session.subscriptions.clear();
+        session.retrasmit_queue.clear();
+    }
+
+    fn validate_packet_size(connection: &Connection, packet: &[u8]) -> Result<(), MqttError> {
+        if connection.remote_max_packet_size.is_none()
+            || packet.len() <= connection.remote_max_packet_size.unwrap() as usize
+        {
+            Ok(())
+        } else {
+            Err(MaximumPacketSizeExceeded.into())
+        }
     }
 
     async fn handle_message(
         tx: &mut TxPacketStream<TxStreamT>,
+        connection: &mut Connection,
         session: &mut Session,
         msg: ContextMessage,
     ) -> Result<(), MqttError> {
         match msg {
+            ContextMessage::Connect(msg) => {
+                Self::validate_packet_size(connection, msg.packet.as_ref())?;
+                tx.write(msg.packet.as_ref()).await?;
+                connection.session_expiry_interval = msg.session_expiry_interval;
+                session
+                    .awaiting_ack
+                    .push_back((msg.action_id, msg.response_channel));
+            }
             ContextMessage::Disconnect(packet) => {
+                Self::validate_packet_size(connection, packet.as_ref())?;
                 tx.write(packet.freeze().as_ref()).await?;
                 // Graceful disconnection.
             }
             ContextMessage::FireAndForget(packet) => {
+                Self::validate_packet_size(connection, packet.as_ref())?;
                 tx.write(packet.freeze().as_ref()).await?;
             }
             ContextMessage::AwaitAck(mut msg) => {
-                tx.write(msg.packet.as_ref()).await?;
-                session
-                    .awaiting_ack
-                    .push_back((msg.action_id, msg.response_channel));
+                Self::validate_packet_size(connection, msg.packet.as_ref())?;
 
-                let fixed_hdr = msg.packet.get_mut(0).unwrap();
-                let packet_id = *fixed_hdr >> 4;
+                let packet_id = msg.packet.get(0).unwrap() >> 4; // Extract packet id, being the four MSB bits
 
                 if packet_id == PublishTx::PACKET_ID {
+                    if connection.send_quota == 0 {
+                        session.unsent.push_back(ContextMessage::AwaitAck(msg));
+                        return Ok(());
+                    }
+
+                    connection.send_quota -= 1;
+
+                    tx.write(msg.packet.as_ref()).await?;
+
+                    let fixed_hdr = msg.packet.get_mut(0).unwrap();
                     *fixed_hdr |= (1 << 3) as u8; // Set DUP flag in the PUBLISH fixed header
+
                     session
-                        .unackowledged
+                        .awaiting_ack
+                        .push_back((msg.action_id, msg.response_channel));
+
+                    session
+                        .retrasmit_queue
                         .push_back((msg.action_id, msg.packet.freeze()));
                 } else if packet_id == PubrelTx::PACKET_ID {
+                    tx.write(msg.packet.as_ref()).await?;
                     session
-                        .unackowledged
+                        .awaiting_ack
+                        .push_back((msg.action_id, msg.response_channel));
+
+                    session
+                        .retrasmit_queue
                         .push_back((msg.action_id, msg.packet.freeze()));
+                } else {
+                    tx.write(msg.packet.as_ref()).await?;
+                    session
+                        .awaiting_ack
+                        .push_back((msg.action_id, msg.response_channel));
                 }
             }
             ContextMessage::Subscribe(msg) => {
+                Self::validate_packet_size(connection, msg.packet.as_ref())?;
                 session
                     .awaiting_ack
                     .push_back((msg.action_id, msg.response_channel));
@@ -148,8 +221,30 @@ where
         Ok(())
     }
 
-    async fn handle_packet(session: &mut Session, packet: RxPacket) -> Result<(), MqttError> {
+    async fn handle_packet(
+        tx: &mut TxPacketStream<TxStreamT>,
+        connection: &mut Connection,
+        session: &mut Session,
+        packet: RxPacket,
+    ) -> Result<(), MqttError> {
         match packet {
+            RxPacket::Connack(connack) => {
+                if connack.session_expiry_interval.is_some() {
+                    connection.session_expiry_interval =
+                        connack.session_expiry_interval.map(u32::from).unwrap();
+                }
+
+                if connack.maximum_packet_size.is_some() {
+                    connection.remote_max_packet_size = connack
+                        .maximum_packet_size
+                        .map(NonZero::from)
+                        .map(u32::from);
+                }
+
+                connection.remote_receive_maximum =
+                    u16::from(NonZero::from(connack.receive_maximum));
+                connection.send_quota = connection.remote_receive_maximum;
+            }
             RxPacket::Publish(publish) => match publish.subscription_identifier {
                 Some(subscription_identifier) => {
                     let sub_id = NonZero::from(subscription_identifier).get().value() as usize;
@@ -179,16 +274,58 @@ where
 
                 return Err(disconnect.into());
             }
+            RxPacket::Puback(puback) => {
+                let rx_packet = RxPacket::Puback(puback);
+                let action_id = rx_action_id(&rx_packet);
+
+                if connection.send_quota != connection.remote_receive_maximum {
+                    let maybe_unsent = session.unsent.pop_front();
+                    if maybe_unsent.is_some() {
+                        Self::handle_message(tx, connection, session, maybe_unsent.unwrap())
+                            .await?;
+                    }
+
+                    connection.send_quota += 1;
+                }
+
+                linear_search_by_key(&session.retrasmit_queue, action_id)
+                    .and_then(|pos| session.retrasmit_queue.remove(pos));
+
+                if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
+                    .and_then(|pos| session.awaiting_ack.remove(pos))
+                {
+                    // Error here indicates internal error, the receiver
+                    // end is inside one of the ContextHandle methods.
+                    sender.send(rx_packet).map_err(|_| HandleClosed)?;
+                }
+            }
+            RxPacket::Pubcomp(pubcomp) => {
+                let rx_packet = RxPacket::Pubcomp(pubcomp);
+                let action_id = rx_action_id(&rx_packet);
+
+                if connection.send_quota != connection.remote_receive_maximum {
+                    let maybe_unsent = session.unsent.pop_front();
+                    if maybe_unsent.is_some() {
+                        Self::handle_message(tx, connection, session, maybe_unsent.unwrap())
+                            .await?;
+                    }
+
+                    connection.send_quota += 1;
+                }
+
+                linear_search_by_key(&session.retrasmit_queue, action_id)
+                    .and_then(|pos| session.retrasmit_queue.remove(pos));
+
+                if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
+                    .and_then(|pos| session.awaiting_ack.remove(pos))
+                {
+                    // Error here indicates internal error, the receiver
+                    // end is inside one of the ContextHandle methods.
+                    sender.send(rx_packet).map_err(|_| HandleClosed)?;
+                }
+            }
             other => {
                 let action_id = rx_action_id(&other);
-
-                if let RxPacket::Puback(_) = &other {
-                    linear_search_by_key(&session.unackowledged, action_id)
-                        .and_then(|pos| session.unackowledged.remove(pos));
-                } else if let RxPacket::Pubcomp(_) = &other {
-                    linear_search_by_key(&session.unackowledged, action_id)
-                        .and_then(|pos| session.unackowledged.remove(pos));
-                }
 
                 if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
                     .and_then(|pos| session.awaiting_ack.remove(pos))
@@ -210,15 +347,15 @@ where
     ) -> Result<(), MqttError> {
         connection.disconnection_timestamp = None;
 
-        for (_, packet) in session.unackowledged.iter() {
+        for (_, packet) in session.retrasmit_queue.iter() {
             tx.write(packet.as_ref()).await?;
         }
 
         Ok(())
     }
 
-    /// Makes [Context] object start processing MQTT traffic, blocking (on .await) the current task until
-    /// graceful disconnection or error. Successful disconnection via [disconnect] method or
+    /// Starts processing MQTT traffic, blocking (on .await) the current task until
+    /// graceful disconnection or error. Successful disconnection via [disconnect](ContextHandle::disconnect) method or
     /// receiving a [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205)
     /// packet with reason a code equal to 0 (success) is considered a graceful disconnection.
     ///
@@ -235,9 +372,7 @@ where
 
         if Self::is_reconnect(connection) {
             if Self::session_expired(connection) {
-                session.awaiting_ack.clear();
-                session.subscriptions.clear();
-                session.unackowledged.clear();
+                Self::reset_session(session);
             }
 
             Self::retransmit(tx, connection, session).await?;
@@ -249,22 +384,13 @@ where
         loop {
             futures::select! {
                 maybe_rx_packet = pck_fut => {
-                    match maybe_rx_packet {
-                        Some(rx_packet) => Self::handle_packet(session, rx_packet?).await?,
-                        None => {
-                            connection.disconnection_timestamp = Some(SystemTime::now());
-                            return Err(SocketClosed.into())
-                        },
-                    }
-
+                    let rx_packet = maybe_rx_packet.ok_or(SocketClosed)?;
+                    Self::handle_packet(tx, connection, session, rx_packet?).await?;
                     pck_fut = rx.next().fuse();
                 },
                 maybe_msg = msg_fut => {
-                    match maybe_msg {
-                        Some(msg) => Self::handle_message(tx, session, msg).await?,
-                        None => return Err(HandleClosed.into()),
-                    }
-
+                    let msg = maybe_msg.ok_or(HandleClosed)?;
+                    Self::handle_message(tx, connection, session, msg).await?;
                     msg_fut = message_queue.next().fuse();
                 }
             }

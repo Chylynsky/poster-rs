@@ -6,14 +6,14 @@ use crate::{
         utils::TryDecode,
     },
 };
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use core::{
     ops::Range,
     pin::Pin,
     task::{Context, Poll},
 };
 use futures::{AsyncRead, AsyncWrite, AsyncWriteExt, Stream};
-use std::io;
+use std::{io, mem};
 
 enum PacketStreamState {
     Idle,
@@ -35,7 +35,7 @@ impl<StreamT> From<StreamT> for RxPacketStream<StreamT> {
     fn from(stream: StreamT) -> Self {
         Self {
             stream,
-            buf: BytesMut::with_capacity(256),
+            buf: BytesMut::with_capacity(1024),
             size: 0,
             packet: 0..0,
             state: PacketStreamState::Idle,
@@ -44,16 +44,6 @@ impl<StreamT> From<StreamT> for RxPacketStream<StreamT> {
 }
 
 impl<StreamT> RxPacketStream<StreamT> {
-    pub(crate) fn with_capacity(capacity: usize, inner: StreamT) -> Self {
-        Self {
-            stream: inner,
-            buf: BytesMut::with_capacity(capacity),
-            size: 0,
-            packet: 0..0,
-            state: PacketStreamState::Idle,
-        }
-    }
-
     fn split_borrows_mut(
         &mut self,
     ) -> (
@@ -80,16 +70,22 @@ where
     type Item = Result<RxPacket, CodecError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        const CHUNK_SIZE: usize = 128;
+        const DEFAULT_CHUNK_SIZE: usize = 512;
 
         let (mut stream, buf, size, packet, state) = self.split_borrows_mut();
 
         match *state {
             PacketStreamState::Idle => {
-                buf.resize(*size + CHUNK_SIZE, 0);
+                let chunk_size = if packet.end - *size < DEFAULT_CHUNK_SIZE {
+                    DEFAULT_CHUNK_SIZE
+                } else {
+                    packet.end
+                };
+
+                buf.resize(*size + chunk_size, 0);
 
                 if let Poll::Ready(result) = Pin::new(&mut stream)
-                    .poll_read(cx, &mut buf[*size..*size + CHUNK_SIZE])
+                    .poll_read(cx, &mut buf[*size..*size + chunk_size])
                     .map(|res| res.ok().filter(|&size| size != 0 /* EOF */))
                 {
                     if result.is_none() {
@@ -147,7 +143,7 @@ where
                 }
 
                 return Poll::Ready(Some(RxPacket::try_decode(
-                    buf.split_to(packet.end).freeze(),
+                    buf.split_to(mem::replace(&mut packet.end, 0)).freeze(),
                 )));
             }
         }
