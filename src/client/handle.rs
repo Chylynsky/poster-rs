@@ -3,10 +3,7 @@ use crate::{
         error::MqttError,
         error::PublishError,
         message::*,
-        opts::{
-            AuthOpts, ConnectOpts, DisconnectOpts, PublishOpts, SubscribeOpts, UnsubscribeOpts,
-        },
-        rsp::{AuthRsp, ConnectRsp},
+        opts::{DisconnectOpts, PublishOpts, SubscribeOpts, UnsubscribeOpts},
         rsp::{SubscribeRsp, UnsubscribeRsp},
         utils::*,
     },
@@ -18,7 +15,6 @@ use crate::{
 };
 use bytes::BytesMut;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
-use either::{Either, Left, Right};
 use futures::{
     channel::{mpsc, oneshot},
     SinkExt,
@@ -35,85 +31,6 @@ pub struct ContextHandle {
 }
 
 impl ContextHandle {
-    /// Performs connection with the broker on the protocol level. Calling this method corresponds to sending the
-    /// [Connect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901033) packet.
-    ///
-    /// If [authentication_method](ConnectOpts::authentication_method) and [authentication_data](ConnectOpts::authentication_data) are
-    /// set in [`opts`](ConnectOpts), the extended authorization is performed, the result of calling this method
-    /// is then [AuthRsp]. Otherwise, the return type is [ConnectRsp].
-    ///
-    /// When the [reason](crate::reason::ConnectReason) in the CONNACK packet is greater or equal 0x80, the
-    /// [ConnectError](crate::error::ConnectError) is returned.
-    ///
-    /// When in extended authorization mode, the authorize method is used for subsequent
-    /// authorization requests.
-    ///
-    pub async fn connect<'a>(
-        &mut self,
-        opts: ConnectOpts<'a>,
-    ) -> Result<Either<ConnectRsp, AuthRsp>, MqttError> {
-        let (sender, receiver) = oneshot::channel();
-
-        let packet = opts.build()?;
-        let session_expiry_interval = packet.session_expiry_interval.map(u32::from).unwrap_or(0);
-
-        let mut buf = BytesMut::with_capacity(packet.packet_len());
-        packet.encode(&mut buf);
-
-        let message = ContextMessage::Connect(Connect {
-            action_id: tx_action_id(&TxPacket::Connect(packet)),
-            session_expiry_interval,
-            packet: buf,
-            response_channel: sender,
-        });
-
-        self.sender.send(message).await?;
-
-        match receiver.await? {
-            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::try_from(connack)?)),
-            RxPacket::Auth(auth) => Ok(Right(AuthRsp::try_from(auth)?)),
-            _ => {
-                unreachable!("Unexpected packet type.");
-            }
-        }
-    }
-
-    /// Performs extended authorization between the client and the broker. It corresponds to sending the
-    /// [Auth](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901217) packet.
-    /// User may perform multiple calls of this method, as needed, until the ConnectRsp is returned,
-    /// meaning the authorization is successful.
-    ///
-    /// When the [reason](crate::reason::AuthReason) in the AUTH packet is greater or equal 0x80, the
-    /// [AuthError](crate::error::AuthError) is returned.
-    ///
-    pub async fn authorize<'a>(
-        &mut self,
-        opts: AuthOpts<'a>,
-    ) -> Result<Either<ConnectRsp, AuthRsp>, MqttError> {
-        let (sender, receiver) = oneshot::channel();
-
-        let packet = opts.build()?;
-
-        let mut buf = BytesMut::with_capacity(packet.packet_len());
-        packet.encode(&mut buf);
-
-        let message = ContextMessage::AwaitAck(AwaitAck {
-            action_id: tx_action_id(&TxPacket::Auth(packet)),
-            packet: buf,
-            response_channel: sender,
-        });
-
-        self.sender.send(message).await?;
-
-        match receiver.await? {
-            RxPacket::Connack(connack) => Ok(Left(ConnectRsp::try_from(connack)?)),
-            RxPacket::Auth(auth) => Ok(Right(AuthRsp::try_from(auth)?)),
-            _ => {
-                unreachable!("Unexpected packet type.");
-            }
-        }
-    }
-
     /// Performs graceful disconnection with the broker by sending the
     /// [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205) packet.
     ///
@@ -125,7 +42,7 @@ impl ContextHandle {
 
         let message = ContextMessage::Disconnect(buf);
 
-        self.sender.send(message).await?;
+        self.sender.unbounded_send(message)?;
         Ok(())
     }
 
@@ -149,7 +66,7 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender.send(message).await?;
+        self.sender.unbounded_send(message)?;
 
         if let RxPacket::Pingresp(_) = receiver.await? {
             return Ok(());
@@ -174,7 +91,7 @@ impl ContextHandle {
                 packet.encode(&mut buf);
 
                 let message = ContextMessage::FireAndForget(buf);
-                self.sender.send(message).await?;
+                self.sender.unbounded_send(message)?;
                 Ok(())
             }
             QoS::AtLeastOnce => {
@@ -193,7 +110,7 @@ impl ContextHandle {
                     response_channel: sender,
                 });
 
-                self.sender.send(message).await?;
+                self.sender.unbounded_send(message)?;
 
                 if let RxPacket::Puback(puback) = receiver.await? {
                     if puback.reason as u8 >= 0x80 {
@@ -221,7 +138,7 @@ impl ContextHandle {
                     response_channel: pubrec_sender,
                 });
 
-                self.sender.send(pub_msg).await?;
+                self.sender.unbounded_send(pub_msg)?;
 
                 if let RxPacket::Pubrec(pubrec) = pubrec_receiver.await? {
                     if pubrec.reason as u8 >= 0x80 {
@@ -299,7 +216,7 @@ impl ContextHandle {
             stream: str_sender,
         });
 
-        self.sender.send(message).await?;
+        self.sender.unbounded_send(message)?;
 
         if let RxPacket::Suback(suback) = receiver.await? {
             return Ok(SubscribeRsp {
@@ -337,7 +254,7 @@ impl ContextHandle {
             response_channel: sender,
         });
 
-        self.sender.send(message).await?;
+        self.sender.unbounded_send(message)?;
 
         if let RxPacket::Unsuback(unsuback) = receiver.await? {
             return Ok(UnsubscribeRsp { packet: unsuback });

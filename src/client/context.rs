@@ -3,6 +3,8 @@ use crate::{
         error::{HandleClosed, MaximumPacketSizeExceeded, MqttError, SocketClosed},
         handle::ContextHandle,
         message::*,
+        opts::{AuthOpts, ConnectOpts},
+        rsp::{AuthRsp, ConnectRsp},
         utils::*,
     },
     codec::*,
@@ -10,15 +12,16 @@ use crate::{
         base_types::NonZero,
         error::{CodecError, MandatoryPropertyMissing},
         properties::ReceiveMaximum,
-        utils::PacketID,
+        utils::{Encode, PacketID, SizedPacket},
     },
     io::{RxPacketStream, TxPacketStream},
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use core::sync::atomic::{AtomicU16, AtomicU32};
+use either::{Either, Left, Right};
 use futures::{
     channel::{mpsc, oneshot},
-    AsyncRead, AsyncWrite, FutureExt, SinkExt, StreamExt,
+    AsyncRead, AsyncWrite, FutureExt, StreamExt,
 };
 use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
@@ -32,7 +35,6 @@ struct Session {
 struct Connection {
     disconnection_timestamp: Option<SystemTime>,
     session_expiry_interval: u32,
-
     remote_receive_maximum: u16,
     send_quota: u16,
 
@@ -42,9 +44,11 @@ struct Connection {
 /// Client context. Responsible for socket management and direct communication with the broker.
 ///
 pub struct Context<RxStreamT, TxStreamT> {
-    rx: RxPacketStream<RxStreamT>,
-    tx: TxPacketStream<TxStreamT>,
+    rx: Option<RxPacketStream<RxStreamT>>,
+    tx: Option<TxPacketStream<TxStreamT>>,
+
     message_queue: mpsc::UnboundedReceiver<ContextMessage>,
+
     session: Session,
     connection: Connection,
 }
@@ -54,46 +58,6 @@ where
     RxStreamT: AsyncRead + Unpin,
     TxStreamT: AsyncWrite + Unpin,
 {
-    /// Creates a new [Context] instance, paired with [ContextHandle].
-    ///
-    /// # Arguments
-    /// * `rx` - Read half of the stream, must be [AsyncRead] + [Unpin].
-    /// * `tx` - Write half of the stream, must be [AsyncWrite] + [Unpin].
-    ///
-    /// # Note
-    /// User is responsible for making sure that at the point of calling this method,
-    /// both the `rx` and `tx` are connected to the broker and ready for communication.
-    ///
-    pub fn new(rx: RxStreamT, tx: TxStreamT) -> (Self, ContextHandle) {
-        let (sender, receiver) = mpsc::unbounded();
-
-        (
-            Self {
-                rx: RxPacketStream::from(rx),
-                tx: TxPacketStream::from(tx),
-                message_queue: receiver,
-                session: Session {
-                    awaiting_ack: VecDeque::new(),
-                    subscriptions: VecDeque::new(),
-                    retrasmit_queue: VecDeque::new(),
-                    unsent: VecDeque::new(),
-                },
-                connection: Connection {
-                    disconnection_timestamp: None,
-                    session_expiry_interval: 0,
-                    remote_receive_maximum: u16::from(NonZero::from(ReceiveMaximum::default())),
-                    send_quota: u16::from(NonZero::from(ReceiveMaximum::default())),
-                    remote_max_packet_size: None,
-                },
-            },
-            ContextHandle {
-                sender,
-                packet_id: Arc::new(AtomicU16::from(1)),
-                sub_id: Arc::new(AtomicU32::from(1)),
-            },
-        )
-    }
-
     fn is_reconnect(connection: &Connection) -> bool {
         connection.disconnection_timestamp.is_some()
     }
@@ -148,14 +112,6 @@ where
         msg: ContextMessage,
     ) -> Result<(), MqttError> {
         match msg {
-            ContextMessage::Connect(msg) => {
-                Self::validate_packet_size(connection, msg.packet.as_ref())?;
-                tx.write(msg.packet.as_ref()).await?;
-                connection.session_expiry_interval = msg.session_expiry_interval;
-                session
-                    .awaiting_ack
-                    .push_back((msg.action_id, msg.response_channel));
-            }
             ContextMessage::Disconnect(packet) => {
                 Self::validate_packet_size(connection, packet.as_ref())?;
                 tx.write(packet.freeze().as_ref()).await?;
@@ -228,23 +184,6 @@ where
         packet: RxPacket,
     ) -> Result<(), MqttError> {
         match packet {
-            RxPacket::Connack(connack) => {
-                if connack.session_expiry_interval.is_some() {
-                    connection.session_expiry_interval =
-                        connack.session_expiry_interval.map(u32::from).unwrap();
-                }
-
-                if connack.maximum_packet_size.is_some() {
-                    connection.remote_max_packet_size = connack
-                        .maximum_packet_size
-                        .map(NonZero::from)
-                        .map(u32::from);
-                }
-
-                connection.remote_receive_maximum =
-                    u16::from(NonZero::from(connack.receive_maximum));
-                connection.send_quota = connection.remote_receive_maximum;
-            }
             RxPacket::Publish(publish) => match publish.subscription_identifier {
                 Some(subscription_identifier) => {
                     let sub_id = NonZero::from(subscription_identifier).get().value() as usize;
@@ -255,7 +194,7 @@ where
                     {
                         // User may drop the receiving stream,
                         // in that case remove it from the active subscriptions map.
-                        if (subscription.send(RxPacket::Publish(publish)).await).is_err() {
+                        if (subscription.unbounded_send(RxPacket::Publish(publish))).is_err() {
                             linear_search_by_key(&session.subscriptions, sub_id)
                                 .and_then(|pos| session.subscriptions.remove(pos));
                         }
@@ -340,6 +279,23 @@ where
         Ok(())
     }
 
+    fn handle_connack(connection: &mut Connection, connack: &ConnackRx) {
+        if connack.session_expiry_interval.is_some() {
+            connection.session_expiry_interval =
+                connack.session_expiry_interval.map(u32::from).unwrap();
+        }
+
+        if connack.maximum_packet_size.is_some() {
+            connection.remote_max_packet_size = connack
+                .maximum_packet_size
+                .map(NonZero::from)
+                .map(u32::from);
+        }
+
+        connection.remote_receive_maximum = u16::from(NonZero::from(connack.receive_maximum));
+        connection.send_quota = connection.remote_receive_maximum;
+    }
+
     async fn retransmit(
         tx: &mut TxPacketStream<TxStreamT>,
         connection: &mut Connection,
@@ -354,18 +310,178 @@ where
         Ok(())
     }
 
+    /// Creates a new [Context] instance, paired with [ContextHandle].
+    ///
+    pub fn new() -> (Self, ContextHandle) {
+        let (sender, receiver) = mpsc::unbounded();
+
+        (
+            Self {
+                rx: None,
+                tx: None,
+                message_queue: receiver,
+
+                session: Session {
+                    awaiting_ack: VecDeque::new(),
+                    subscriptions: VecDeque::new(),
+                    retrasmit_queue: VecDeque::new(),
+                    unsent: VecDeque::new(),
+                },
+                connection: Connection {
+                    disconnection_timestamp: None,
+                    session_expiry_interval: 0,
+                    remote_receive_maximum: u16::from(NonZero::from(ReceiveMaximum::default())),
+                    send_quota: u16::from(NonZero::from(ReceiveMaximum::default())),
+                    remote_max_packet_size: None,
+                },
+            },
+            ContextHandle {
+                sender,
+                packet_id: Arc::new(AtomicU16::from(1)),
+                sub_id: Arc::new(AtomicU32::from(1)),
+            },
+        )
+    }
+
+    /// Sets up communication primitives for the context. This is the first method
+    /// to call when starting the connection with the broker.
+    ///
+    /// # Arguments
+    /// * `rx` - Read half of the stream, must be [AsyncRead] + [Unpin].
+    /// * `tx` - Write half of the stream, must be [AsyncWrite] + [Unpin].
+    ///
+    /// # Note
+    /// Calling any other member function before prior call to [set_up](Context::set_up) will panic.
+    ///
+    pub fn set_up(&mut self, (rx, tx): (RxStreamT, TxStreamT)) -> &mut Self {
+        self.rx = Some(RxPacketStream::from(rx));
+        self.tx = Some(TxPacketStream::from(tx));
+        self
+    }
+
+    /// Performs connection with the broker on the protocol level. Calling this method corresponds to sending the
+    /// [Connect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901033) packet.
+    ///
+    /// If [authentication_method](ConnectOpts::authentication_method) and [authentication_data](ConnectOpts::authentication_data) are
+    /// set in [`opts`](ConnectOpts), the extended authorization is performed, the result of calling this method
+    /// is then [AuthRsp]. Otherwise, the return type is [ConnectRsp].
+    ///
+    /// When the [reason](crate::reason::ConnectReason) in the CONNACK packet is greater or equal 0x80, the
+    /// [ConnectError](crate::error::ConnectError) is returned.
+    ///
+    /// When in extended authorization mode, the authorize method is used for subsequent
+    /// authorization requests.
+    ///
+    /// # Panics
+    /// When invoked without prior call to [set_up](Context::set_up).
+    ///
+    pub async fn connect<'a>(
+        &mut self,
+        opts: ConnectOpts<'a>,
+    ) -> Result<Either<ConnectRsp, AuthRsp>, MqttError> {
+        assert!(
+            self.rx.is_some() && self.tx.is_some(),
+            "Context must be set up before connecting."
+        );
+
+        let packet = opts.build()?;
+        self.connection.session_expiry_interval =
+            packet.session_expiry_interval.map(u32::from).unwrap_or(0);
+
+        let mut buf = BytesMut::with_capacity(packet.packet_len());
+        packet.encode(&mut buf);
+
+        let tx = self.tx.as_mut().unwrap();
+        let rx = self.rx.as_mut().unwrap();
+
+        tx.write(buf.as_ref()).await?;
+
+        match rx
+            .next()
+            .await
+            .transpose()
+            .map_err(MqttError::from)
+            .and_then(|maybe_next| maybe_next.ok_or(SocketClosed.into()))?
+        {
+            RxPacket::Connack(connack) => {
+                Self::handle_connack(&mut self.connection, &connack);
+                Ok(Left(ConnectRsp::try_from(connack)?))
+            }
+            RxPacket::Auth(auth) => Ok(Right(AuthRsp::try_from(auth)?)),
+            _ => {
+                unreachable!("Unexpected packet type.");
+            }
+        }
+    }
+
+    /// Performs extended authorization between the client and the broker. It corresponds to sending the
+    /// [Auth](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901217) packet.
+    /// User may perform multiple calls of this method, as needed, until the ConnectRsp is returned,
+    /// meaning the authorization is successful.
+    ///
+    /// When the [reason](crate::reason::AuthReason) in the AUTH packet is greater or equal 0x80, the
+    /// [AuthError](crate::error::AuthError) is returned.
+    ///
+    /// # Panics
+    /// When invoked without prior call to [set_up](Context::set_up).
+    ///
+    pub async fn authorize<'a>(
+        &mut self,
+        opts: AuthOpts<'a>,
+    ) -> Result<Either<ConnectRsp, AuthRsp>, MqttError> {
+        assert!(
+            self.rx.is_some() && self.tx.is_some(),
+            "Context must be set up before authorizing."
+        );
+
+        let packet = opts.build()?;
+
+        let mut buf = BytesMut::with_capacity(packet.packet_len());
+        packet.encode(&mut buf);
+
+        let tx = self.tx.as_mut().unwrap();
+        let rx = self.rx.as_mut().unwrap();
+
+        tx.write(buf.as_ref()).await?;
+
+        match rx
+            .next()
+            .await
+            .transpose()
+            .map_err(MqttError::from)
+            .and_then(|maybe_next| maybe_next.ok_or(SocketClosed.into()))?
+        {
+            RxPacket::Connack(connack) => {
+                Self::handle_connack(&mut self.connection, &connack);
+                Ok(Left(ConnectRsp::try_from(connack)?))
+            }
+            RxPacket::Auth(auth) => Ok(Right(AuthRsp::try_from(auth)?)),
+            _ => {
+                unreachable!("Unexpected packet type.");
+            }
+        }
+    }
+
     /// Starts processing MQTT traffic, blocking (on .await) the current task until
     /// graceful disconnection or error. Successful disconnection via [disconnect](ContextHandle::disconnect) method or
     /// receiving a [Disconnect](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901205)
     /// packet with reason a code equal to 0 (success) is considered a graceful disconnection.
+    ///
+    /// # Panics
+    /// When invoked without prior call to [set_up](Context::set_up).
     ///
     pub async fn run(&mut self) -> Result<(), MqttError>
     where
         RxStreamT: AsyncRead + Unpin,
         TxStreamT: AsyncWrite + Unpin,
     {
-        let tx = &mut self.tx;
-        let rx = &mut self.rx;
+        assert!(
+            self.rx.is_some() && self.tx.is_some(),
+            "Context must be set up before running."
+        );
+
+        let rx = self.rx.as_mut().unwrap();
+        let tx = self.tx.as_mut().unwrap();
         let message_queue = &mut self.message_queue;
         let session = &mut self.session;
         let connection = &mut self.connection;

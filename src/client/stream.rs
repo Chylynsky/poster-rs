@@ -16,7 +16,7 @@ use futures::{
         mpsc::{self},
         oneshot,
     },
-    SinkExt, StreamExt,
+    StreamExt,
 };
 
 pub(crate) struct SubscribeStreamState {
@@ -38,8 +38,7 @@ impl SubscribeStreamState {
                     puback.encode(&mut buf);
 
                     self.sender
-                        .send(ContextMessage::FireAndForget(buf))
-                        .await
+                        .unbounded_send(ContextMessage::FireAndForget(buf))
                         .ok()?; // Err
                     Some(PublishData::from(publish))
                 }
@@ -54,12 +53,11 @@ impl SubscribeStreamState {
                     let (pubrel_sender, pubrel_receiver) = oneshot::channel();
 
                     self.sender
-                        .send(ContextMessage::AwaitAck(AwaitAck {
+                        .unbounded_send(ContextMessage::AwaitAck(AwaitAck {
                             action_id: tx_action_id(&TxPacket::Pubrec(pubrec)),
                             packet: buf.split(),
                             response_channel: pubrel_sender,
                         }))
-                        .await
                         .ok()?; // Err
 
                     if let RxPacket::Pubrel(pubrel) = pubrel_receiver.await.ok()? {
@@ -74,8 +72,7 @@ impl SubscribeStreamState {
                         pubcomp.encode(&mut buf);
 
                         self.sender
-                            .send(ContextMessage::FireAndForget(buf))
-                            .await
+                            .unbounded_send(ContextMessage::FireAndForget(buf))
                             .ok()?; // Err
 
                         return Some(PublishData::from(publish));
