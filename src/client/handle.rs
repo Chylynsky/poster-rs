@@ -1,7 +1,7 @@
 use crate::{
     client::{
         error::MqttError,
-        error::PublishError,
+        error::{PubackError, PubcompError, PubrecError},
         message::*,
         opts::{DisconnectOpts, PublishOpts, SubscribeOpts, UnsubscribeOpts},
         rsp::{SubscribeRsp, UnsubscribeRsp},
@@ -15,10 +15,7 @@ use crate::{
 };
 use bytes::BytesMut;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
-use futures::{
-    channel::{mpsc, oneshot},
-    SinkExt,
-};
+use futures::channel::{mpsc, oneshot};
 use std::sync::Arc;
 
 /// Cloneable handle to the client [Context](crate::Context). The [ContextHandle] object is used to perform MQTT operations.
@@ -78,9 +75,13 @@ impl ContextHandle {
     /// Publish data with the parameters set in [PublishOpts]. Acknowledgement of QoS>0
     /// messages is handled automatically.
     ///
-    /// [PublishError](crate::error::PublishError) is returned for:
-    /// - [QoS::AtLeastOnce] PUBACK reason greater or equal 0x80
-    /// - [QoS::ExactlyOnce] PUBREC or PUBCOMP reason greater or equal 0x80
+    /// # Errors
+    /// - [MqttError::PubackError](crate::error::MqttError::PubackError) returned when
+    /// [QoS==1](QoS::AtLeastOnce) is performed and the PUBACK reason vaule is greater or equal 0x80.
+    /// - [MqttError::PubrecError](crate::error::MqttError::PubrecError) returned when
+    /// [QoS==2](QoS::ExactlyOnce) is performed and the PUBREC reason value is greater or equal 0x80.
+    /// - [MqttError::PubcompError](crate::error::MqttError::PubcompError) returned when
+    /// [QoS==2](QoS::ExactlyOnce) is performed and the PUBCOMP reason value is greater or equal 0x80.
     ///
     pub async fn publish<'a>(&mut self, opts: PublishOpts<'a>) -> Result<(), MqttError> {
         match opts.qos.unwrap_or_default() {
@@ -114,7 +115,7 @@ impl ContextHandle {
 
                 if let RxPacket::Puback(puback) = receiver.await? {
                     if puback.reason as u8 >= 0x80 {
-                        return Err(PublishError::Puback(puback.reason).into());
+                        return Err(PubackError::from(puback).into());
                     }
 
                     return Ok(());
@@ -142,7 +143,7 @@ impl ContextHandle {
 
                 if let RxPacket::Pubrec(pubrec) = pubrec_receiver.await? {
                     if pubrec.reason as u8 >= 0x80 {
-                        return Err(PublishError::Pubrec(pubrec.reason).into());
+                        return Err(PubrecError::from(pubrec).into());
                     }
 
                     let (pubrel_sender, pubrel_receiver) = oneshot::channel();
@@ -161,11 +162,11 @@ impl ContextHandle {
                         response_channel: pubrel_sender,
                     });
 
-                    self.sender.send(pubrel_msg).await?;
+                    self.sender.unbounded_send(pubrel_msg)?;
 
                     if let RxPacket::Pubcomp(pubcomp) = pubrel_receiver.await? {
                         if pubcomp.reason as u8 >= 0x80 {
-                            return Err(PublishError::Pubcomp(pubcomp.reason).into());
+                            return Err(PubcompError::from(pubcomp).into());
                         }
 
                         return Ok(());

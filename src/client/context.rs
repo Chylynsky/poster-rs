@@ -25,20 +25,20 @@ use futures::{
 };
 use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
+use super::error::{InternalError, QuotaExceeded};
+
 struct Session {
     awaiting_ack: VecDeque<(usize, oneshot::Sender<RxPacket>)>,
     subscriptions: VecDeque<(usize, mpsc::UnboundedSender<RxPacket>)>,
     retrasmit_queue: VecDeque<(usize, Bytes)>,
-    unsent: VecDeque<ContextMessage>,
 }
 
 struct Connection {
     disconnection_timestamp: Option<SystemTime>,
     session_expiry_interval: u32,
     remote_receive_maximum: u16,
-    send_quota: u16,
-
     remote_max_packet_size: Option<u32>,
+    send_quota: u16,
 }
 
 /// Client context. Responsible for socket management and direct communication with the broker.
@@ -128,8 +128,7 @@ where
 
                 if packet_id == PublishTx::PACKET_ID {
                     if connection.send_quota == 0 {
-                        session.unsent.push_back(ContextMessage::AwaitAck(msg));
-                        return Ok(());
+                        return Err(QuotaExceeded.into());
                     }
 
                     connection.send_quota -= 1;
@@ -178,7 +177,6 @@ where
     }
 
     async fn handle_packet(
-        tx: &mut TxPacketStream<TxStreamT>,
         connection: &mut Connection,
         session: &mut Session,
         packet: RxPacket,
@@ -218,12 +216,6 @@ where
                 let action_id = rx_action_id(&rx_packet);
 
                 if connection.send_quota != connection.remote_receive_maximum {
-                    let maybe_unsent = session.unsent.pop_front();
-                    if maybe_unsent.is_some() {
-                        Self::handle_message(tx, connection, session, maybe_unsent.unwrap())
-                            .await?;
-                    }
-
                     connection.send_quota += 1;
                 }
 
@@ -243,12 +235,6 @@ where
                 let action_id = rx_action_id(&rx_packet);
 
                 if connection.send_quota != connection.remote_receive_maximum {
-                    let maybe_unsent = session.unsent.pop_front();
-                    if maybe_unsent.is_some() {
-                        Self::handle_message(tx, connection, session, maybe_unsent.unwrap())
-                            .await?;
-                    }
-
                     connection.send_quota += 1;
                 }
 
@@ -258,9 +244,9 @@ where
                 if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
                     .and_then(|pos| session.awaiting_ack.remove(pos))
                 {
-                    // Error here indicates internal error, the receiver
-                    // end is inside one of the ContextHandle methods.
-                    sender.send(rx_packet).map_err(|_| HandleClosed)?;
+                    sender
+                        .send(rx_packet)
+                        .map_err(|_| InternalError::from("Unable to complete async operation."))?;
                 }
             }
             other => {
@@ -269,9 +255,9 @@ where
                 if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
                     .and_then(|pos| session.awaiting_ack.remove(pos))
                 {
-                    // Error here indicates internal error, the receiver
-                    // end is inside one of the ContextHandle methods.
-                    sender.send(other).map_err(|_| HandleClosed)?;
+                    sender
+                        .send(other)
+                        .map_err(|_| InternalError::from("Unable to complete async operation."))?;
                 }
             }
         }
@@ -325,14 +311,13 @@ where
                     awaiting_ack: VecDeque::new(),
                     subscriptions: VecDeque::new(),
                     retrasmit_queue: VecDeque::new(),
-                    unsent: VecDeque::new(),
                 },
                 connection: Connection {
                     disconnection_timestamp: None,
                     session_expiry_interval: 0,
                     remote_receive_maximum: u16::from(NonZero::from(ReceiveMaximum::default())),
-                    send_quota: u16::from(NonZero::from(ReceiveMaximum::default())),
                     remote_max_packet_size: None,
+                    send_quota: u16::from(NonZero::from(ReceiveMaximum::default())),
                 },
             },
             ContextHandle {
@@ -501,12 +486,11 @@ where
             futures::select! {
                 maybe_rx_packet = pck_fut => {
                     let rx_packet = maybe_rx_packet.ok_or(SocketClosed)?;
-                    Self::handle_packet(tx, connection, session, rx_packet?).await?;
+                    Self::handle_packet(connection, session, rx_packet?).await?;
                     pck_fut = rx.next().fuse();
                 },
                 maybe_msg = msg_fut => {
-                    let msg = maybe_msg.ok_or(HandleClosed)?;
-                    Self::handle_message(tx, connection, session, msg).await?;
+                    Self::handle_message(tx, connection, session, maybe_msg.ok_or(HandleClosed)?).await?;
                     msg_fut = message_queue.next().fuse();
                 }
             }

@@ -182,5 +182,6 @@ pub mod error {
 
 #[allow(missing_docs)]
 pub mod prelude {
+    pub use either::Either;
     pub use futures::stream::{Stream, StreamExt};
 }

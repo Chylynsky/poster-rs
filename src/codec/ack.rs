@@ -17,7 +17,7 @@ pub(crate) trait FixedHeader {
     const FIXED_HDR: u8;
 }
 
-#[derive(Builder)]
+#[derive(Clone, Builder)]
 #[builder(build_fn(error = "CodecError"))]
 pub(crate) struct AckRx<ReasonT>
 where

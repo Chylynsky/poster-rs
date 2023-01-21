@@ -19,6 +19,8 @@ mod unsubscribe;
 
 mod packet;
 
+pub(crate) use ack::AckRx;
+
 pub(crate) use auth::{AuthRx, AuthTx, AuthTxBuilder};
 pub(crate) use connect::{ConnectTx, ConnectTxBuilder};
 pub(crate) use disconnect::{DisconnectRx, DisconnectTx, DisconnectTxBuilder};

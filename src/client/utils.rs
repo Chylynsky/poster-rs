@@ -48,8 +48,6 @@ pub(crate) fn tx_action_id(packet: &TxPacket) -> usize {
 
 pub(crate) fn rx_action_id(packet: &RxPacket) -> usize {
     match packet {
-        RxPacket::Connack(_) => 0,
-        RxPacket::Auth(_) => 0,
         RxPacket::Suback(suback) => {
             ((SubackRx::PACKET_ID as usize) << 24)
                 | ((suback.packet_identifier.get() as usize) << 8)

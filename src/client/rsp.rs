@@ -16,6 +16,8 @@ use futures::{
 };
 use std::{str, time::Duration};
 
+use super::error::{PubackError, PubcompError, PubrecError};
+
 /// Response from connection request.
 /// Accesses data in CONNACK packet.
 ///
@@ -466,5 +468,137 @@ impl PublishData {
             .map(NonZero::from)
             .map(|val| val.get())
             .map(|val| val.value())
+    }
+}
+
+/// Response to the publish request, with QoS==1 representing the PUBACK packet.
+///
+pub struct PubackRsp {
+    pub(crate) packet: PubackRx,
+}
+
+impl PubackRsp {
+    /// Accesses reason value.
+    ///
+    pub fn reason(&self) -> PubackReason {
+        self.packet.reason
+    }
+
+    /// Accesses reason string property.
+    ///
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    /// Accesses user properties.
+    ///
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
+    }
+}
+
+impl TryFrom<PubackRx> for PubackRsp {
+    type Error = PubackError;
+
+    fn try_from(packet: PubackRx) -> Result<Self, Self::Error> {
+        if packet.reason as u8 >= 0x80 {
+            return Err(PubackError::from(packet));
+        }
+
+        Ok(Self { packet })
+    }
+}
+
+/// Response to the publish request, with QoS==2 representing the PUBREC packet.
+///
+pub struct PubrecRsp {
+    pub(crate) packet: PubrecRx,
+}
+
+impl PubrecRsp {
+    /// Accesses reason value.
+    ///
+    pub fn reason(&self) -> PubrecReason {
+        self.packet.reason
+    }
+
+    /// Accesses reason string property.
+    ///
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    /// Accesses user properties.
+    ///
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
+    }
+}
+
+impl TryFrom<PubrecRx> for PubrecRsp {
+    type Error = PubrecError;
+
+    fn try_from(packet: PubrecRx) -> Result<Self, Self::Error> {
+        if packet.reason as u8 >= 0x80 {
+            return Err(PubrecError::from(packet));
+        }
+
+        Ok(Self { packet })
+    }
+}
+
+/// Response to the publish request, with QoS==2 representing the PUBCOMP packet.
+///
+pub struct PubcompRsp {
+    pub(crate) packet: PubcompRx,
+}
+
+impl PubcompRsp {
+    /// Accesses reason value.
+    ///
+    pub fn reason(&self) -> PubcompReason {
+        self.packet.reason
+    }
+
+    /// Accesses reason string property.
+    ///
+    pub fn reason_string(&self) -> Option<&str> {
+        self.packet
+            .reason_string
+            .as_ref()
+            .map(|val| &val.0)
+            .map(|val| val.0.as_ref())
+            .map(str::from_utf8)
+            .and_then(Result::ok)
+    }
+
+    /// Accesses user properties.
+    ///
+    pub fn user_properties(&self) -> &UserProperties {
+        &self.packet.user_property
+    }
+}
+
+impl TryFrom<PubcompRx> for PubcompRsp {
+    type Error = PubcompError;
+
+    fn try_from(packet: PubcompRx) -> Result<Self, Self::Error> {
+        if packet.reason as u8 >= 0x80 {
+            return Err(PubcompError::from(packet));
+        }
+
+        Ok(Self { packet })
     }
 }
