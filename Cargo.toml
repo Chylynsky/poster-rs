@@ -7,15 +7,10 @@ description = "MQTTv5 client library written in Rust."
 repository = "https://github.com/Chylynsky/poster-rs"
 authors = ["Chylynsky"]
 keywords = [
-    "network-programming", 
     "mqtt", 
-    "networking", 
     "async", 
     "client", 
     "runtime-agnostic", 
-    "mqtt5",
-    "io", 
-    "async", 
     "non-blocking"
 ]
 categories = ["asynchronous", "network-programming"]
