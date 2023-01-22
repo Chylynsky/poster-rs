@@ -1,4 +1,7 @@
-# Poster-rs 📬
+# poster-rs 📬
+
+[![Rust](https://github.com/Chylynsky/poster-rs/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/Chylynsky/poster-rs/actions/workflows/rust.yml)
+
 ## MQTT5 client library
 
 Poster-rs is an asynchronous, runtime agnostic, zero-copy MQTT 5 library,
