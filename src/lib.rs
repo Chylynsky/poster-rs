@@ -10,18 +10,15 @@
 //!
 //! In the below example we will use Tokio.  
 //!
-//! ```
+//! ```no_run
 //! use std::error::Error;
-//! use poster::{
-//!     prelude::*, ConnectOpts, Context, DisconnectOpts, PublishOpts, QoS, SubscribeOpts,
-//!     SubscriptionOptions, UnsubscribeOpts,
-//! };
+//! use poster::{prelude::*, ConnectOpts, Context};
 //! use tokio::net::TcpStream;
 //! use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 //!
 //! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<(), Box<dyn Error>> {
-//!     let (mut ctx, mut handle) = Context::new(rx.compat(), tx.compat_write());
+//!     let (mut ctx, mut handle) = Context::new();
 //!
 //!     let ctx_task = tokio::spawn(async move {
 //!         // Set up a connection using your async framework of choice. We will need a read end, which is
@@ -31,7 +28,7 @@
 //!
 //!         // Pass (ReadHalf, WriteHalf) pair into the context and connect with the broker on
 //!         // the protocol level.
-//!         ctx.set_up((rx, tx)).connect(ConnectOpts::default()).await?;
+//!         ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
 //!
 //!         // Awaiting the Context::run invocation will block the current task.
 //!         if let Err(err) = ctx.run().await {
@@ -39,7 +36,14 @@
 //!         } else {
 //!             println!("[context] Context exited.");
 //!         }
+//!
+//!          Ok::<(), Box<dyn Error + Send + Sync>>(())
 //!     });
+//!
+//!     /* ... */
+//!
+//!     ctx_task.await?;
+//!     Ok(())
 //! }
 //! ```
 //!
@@ -67,9 +71,29 @@
 //!
 //! Publishing is performed via the [publish](crate::ContextHandle::publish) method.
 //!
-//! ```
-//! let opts = PublishOpts::default().topic("topic").data("hello there".as_bytes());
-//! handle.publish(opts).await?;
+//! ```no_run
+//! # use std::error::Error;
+//! # use poster::{prelude::*, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//! #
+//!     // ...
+//!     let opts = PublishOpts::default().topic("topic").data("hello there".as_bytes());
+//!     handle.publish(opts).await?;
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! See [PublishOpts](crate::PublishOpts);
@@ -86,50 +110,127 @@
 //! Note that under the hood, the library uses subscription identifiers to group subscriptions.
 //! See [SubscribeOpts](crate::SubscribeOpts);
 //!
-//! ```
-//! // ...
-//! let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions::default());
-//! let rsp = handle.subscribe(opts).await?;
-//! let subscription = rsp.stream();
+//! ```no_run
+//! # use std::{error::Error, str};
+//! # use poster::{prelude::*, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//! #
+//!     // ...
+//!     let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions::default());
+//!     let rsp = handle.subscribe(opts).await?;
+//!     let mut subscription = rsp.stream();
 //!
-//! while let Some(msg) = subscription.next().await {
-//!     println!("topic: {}; payload: {}", msg.topic(), str::from(msg.payload()).unwrap());
-//! }
+//!     while let Some(msg) = subscription.next().await {
+//!         println!("topic: {}; payload: {}", msg.topic_name(), str::from_utf8(msg.payload()).unwrap());
+//!     }
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! User may subscribe to multiple topics in one subscription request.
 //!
-//! ```
-//! // ...
-//! let opts = SubscribeOpts::default()
-//!     .subscription("topic1", SubscriptionOptions::default())
-//!     .subscription("topic2", SubscriptionOptions::default());
+//! ```no_run
+//! # use std::{error::Error, str};
+//! # use poster::{prelude::*, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//! #
+//!     // ...
+//!     let opts = SubscribeOpts::default()
+//!         .subscription("topic1", SubscriptionOptions::default())
+//!         .subscription("topic2", SubscriptionOptions::default());
 //!
-//! let subscription = handle.subscribe(opts).await?.stream();
+//!     let mut subscription = handle.subscribe(opts).await?.stream();
 //!
-//! while let Some(msg) = subscription.next().await {
-//!     println!("topic: {}; payload: {}", msg.topic(), str::from(msg.payload()).unwrap());
-//! }
+//!     while let Some(msg) = subscription.next().await {
+//!         println!("topic: {}; payload: {}", msg.topic_name(), str::from_utf8(msg.payload()).unwrap());
+//!     }
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! Each subscription may be customized using the [SubscriptionOptions](crate::SubscriptionOptions).
 //!
-//! ```
-//! let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
-//!     maximum_qos: QoS::AtLeastOnce,
-//!     no_local: false,
-//!     retain_as_published: true,
-//!     retain_handling: RetainHandling::SendOnSubscribe
-//! });
+//! ```no_run
+//! # use std::{error::Error, str};
+//! # use poster::{prelude::*, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//! #
+//!     let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
+//!         maximum_qos: QoS::AtLeastOnce,
+//!         no_local: false,
+//!         retain_as_published: true,
+//!         retain_handling: RetainHandling::SendOnSubscribe,
+//!     });
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! [SubscribeRsp](crate::SubscribeRsp) struct represents the result of the subscription request. In order to access
 //! per-topic reason codes, [payload](crate::SubscribeRsp::payload) method is used:
 //!
-//! ```
-//! // ...
-//! let rsp = handle.subscribe(opts).await?;
-//! let all_ok = rsp.payload().iter().all(|reason| reason == SubackReason::Success);
+//! ```no_run
+//! # use std::{error::Error, str};
+//! # use poster::{prelude::*, reason::SubackReason, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//! #
+//! #   let opts = SubscribeOpts::default();
+//!     // ...
+//!     let rsp = handle.subscribe(opts).await?;
+//!     let all_ok = rsp.payload().iter().copied().all(|reason| reason == SubackReason::GranteedQoS2);
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! ## Unsubscribing
@@ -137,9 +238,28 @@
 //! Unsubscribing is performed by the [unsubscribe](crate::ContextHandle::unsubscribe) method.
 //! Note that it does NOT close the subscription stream (it could lead to logic errors).
 //!
-//! ```
-//! let opts = UnsubscribeOpts::default().topic("topic");
-//! let rsp = handle.unsubscribe(opts).await?;
+//! ```no_run
+//! # use std::{error::Error, str};
+//! # use poster::{prelude::*, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//!     // ...
+//!     let opts = UnsubscribeOpts::default().topic("topic");
+//!     let rsp = handle.unsubscribe(opts).await?;
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! As with subscribing, per topic reason codes can be obtained by the [payload](crate::UnsubscribeRsp::payload) method.
@@ -159,8 +279,28 @@
 //! Graceful disconnection may be also performed by the user by using [disconnect](crate::ContextHandle::disconnect) method.
 //! When disconnection is finished, [run](crate::Context::run) method returns ().
 //!
-//! ```
-//! handle.disconnect(DisconnectOpts::default()).await?;
+//! ```no_run
+//! # use std::{error::Error, str};
+//! # use poster::{prelude::*, *};
+//! # use tokio::net::TcpStream;
+//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+//! #
+//! # #[tokio::main(flavor = "current_thread")]
+//! # async fn main() -> Result<(), Box<dyn Error>> {
+//! #   let (mut ctx, mut handle) = Context::new();
+//! #   let ctx_task = tokio::spawn(async move {
+//! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.run().await?;
+//! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
+//! #   });
+//! #
+//!     // ...
+//!     handle.disconnect(DisconnectOpts::default()).await?;
+//! #
+//! #   ctx_task.await?;
+//! #   Ok(())
+//! # }
 //! ```
 //!
 //! See [DisconnectOpts](crate::DisconnectOpts);
