@@ -37,15 +37,19 @@ impl ContextHandle {
         let mut buf = BytesMut::with_capacity(packet.packet_len());
         packet.encode(&mut buf);
 
-        let message = ContextMessage::Disconnect(buf);
+        let (sender, receiver) = oneshot::channel();
+        let message = ContextMessage::FireAndForget(FireAndForget {
+            packet: buf,
+            response_channel: sender,
+        });
 
         self.sender.unbounded_send(message)?;
-        Ok(())
+        receiver.await?
     }
 
     /// Sends ping to the broker by sending
     /// [Ping](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901195) packet.
-    /// This method MUST be called periodically if `session_expiry_interval` ([ConnectOpts]) was
+    /// This method MUST be called periodically if [session_expiry_interval](crate::ConnectOpts::session_expiry_interval) was
     /// set during connection request in order to maintain the session.
     ///
     pub async fn ping(&mut self) -> Result<(), MqttError> {
@@ -65,11 +69,10 @@ impl ContextHandle {
 
         self.sender.unbounded_send(message)?;
 
-        if let RxPacket::Pingresp(_) = receiver.await? {
-            return Ok(());
-        }
-
-        unreachable!("Unexpected packet type.");
+        receiver.await?.map(|rx_packet| match rx_packet {
+            RxPacket::Pingresp(_) => (),
+            _ => unreachable!("Unexpected packet type."),
+        })
     }
 
     /// Publish data with the parameters set in [PublishOpts]. Acknowledgement of QoS>0
@@ -91,9 +94,14 @@ impl ContextHandle {
                 let mut buf = BytesMut::with_capacity(packet.packet_len());
                 packet.encode(&mut buf);
 
-                let message = ContextMessage::FireAndForget(buf);
+                let (sender, receiver) = oneshot::channel();
+                let message = ContextMessage::FireAndForget(FireAndForget {
+                    packet: buf,
+                    response_channel: sender,
+                });
+
                 self.sender.unbounded_send(message)?;
-                Ok(())
+                receiver.await?
             }
             QoS::AtLeastOnce => {
                 let packet = opts
@@ -113,15 +121,19 @@ impl ContextHandle {
 
                 self.sender.unbounded_send(message)?;
 
-                if let RxPacket::Puback(puback) = receiver.await? {
-                    if puback.reason as u8 >= 0x80 {
-                        return Err(PubackError::from(puback).into());
-                    }
-
-                    return Ok(());
-                }
-
-                unreachable!("Unexpected packet type.");
+                receiver
+                    .await?
+                    .map(|rx_packet| match rx_packet {
+                        RxPacket::Puback(puback) => puback,
+                        _ => unreachable!("Unexpected packet type."),
+                    })
+                    .and_then(|puback| {
+                        if puback.reason as u8 >= 0x80 {
+                            Err(PubackError::from(puback).into())
+                        } else {
+                            Ok(())
+                        }
+                    })
             }
             QoS::ExactlyOnce => {
                 let packet = opts
@@ -141,39 +153,51 @@ impl ContextHandle {
 
                 self.sender.unbounded_send(pub_msg)?;
 
-                if let RxPacket::Pubrec(pubrec) = pubrec_receiver.await? {
-                    if pubrec.reason as u8 >= 0x80 {
-                        return Err(PubrecError::from(pubrec).into());
-                    }
-
-                    let (pubrel_sender, pubrel_receiver) = oneshot::channel();
-
-                    let mut builder = PubrelTxBuilder::default();
-                    builder.packet_identifier(pubrec.packet_identifier);
-
-                    let pubrel = builder.build().unwrap();
-
-                    buf.reserve(pubrel.packet_len());
-                    pubrel.encode(&mut buf);
-
-                    let pubrel_msg = ContextMessage::AwaitAck(AwaitAck {
-                        action_id: tx_action_id(&TxPacket::Pubrel(pubrel)),
-                        packet: buf,
-                        response_channel: pubrel_sender,
-                    });
-
-                    self.sender.unbounded_send(pubrel_msg)?;
-
-                    if let RxPacket::Pubcomp(pubcomp) = pubrel_receiver.await? {
-                        if pubcomp.reason as u8 >= 0x80 {
-                            return Err(PubcompError::from(pubcomp).into());
+                let pubrec = pubrec_receiver
+                    .await?
+                    .map(|rx_packet| match rx_packet {
+                        RxPacket::Pubrec(pubrec) => pubrec,
+                        _ => unreachable!("Unexpected packet type."),
+                    })
+                    .and_then(|pubrec| {
+                        if pubrec.reason as u8 >= 0x80 {
+                            Err(PubrecError::from(pubrec).into())
+                        } else {
+                            Ok(pubrec)
                         }
+                    })?;
 
-                        return Ok(());
-                    }
-                }
+                let (pubrel_sender, pubrel_receiver) = oneshot::channel();
 
-                unreachable!("Unexpected packet type.");
+                let mut builder = PubrelTxBuilder::default();
+                builder.packet_identifier(pubrec.packet_identifier);
+
+                let pubrel = builder.build().unwrap();
+
+                buf.reserve(pubrel.packet_len());
+                pubrel.encode(&mut buf);
+
+                let pubrel_msg = ContextMessage::AwaitAck(AwaitAck {
+                    action_id: tx_action_id(&TxPacket::Pubrel(pubrel)),
+                    packet: buf,
+                    response_channel: pubrel_sender,
+                });
+
+                self.sender.unbounded_send(pubrel_msg)?;
+
+                pubrel_receiver
+                    .await?
+                    .map(|rx_packet| match rx_packet {
+                        RxPacket::Pubcomp(pubcomp) => pubcomp,
+                        _ => unreachable!("Unexpected packet type."),
+                    })
+                    .and_then(|pubcomp| {
+                        if pubcomp.reason as u8 >= 0x80 {
+                            Err(PubcompError::from(pubcomp).into())
+                        } else {
+                            Ok(())
+                        }
+                    })
             }
         }
     }
@@ -219,15 +243,13 @@ impl ContextHandle {
 
         self.sender.unbounded_send(message)?;
 
-        if let RxPacket::Suback(suback) = receiver.await? {
-            return Ok(SubscribeRsp {
+        receiver.await?.map(|rx_packet| match rx_packet {
+            RxPacket::Suback(suback) => SubscribeRsp {
                 packet: suback,
                 receiver: str_receiver,
-                sender: self.sender.clone(),
-            });
-        }
-
-        unreachable!("Unexpected packet type.");
+            },
+            _ => unreachable!("Unexpected packet type."),
+        })
     }
 
     /// Unsubscribes from the topics specified in [`opts`](UnsubscribeOpts). This corresponds to sending the
@@ -257,10 +279,9 @@ impl ContextHandle {
 
         self.sender.unbounded_send(message)?;
 
-        if let RxPacket::Unsuback(unsuback) = receiver.await? {
-            return Ok(UnsubscribeRsp { packet: unsuback });
-        }
-
-        unreachable!("Unexpected packet type.");
+        receiver.await?.map(|rx_packet| match rx_packet {
+            RxPacket::Unsuback(unsuback) => UnsubscribeRsp { packet: unsuback },
+            _ => unreachable!("Unexpected packet type."),
+        })
     }
 }

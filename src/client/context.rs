@@ -5,16 +5,16 @@ use crate::{
         message::*,
         opts::{AuthOpts, ConnectOpts},
         rsp::{AuthRsp, ConnectRsp},
-        utils::*,
+        utils,
     },
     codec::*,
     core::{
         base_types::NonZero,
-        error::{CodecError, MandatoryPropertyMissing},
         properties::ReceiveMaximum,
-        utils::{Encode, PacketID, SizedPacket},
+        utils::{ByteLen, Encode, PacketID, SizedPacket},
     },
     io::{RxPacketStream, TxPacketStream},
+    QoS,
 };
 use bytes::{Bytes, BytesMut};
 use core::sync::atomic::{AtomicU16, AtomicU32};
@@ -27,8 +27,10 @@ use std::{collections::VecDeque, sync::Arc, time::SystemTime};
 
 use super::error::{InternalError, QuotaExceeded};
 
+const ERRMSG_HANDLE_DROPPED: &str = "Unable to complete async operation.";
+
 struct Session {
-    awaiting_ack: VecDeque<(usize, oneshot::Sender<RxPacket>)>,
+    awaiting_ack: VecDeque<(usize, oneshot::Sender<Result<RxPacket, MqttError>>)>,
     subscriptions: VecDeque<(usize, mpsc::UnboundedSender<RxPacket>)>,
     retrasmit_queue: VecDeque<(usize, Bytes)>,
 }
@@ -112,23 +114,35 @@ where
         msg: ContextMessage,
     ) -> Result<(), MqttError> {
         match msg {
-            ContextMessage::Disconnect(packet) => {
-                Self::validate_packet_size(connection, packet.as_ref())?;
-                tx.write(packet.freeze().as_ref()).await?;
-                // Graceful disconnection.
-            }
-            ContextMessage::FireAndForget(packet) => {
-                Self::validate_packet_size(connection, packet.as_ref())?;
-                tx.write(packet.freeze().as_ref()).await?;
+            ContextMessage::FireAndForget(msg) => {
+                if let Err(err) = Self::validate_packet_size(connection, msg.packet.as_ref()) {
+                    msg.response_channel
+                        .send(Err(err))
+                        .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
+                    return Ok(());
+                }
+
+                tx.write(msg.packet.freeze().as_ref()).await?;
+                msg.response_channel
+                    .send(Ok(()))
+                    .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
             }
             ContextMessage::AwaitAck(mut msg) => {
-                Self::validate_packet_size(connection, msg.packet.as_ref())?;
+                if let Err(err) = Self::validate_packet_size(connection, msg.packet.as_ref()) {
+                    msg.response_channel
+                        .send(Err(err))
+                        .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
+                    return Ok(());
+                }
 
                 let packet_id = msg.packet.get(0).unwrap() >> 4; // Extract packet id, being the four MSB bits
 
                 if packet_id == PublishTx::PACKET_ID {
                     if connection.send_quota == 0 {
-                        return Err(QuotaExceeded.into());
+                        msg.response_channel
+                            .send(Err(QuotaExceeded.into()))
+                            .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
+                        return Ok(());
                     }
 
                     connection.send_quota -= 1;
@@ -162,13 +176,20 @@ where
                 }
             }
             ContextMessage::Subscribe(msg) => {
-                Self::validate_packet_size(connection, msg.packet.as_ref())?;
+                if let Err(err) = Self::validate_packet_size(connection, msg.packet.as_ref()) {
+                    msg.response_channel
+                        .send(Err(err))
+                        .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
+                    return Ok(());
+                }
+
                 session
                     .awaiting_ack
                     .push_back((msg.action_id, msg.response_channel));
                 session
                     .subscriptions
                     .push_back((msg.subscription_identifier, msg.stream));
+
                 tx.write(msg.packet.freeze().as_ref()).await?;
             }
         }
@@ -176,34 +197,68 @@ where
         Ok(())
     }
 
+    async fn ack<'a, ReasonT>(
+        tx: &mut TxPacketStream<TxStreamT>,
+        packet_id: NonZero<u16>,
+    ) -> Result<(), MqttError>
+    where
+        AckTx<'a, ReasonT>: Encode + PacketID + FixedHeader,
+        ReasonT: Default + Clone + PartialEq + ByteLen,
+    {
+        let mut builder = AckTxBuilder::default();
+        builder.packet_identifier(packet_id);
+        builder.reason(ReasonT::default());
+        let ack = builder.build().unwrap();
+
+        let mut buf = BytesMut::with_capacity(ack.packet_len());
+        ack.encode(&mut buf);
+
+        tx.write(buf.freeze().as_ref()).await?;
+        Ok(())
+    }
+
     async fn handle_packet(
+        tx: &mut TxPacketStream<TxStreamT>,
         connection: &mut Connection,
         session: &mut Session,
         packet: RxPacket,
     ) -> Result<(), MqttError> {
         match packet {
-            RxPacket::Publish(publish) => match publish.subscription_identifier {
-                Some(subscription_identifier) => {
-                    let sub_id = NonZero::from(subscription_identifier).get().value() as usize;
-                    let maybe_pos = linear_search_by_key(&session.subscriptions, sub_id);
+            RxPacket::Publish(publish) => {
+                if let Some(subscription_identifier) =
+                    publish
+                        .subscription_identifier
+                        .map(|subscription_identifier| {
+                            NonZero::from(subscription_identifier).get().value() as usize
+                        })
+                {
+                    let qos = publish.qos;
+                    let maybe_packet_id = publish.packet_identifier;
 
                     if let Some((_, subscription)) =
-                        maybe_pos.map(|pos| &mut session.subscriptions[pos])
+                        utils::linear_search_by_key(&session.subscriptions, subscription_identifier)
+                            .map(|pos| &mut session.subscriptions[pos])
                     {
                         // User may drop the receiving stream,
                         // in that case remove it from the active subscriptions map.
                         if (subscription.unbounded_send(RxPacket::Publish(publish))).is_err() {
-                            linear_search_by_key(&session.subscriptions, sub_id)
-                                .and_then(|pos| session.subscriptions.remove(pos));
+                            utils::linear_search_by_key(
+                                &session.subscriptions,
+                                subscription_identifier,
+                            )
+                            .and_then(|pos| session.subscriptions.remove(pos));
+                        }
+                    }
+
+                    if let Some(packet_id) = maybe_packet_id {
+                        match qos {
+                            QoS::AtLeastOnce => Self::ack::<PubackReason>(tx, packet_id).await?,
+                            QoS::ExactlyOnce => Self::ack::<PubrecReason>(tx, packet_id).await?,
+                            _ => unreachable!("No acknowledgement for QoS==0."),
                         }
                     }
                 }
-                None => {
-                    return Err(
-                        CodecError::MandatoryPropertyMissing(MandatoryPropertyMissing).into(),
-                    )
-                }
-            },
+            }
             RxPacket::Disconnect(disconnect) => {
                 if disconnect.reason == DisconnectReason::Success {
                     return Ok(()); // Graceful disconnection.
@@ -213,51 +268,58 @@ where
             }
             RxPacket::Puback(puback) => {
                 let rx_packet = RxPacket::Puback(puback);
-                let action_id = rx_action_id(&rx_packet);
+                let action_id = utils::rx_action_id(&rx_packet);
 
                 if connection.send_quota != connection.remote_receive_maximum {
                     connection.send_quota += 1;
                 }
 
-                linear_search_by_key(&session.retrasmit_queue, action_id)
+                utils::linear_search_by_key(&session.retrasmit_queue, action_id)
                     .and_then(|pos| session.retrasmit_queue.remove(pos));
 
-                if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
-                    .and_then(|pos| session.awaiting_ack.remove(pos))
+                if let Some((_, sender)) =
+                    utils::linear_search_by_key(&session.awaiting_ack, action_id)
+                        .and_then(|pos| session.awaiting_ack.remove(pos))
                 {
-                    // Error here indicates internal error, the receiver
-                    // end is inside one of the ContextHandle methods.
-                    sender.send(rx_packet).map_err(|_| HandleClosed)?;
+                    sender
+                        .send(Ok(rx_packet))
+                        .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
                 }
             }
             RxPacket::Pubcomp(pubcomp) => {
                 let rx_packet = RxPacket::Pubcomp(pubcomp);
-                let action_id = rx_action_id(&rx_packet);
+                let action_id = utils::rx_action_id(&rx_packet);
 
                 if connection.send_quota != connection.remote_receive_maximum {
                     connection.send_quota += 1;
                 }
 
-                linear_search_by_key(&session.retrasmit_queue, action_id)
+                utils::linear_search_by_key(&session.retrasmit_queue, action_id)
                     .and_then(|pos| session.retrasmit_queue.remove(pos));
 
-                if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
-                    .and_then(|pos| session.awaiting_ack.remove(pos))
+                if let Some((_, sender)) =
+                    utils::linear_search_by_key(&session.awaiting_ack, action_id)
+                        .and_then(|pos| session.awaiting_ack.remove(pos))
                 {
                     sender
-                        .send(rx_packet)
-                        .map_err(|_| InternalError::from("Unable to complete async operation."))?;
+                        .send(Ok(rx_packet))
+                        .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
                 }
             }
+            RxPacket::Pubrel(pubrel) => {
+                let packet_id = pubrel.packet_identifier;
+                Self::ack::<PubcompReason>(tx, packet_id).await?
+            }
             other => {
-                let action_id = rx_action_id(&other);
+                let action_id = utils::rx_action_id(&other);
 
-                if let Some((_, sender)) = linear_search_by_key(&session.awaiting_ack, action_id)
-                    .and_then(|pos| session.awaiting_ack.remove(pos))
+                if let Some((_, sender)) =
+                    utils::linear_search_by_key(&session.awaiting_ack, action_id)
+                        .and_then(|pos| session.awaiting_ack.remove(pos))
                 {
                     sender
-                        .send(other)
-                        .map_err(|_| InternalError::from("Unable to complete async operation."))?;
+                        .send(Ok(other))
+                        .map_err(|_| InternalError::from(ERRMSG_HANDLE_DROPPED))?;
                 }
             }
         }
@@ -486,7 +548,7 @@ where
             futures::select! {
                 maybe_rx_packet = pck_fut => {
                     let rx_packet = maybe_rx_packet.ok_or(SocketClosed)?;
-                    Self::handle_packet(connection, session, rx_packet?).await?;
+                    Self::handle_packet(tx, connection, session, rx_packet?).await?;
                     pck_fut = rx.next().fuse();
                 },
                 maybe_msg = msg_fut => {

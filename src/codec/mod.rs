@@ -19,15 +19,15 @@ mod unsubscribe;
 
 mod packet;
 
-pub(crate) use ack::AckRx;
+pub(crate) use ack::{AckRx, AckTx, AckTxBuilder, FixedHeader};
 
 pub(crate) use auth::{AuthRx, AuthTx, AuthTxBuilder};
 pub(crate) use connect::{ConnectTx, ConnectTxBuilder};
 pub(crate) use disconnect::{DisconnectRx, DisconnectTx, DisconnectTxBuilder};
 pub(crate) use pingreq::{PingreqTx, PingreqTxBuilder};
-pub(crate) use puback::{PubackRx, PubackTx, PubackTxBuilder};
-pub(crate) use pubcomp::{PubcompRx, PubcompTx, PubcompTxBuilder};
-pub(crate) use pubrec::{PubrecRx, PubrecTx, PubrecTxBuilder};
+pub(crate) use puback::{PubackRx, PubackTx};
+pub(crate) use pubcomp::{PubcompRx, PubcompTx};
+pub(crate) use pubrec::{PubrecRx, PubrecTx};
 pub(crate) use pubrel::{PubrelRx, PubrelTx, PubrelTxBuilder};
 
 pub(crate) use publish::{PublishRx, PublishTx, PublishTxBuilder};

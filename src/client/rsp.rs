@@ -1,22 +1,18 @@
 use crate::{
-    client::{
-        error::{AuthError, ConnectError},
-        message::ContextMessage,
-        stream::SubscribeStreamState,
-    },
+    client::error::{AuthError, ConnectError},
     codec::*,
     core::{
         base_types::{NonZero, QoS},
         collections::UserProperties,
     },
 };
-use futures::{
-    channel::mpsc::{self},
-    stream, Stream,
-};
+use futures::channel::mpsc::{self};
 use std::{str, time::Duration};
 
-use super::error::{PubackError, PubcompError, PubrecError};
+use super::{
+    error::{PubackError, PubcompError, PubrecError},
+    stream::SubscribeStream,
+};
 
 /// Response from connection request.
 /// Accesses data in CONNACK packet.
@@ -277,21 +273,16 @@ impl AuthRsp {
 pub struct SubscribeRsp {
     pub(crate) packet: SubackRx,
     pub(crate) receiver: mpsc::UnboundedReceiver<RxPacket>,
-    pub(crate) sender: mpsc::UnboundedSender<ContextMessage>,
 }
 
 impl SubscribeRsp {
     /// Transforms this response into the asynchronous stream of messages
     /// published to the subscribed topics.
     ///
-    pub fn stream(self) -> impl Stream<Item = PublishData> {
-        Box::pin(stream::unfold(
-            SubscribeStreamState {
-                receiver: self.receiver,
-                sender: self.sender,
-            },
-            |mut state| async { state.impl_next().await.map(move |data| (data, state)) },
-        ))
+    pub fn stream(self) -> SubscribeStream {
+        SubscribeStream {
+            receiver: self.receiver,
+        }
     }
 
     /// Accesses reason string property.

@@ -5,7 +5,7 @@ use crate::{
 use core::time::Duration;
 
 /// Connection options, represented as a consuming builder.
-/// Used during [connection request](crate::ContextHandle::connect), translated to the CONNECT packet.
+/// Used during [connection request](crate::Context::connect), translated to the CONNECT packet.
 ///
 #[derive(Default)]
 pub struct ConnectOpts<'a> {
@@ -262,7 +262,7 @@ impl<'a> ConnectOpts<'a> {
 }
 
 /// Authorization options, represented as a consuming builder.
-/// Used during [extended authorization](super::handle::ContextHandle::authorize), translated to the AUTH packet.
+/// Used during [extended authorization](crate::Context::authorize), translated to the AUTH packet.
 ///
 #[derive(Default)]
 pub struct AuthOpts<'a> {

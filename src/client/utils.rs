@@ -6,8 +6,6 @@ use std::collections::VecDeque;
 
 pub(crate) fn tx_action_id(packet: &TxPacket) -> usize {
     match packet {
-        TxPacket::Connect(_) => 0,
-        TxPacket::Auth(_) => 0,
         TxPacket::Subscribe(subscribe) => {
             ((SubackRx::PACKET_ID as usize) << 24)
                 | ((subscribe.packet_identifier.get() as usize) << 8)

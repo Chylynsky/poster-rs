@@ -1,4 +1,4 @@
-#![forbid(unsafe_code, unreachable_pub)]
+#![forbid(unsafe_code, unreachable_pub, unused_must_use)]
 #![warn(missing_docs)]
 #![allow(dead_code)]
 
@@ -21,27 +21,29 @@
 //!
 //! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<(), Box<dyn Error>> {
-//!     // Set up a connection using your async framework of choice. We will need a read end, which is
-//!     // AsyncRead, and write end, which is AsyncWrite, so we split the TcpStream
-//!     // into ReadHalf and WriteHalf pair.
-//!     let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//!
-//!     // Create a pair of MQTT client context and a handle.
-//!     // Note that Tokio needs a compatibility layer to be used with futures.
 //!     let (mut ctx, mut handle) = Context::new(rx.compat(), tx.compat_write());
 //!
-//!     // The last part of set-up boilerplate is spawning a task and starting the context there.
 //!     let ctx_task = tokio::spawn(async move {
+//!         // Set up a connection using your async framework of choice. We will need a read end, which is
+//!         // AsyncRead, and write end, which is AsyncWrite, so we split the TcpStream
+//!         // into ReadHalf and WriteHalf pair.
+//!         let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
+//!
+//!         // Pass (ReadHalf, WriteHalf) pair into the context and connect with the broker on
+//!         // the protocol level.
+//!         ctx.set_up((rx, tx)).connect(ConnectOpts::default()).await?;
+//!
+//!         // Awaiting the Context::run invocation will block the current task.
 //!         if let Err(err) = ctx.run().await {
-//!             eprintln!("[ctx_task] Error occured: \"{}\", exiting...", err);
+//!             eprintln!("[context] Error occured: \"{}\", exiting...", err);
 //!         } else {
-//!             println!("[ctx_task] Context exited.");
+//!             println!("[context] Context exited.");
 //!         }
 //!     });
 //! }
 //! ```
 //!
-//! At this point, our [context](crate::Context) is up and running, however it is still not connected to the server on the MQTT protocol level.
+//! At this point, our [context](crate::Context) is up and running.
 //!
 //! Let's break down the above example.
 //! `poster-rs` is a runtime agnostic library, which means that all the asynchronous operations are abstracted
@@ -61,98 +63,116 @@
 //! 2. Error occurs, resulting in [MqttError](crate::error::MqttError). This may be the result of socket closing,
 //!    receiving DISCONNECT from the server, etc.
 //!
-//! Having the above setup, we can continue connecting using the [connect](crate::ContextHandle::connect) method:
+//! ## Publishing
+//!
+//! Publishing is performed via the [publish](crate::ContextHandle::publish) method.
 //!
 //! ```
-//! # use std::error::Error;
-//! # use poster::{
-//! #     prelude::*, ConnectOpts, Context, DisconnectOpts, PublishOpts, QoS, SubscribeOpts,
-//! #     SubscriptionOptions, UnsubscribeOpts,
-//! # };
-//! # use tokio::net::TcpStream;
-//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-//! #[tokio::main(flavor = "current_thread")]
-//! async fn main() -> Result<(), Box<dyn Error>> {
-//! # let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! # let (mut ctx, mut handle) = Context::new(rx.compat(), tx.compat_write());
-//! # let ctx_task = tokio::spawn(async move {
-//! #     if let Err(err) = ctx.run().await {
-//! #         eprintln!("[ctx_task] Error occured: \"{}\", exiting...", err);
-//! #     } else {
-//! #         println!("[ctx_task] Context exited.");
-//! #     }
-//! # });
-//!     /* ... */
-//!
-//!     let opts = ConnectOpts::new();
-//!     ctx.connect(opts).await?;
-//! }
+//! let opts = PublishOpts::default().topic("topic").data("hello there".as_bytes());
+//! handle.publish(opts).await?;
 //! ```
 //!
-//! Note that all of the MQTT operation results (represented by the [ContextHandle](crate::ContextHandle) async methods) and messages (being usually packets sent by the broker)
-//! are obtained at the point of .await.
+//! See [PublishOpts](crate::PublishOpts);
 //!
 //! ## Subscriptions
 //!
+//! Subscriptions are represented as async streams, obtained via the [stream](crate::SubscribeRsp::stream).
+//! The general steps of subscribing are:
+//! - await the invocation of [subscribe](crate::ContextHandle::subscribe) method
+//! - validate the result (optionally)
+//! - use [stream](crate::SubscribeRsp::stream) method in order to create a stream for
+//! the subscription.
+//!
+//! Note that under the hood, the library uses subscription identifiers to group subscriptions.
+//! See [SubscribeOpts](crate::SubscribeOpts);
+//!
 //! ```
-//! # use std::error::Error;
-//! # use poster::{
-//! #     prelude::*, ConnectOpts, Context, DisconnectOpts, PublishOpts, QoS, SubscribeOpts,
-//! #     SubscriptionOptions, UnsubscribeOpts,
-//! # };
-//! # use tokio::net::TcpStream;
-//! # use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-//! #[tokio::main(flavor = "current_thread")]
-//! async fn main() -> Result<(), Box<dyn Error>> {
-//! # let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! # let (mut ctx, mut handle) = Context::new(rx.compat(), tx.compat_write());
-//! # let ctx_task = tokio::spawn(async move {
-//! #     if let Err(err) = ctx.run().await {
-//! #         eprintln!("[ctx_task] Error occured: \"{}\", exiting...", err);
-//! #     } else {
-//! #         println!("[ctx_task] Context exited.");
-//! #     }
-//! # });
-//!     /* ... */
+//! // ...
+//! let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions::default());
+//! let rsp = handle.subscribe(opts).await?;
+//! let subscription = rsp.stream();
 //!
-//!     let opts = SubscribeOpts::new();
-//!     let subrsp = ctx.subscribe(opts.subscription("a/b", SubscriptionOptions::default())).await?;
-//!
-//!     // Validate the subscription response. Method payload accesses the list of SubackReason values.
-//!     assert!(subrsp.payload().into_iter().all(|result| result == SubackReason::Success));
-//!
-//!     // Transform response into the async stream of messages published to the topics specified in opts.
-//!     let mut subscription = subrsp.stream();
-//!     
-//!     if let Some(msg) = subscription.next().await {
-//!         println!(
-//!             "[{}] {}",
-//!             msg.topic_name(),
-//!             str::from_utf8(msg.payload()).unwrap()
-//!         );
-//!     }
+//! while let Some(msg) = subscription.next().await {
+//!     println!("topic: {}; payload: {}", msg.topic(), str::from(msg.payload()).unwrap());
 //! }
+//! ```
+//!
+//! User may subscribe to multiple topics in one subscription request.
+//!
+//! ```
+//! // ...
+//! let opts = SubscribeOpts::default()
+//!     .subscription("topic1", SubscriptionOptions::default())
+//!     .subscription("topic2", SubscriptionOptions::default());
+//!
+//! let subscription = handle.subscribe(opts).await?.stream();
+//!
+//! while let Some(msg) = subscription.next().await {
+//!     println!("topic: {}; payload: {}", msg.topic(), str::from(msg.payload()).unwrap());
+//! }
+//! ```
+//!
+//! Each subscription may be customized using the [SubscriptionOptions](crate::SubscriptionOptions).
+//!
+//! ```
+//! let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
+//!     maximum_qos: QoS::AtLeastOnce,
+//!     no_local: false,
+//!     retain_as_published: true,
+//!     retain_handling: RetainHandling::SendOnSubscribe
+//! });
+//! ```
+//!
+//! [SubscribeRsp](crate::SubscribeRsp) struct represents the result of the subscription request. In order to access
+//! per-topic reason codes, [payload](crate::SubscribeRsp::payload) method is used:
+//!
+//! ```
+//! // ...
+//! let rsp = handle.subscribe(opts).await?;
+//! let all_ok = rsp.payload().iter().all(|reason| reason == SubackReason::Success);
 //! ```
 //!
 //! ## Unsubscribing
 //!
-//! TODO
+//! Unsubscribing is performed by the [unsubscribe](crate::ContextHandle::unsubscribe) method.
+//! Note that it does NOT close the subscription stream (it could lead to logic errors).
+//!
+//! ```
+//! let opts = UnsubscribeOpts::default().topic("topic");
+//! let rsp = handle.unsubscribe(opts).await?;
+//! ```
+//!
+//! As with subscribing, per topic reason codes can be obtained by the [payload](crate::UnsubscribeRsp::payload) method.
+//!
+//! See [UnsubscribeOpts](crate::UnsubscribeOpts);
 //!
 //! ## Keep alive and ping
 //!
-//! TODO
+//! If the [keep_alive](crate::ConnectOpts::keep_alive) interval is set during the connection request,
+//! the user must use the [ping](crate::ContextHandle::ping) method periodically.
 //!
 //! ## Disconnection
 //!
-//! TODO
+//! Disconnection may be initiated either by user or the broker. When initiated by the broker, the [run](crate::Context::run) method
+//! returns [Disconnected](crate::error::Disconnected) error.
+//!
+//! Graceful disconnection may be also performed by the user by using [disconnect](crate::ContextHandle::disconnect) method.
+//! When disconnection is finished, [run](crate::Context::run) method returns ().
+//!
+//! ```
+//! handle.disconnect(DisconnectOpts::default()).await?;
+//! ```
+//!
+//! See [DisconnectOpts](crate::DisconnectOpts);
 //!
 //! ## Error handling
 //!
-//! The main library error type is [MqttError](crate::error::MqttError) found in [error] module.
+//! The main library error type is [MqttError](crate::error::MqttError) enum found in [error] module.
 //!
 //! ## TSL/SSL
 //!
-//! TODO
+//! TSL/SSL libraries are available out there with AsyncRead, AsyncWrite TSL/SSL streams. These may be
+//! supplied to the [set_up](crate::Context::set_up) method. The library does not handle encription on its own.
 //!
 
 mod client;
@@ -180,7 +200,8 @@ pub mod error {
     pub use crate::core::error::*;
 }
 
-#[allow(missing_docs)]
+/// Reexports.
+///
 pub mod prelude {
     pub use either::Either;
     pub use futures::stream::{Stream, StreamExt};
