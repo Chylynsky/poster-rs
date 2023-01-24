@@ -1,6 +1,6 @@
 # poster-rs 📬
 
-[![Rust](https://github.com/Chylynsky/poster-rs/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/Chylynsky/poster-rs/actions/workflows/rust.yml)
+[![build](https://github.com/Chylynsky/poster-rs/actions/workflows/rust.yml/badge.svg?branch=master)](https://github.com/Chylynsky/poster-rs/actions/workflows/rust.yml)
 
 ## MQTT5 client library
 
@@ -14,6 +14,10 @@ designed having operation locality in mind.
 - Zero-copy
 - Per-subscription async streams
 - No unsafe code
+
+### Documentation
+
+[Here.](https://docs.rs/poster/latest/poster/)
 
 ### Getting started
 
@@ -58,7 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 ```
 
-At this point, our [context](crate::Context) is up and running.
+At this point, our [context](https://docs.rs/poster/latest/poster/struct.Context.html) is up and running.
 
 Let's break down the above example.
 `poster-rs` is a runtime agnostic library, which means that all the asynchronous operations are abstracted
@@ -68,19 +72,15 @@ must be established manually and the library only cares about receving ([AsyncRe
 This pair is usually obtained using some sort of `split` functions on streams/sockets in the networking libraries.
 (See [tokio](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html#method.into_split), [smol](https://docs.rs/smol/latest/smol/io/fn.split.html))
 
-new factory method gives us (Context, ContextHandle) tuple. Context is responsible
-for handling the traffic between the client and the server. ContextHandle however, is a cloneable handle
-to the Context actor and is used to perform all the MQTT operations.
+new factory method gives us ([Context](https://docs.rs/poster/latest/poster/struct.Context.html), [ContextHandle](https://docs.rs/poster/latest/poster/struct.ContextHandle.html)) tuple. [Context](https://docs.rs/poster/latest/poster/struct.Context.html) is responsible for handling the traffic between the client and the server. [ContextHandle](https://docs.rs/poster/latest/poster/struct.ContextHandle.html) however, is a cloneable handle to the [Context](https://docs.rs/poster/latest/poster/struct.Context.html) actor and is used to perform all the MQTT operations.
 
 Method run blocks the task (on .await) until one of the following conditions is met:
-1. Graceful disconnection is performed (using ContextHandle::disconnect method).
-   The result is then ().
-2. Error occurs, resulting in MqttError. This may be the result of socket closing,
-   receiving DISCONNECT from the server, etc.
+1. Graceful disconnection is performed (using [ContextHandle::disconnect](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.disconnect) method). The result is then ().
+2. Error occurs, resulting in [MqttError](https://docs.rs/poster/latest/poster/error/enum.MqttError.html). This may be the result of socket closing, receiving DISCONNECT from the server, etc.
 
 ### Publishing
 
-Publishing is performed via the ContextHandle::publish method.
+Publishing is performed via the [ContextHandle::publish](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.publish) method.
 
 ```rust
 // ...
@@ -88,16 +88,18 @@ let opts = PublishOpts::default().topic("topic").data("hello there".as_bytes());
 handle.publish(opts).await?;
 ```
 
+See [PublishOpts](https://docs.rs/poster/latest/poster/struct.PublishOpts.html).
+
 ### Subscriptions
 
-Subscriptions are represented as async streams, obtained via the stream.
+Subscriptions are represented as async streams, obtained via the [SubscribeRsp::stream](https://docs.rs/poster/latest/poster/struct.SubscribeRsp.html#method.stream) method.
 The general steps of subscribing are:
-- await the invocation of ContextHandle::subscribe method
+- await the invocation of [ContextHandle::subscribe](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.subscribe) method
 - validate the result (optionally)
-- use stream method in order to create a stream for
-the subscription.
+- use [stream](https://docs.rs/poster/latest/poster/struct.SubscribeRsp.html#method.stream) method in order to create a stream for the subscription.
 
 Note that under the hood, the library uses subscription identifiers to group subscriptions.
+See [SubscribeOpts](https://docs.rs/poster/latest/poster/struct.SubscribeOpts.html).
 
 ```rust
 // ...
@@ -125,7 +127,7 @@ while let Some(msg) = subscription.next().await {
 }
 ```
 
-Each subscription may be customized using the SubscriptionOptions.
+Each subscription may be customized using the [SubscriptionOptions](https://docs.rs/poster/latest/poster/struct.SubscriptionOptions.html).
 
 ```rust
 let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
@@ -136,8 +138,7 @@ let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
 });
 ```
 
-SubscribeRsp struct represents the result of the subscription request. In order to access
-per-topic reason codes, SubscribeRsp::payload method is used:
+[SubscribeRsp](https://docs.rs/poster/latest/poster/struct.SubscribeRsp.html) struct represents the result of the subscription request. In order to access per-topic reason codes, [SubscribeRsp::payload](https://docs.rs/poster/latest/poster/struct.SubscribeRsp.html#method.payload) method is used:
 
 ```rust
 // ...
@@ -147,7 +148,7 @@ let all_ok = rsp.payload().iter().copied().all(|reason| reason == SubackReason::
 
 ### Unsubscribing
 
-Unsubscribing is performed by the ContextHandle::unsubscribe method.
+Unsubscribing is performed by the [ContextHandle::unsubscribe](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.unsubscribe) method.
 Note that it does NOT close the subscription stream (it could lead to logic errors).
 
 ```rust
@@ -156,34 +157,35 @@ let opts = UnsubscribeOpts::default().topic("topic");
 let rsp = handle.unsubscribe(opts).await?;
 ```
 
-As with subscribing, per topic reason codes can be obtained by the UnsubscribeRsp::payload method.
+As with subscribing, per topic reason codes can be obtained by the [UnsubscribeRsp::payload](https://docs.rs/poster/latest/poster/struct.UnsubscribeRsp.html#method.payload) method.
+See [UnsubscribeOpts](https://docs.rs/poster/latest/poster/struct.UnsubscribeOpts.html).
 
 ### Keep alive and ping
 
-If the ConnectOpts::keep_alive interval is set during the connection request,
-the user must use the ContextHandle::ping method periodically.
+If the [ConnectOpts::keep_alive](https://docs.rs/poster/latest/poster/struct.ConnectOpts.html#method.keep_alive) interval is set during the connection request, the user must use the [ContextHandle::ping](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.ping) method periodically.
 
 ### Disconnection
 
-Disconnection may be initiated either by user or the broker. When initiated by the broker, the Context::run method
-returns error::Disconnected error.
+Disconnection may be initiated either by user or the broker. When initiated by the broker, the [Context::run](https://docs.rs/poster/latest/poster/struct.Context.html#method.run) method returns [error::Disconnected](https://docs.rs/poster/latest/poster/error/struct.Disconnected.html) error.
 
-Graceful disconnection may be also performed by the user by using ContextHandle::disconnect method.
-When disconnection is finished, Context::run method returns ().
+Graceful disconnection may be also performed by the user by using [ContextHandle::disconnect](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.disconnect) method.
+When disconnection is finished, [Context::run](https://docs.rs/poster/latest/poster/struct.Context.html#method.run) method returns ().
 
 ```rust
 // ...
 handle.disconnect(DisconnectOpts::default()).await?;
 ```
 
+See [DisconnectOpts](https://docs.rs/poster/latest/poster/struct.DisconnectOpts.html).
+
 ### Error handling
 
-The main library error type is error::MqttError enum found in error module.
+The main library error type is [error::MqttError](https://docs.rs/poster/latest/poster/error/enum.MqttError.html) enum found in [error](https://docs.rs/poster/latest/poster/error/index.html) module.
 
 ### TSL/SSL
 
 TSL/SSL libraries are available out there with AsyncRead, AsyncWrite TSL/SSL streams. These may be
-supplied to the Context::set_up method. The library does not handle encription on its own.
+supplied to the [Context::set_up](https://docs.rs/poster/latest/poster/struct.Context.html#method.set_up) method. The library does not handle encription on its own.
 
 ## Dependencies
 

@@ -96,11 +96,11 @@
 //! # }
 //! ```
 //!
-//! See [PublishOpts](crate::PublishOpts);
+//! See [PublishOpts](crate::PublishOpts).
 //!
 //! ## Subscriptions
 //!
-//! Subscriptions are represented as async streams, obtained via the [stream](crate::SubscribeRsp::stream).
+//! Subscriptions are represented as async streams, obtained via the [stream](crate::SubscribeRsp::stream) method.
 //! The general steps of subscribing are:
 //! - await the invocation of [subscribe](crate::ContextHandle::subscribe) method
 //! - validate the result (optionally)
@@ -108,7 +108,8 @@
 //! the subscription.
 //!
 //! Note that under the hood, the library uses subscription identifiers to group subscriptions.
-//! See [SubscribeOpts](crate::SubscribeOpts);
+//!
+//! See [SubscribeOpts](crate::SubscribeOpts).
 //!
 //! ```no_run
 //! # use std::{error::Error, str};
@@ -264,7 +265,7 @@
 //!
 //! As with subscribing, per topic reason codes can be obtained by the [payload](crate::UnsubscribeRsp::payload) method.
 //!
-//! See [UnsubscribeOpts](crate::UnsubscribeOpts);
+//! See [UnsubscribeOpts](crate::UnsubscribeOpts).
 //!
 //! ## Keep alive and ping
 //!
@@ -303,7 +304,7 @@
 //! # }
 //! ```
 //!
-//! See [DisconnectOpts](crate::DisconnectOpts);
+//! See [DisconnectOpts](crate::DisconnectOpts).
 //!
 //! ## Error handling
 //!
