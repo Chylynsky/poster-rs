@@ -57,7 +57,7 @@
 //! This pair is usually obtained using some sort of `split` functions on streams/sockets in the networking libraries.
 //! (See [tokio](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html#method.into_split), [smol](https://docs.rs/smol/latest/smol/io/fn.split.html))
 //!
-//! [new](Context::new) factory method gives us ([Context], [ContextHandle]) tuple. [ContextHandle] is responsible
+//! [new](Context::new) factory method gives us ([Context], [ContextHandle]) tuple. [Context] is responsible
 //! for handling the traffic between the client and the server. [ContextHandle] however, is a [cloneable](Clone) handle
 //! to the [Context] actor and is used to perform all the MQTT operations.
 //!
