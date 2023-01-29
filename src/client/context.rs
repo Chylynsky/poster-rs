@@ -135,7 +135,7 @@ where
                     return Ok(());
                 }
 
-                let packet_id = msg.packet.get(0).unwrap() >> 4; // Extract packet id, being the four MSB bits
+                let packet_id = msg.packet.first().unwrap() >> 4; // Extract packet id, being the four MSB bits
 
                 if packet_id == PublishTx::PACKET_ID {
                     if connection.send_quota == 0 {

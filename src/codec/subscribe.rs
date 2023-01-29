@@ -25,25 +25,12 @@ pub enum RetainHandling {
     NoSendOnSubscribe = 2,
 }
 
-/// Subscription options set for the topic filter.
-///
 #[derive(Copy, Clone)]
-pub struct SubscriptionOptions {
-    /// Maximum Quality of Service for the topic.
-    ///
-    pub maximum_qos: QoS,
-
-    ///
-    pub no_local: bool,
-
-    /// Retain as published flag. Setting to `true` keeps the RETAIN flag from
-    /// incoming PUBLISH packets untouched.
-    ///
-    pub retain_as_published: bool,
-
-    /// Retain handling options, see [RetainHandling].
-    ///
-    pub retain_handling: RetainHandling,
+pub(crate) struct SubscriptionOptions {
+    pub(crate) maximum_qos: QoS,
+    pub(crate) no_local: bool,
+    pub(crate) retain_as_published: bool,
+    pub(crate) retain_handling: RetainHandling,
 }
 
 impl Default for SubscriptionOptions {

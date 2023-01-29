@@ -314,7 +314,7 @@ mod test {
     use crate::core::utils::PropertyID;
 
     const PACKET: [u8; 25] = [
-        ((DisconnectRx::PACKET_ID as u8) << 4) as u8,
+        (DisconnectRx::PACKET_ID << 4),
         23, // Remaining length
         (DisconnectReason::Success as u8),
         21, // Property length

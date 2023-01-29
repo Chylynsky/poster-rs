@@ -45,7 +45,7 @@ mod test {
 
     #[test]
     fn from_bytes_0() {
-        const FIXED_HDR: u8 = ((PingrespRx::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = PingrespRx::PACKET_ID << 4;
         const PACKET: [u8; 1] = [FIXED_HDR];
         let _ = PingrespRx::try_decode(Bytes::from_static(&PACKET)).unwrap();
     }

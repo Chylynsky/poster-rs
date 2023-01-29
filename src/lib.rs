@@ -128,7 +128,7 @@
 //! #   });
 //! #
 //!     // ...
-//!     let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions::default());
+//!     let opts = SubscribeOpts::default().subscription("topic", SubscriptionOpts::default());
 //!     let rsp = handle.subscribe(opts).await?;
 //!     let mut subscription = rsp.stream();
 //!
@@ -161,8 +161,8 @@
 //! #
 //!     // ...
 //!     let opts = SubscribeOpts::default()
-//!         .subscription("topic1", SubscriptionOptions::default())
-//!         .subscription("topic2", SubscriptionOptions::default());
+//!         .subscription("topic1", SubscriptionOpts::default())
+//!         .subscription("topic2", SubscriptionOpts::default());
 //!
 //!     let mut subscription = handle.subscribe(opts).await?.stream();
 //!
@@ -175,7 +175,7 @@
 //! # }
 //! ```
 //!
-//! Each subscription may be customized using the [SubscriptionOptions](crate::SubscriptionOptions).
+//! Each subscription may be customized using the [SubscriptionOpts](crate::SubscriptionOpts).
 //!
 //! ```no_run
 //! # use std::{error::Error, str};
@@ -193,12 +193,8 @@
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
-//!     let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
-//!         maximum_qos: QoS::AtLeastOnce,
-//!         no_local: false,
-//!         retain_as_published: true,
-//!         retain_handling: RetainHandling::SendOnSubscribe,
-//!     });
+//!     let opts = SubscribeOpts::default()
+//!         .subscription("topic", SubscriptionOpts::new().maximum_qos(QoS::AtLeastOnce));
 //! #
 //! #   ctx_task.await?;
 //! #   Ok(())
@@ -322,7 +318,7 @@ mod core;
 mod io;
 
 pub use crate::client::*;
-pub use crate::codec::{RetainHandling, SubscriptionOptions};
+pub use crate::codec::RetainHandling;
 pub use crate::core::{QoS, UserProperties};
 
 /// Reason codes for different operations.

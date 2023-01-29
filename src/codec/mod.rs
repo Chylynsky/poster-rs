@@ -32,7 +32,7 @@ pub(crate) use pubrel::{PubrelRx, PubrelTx, PubrelTxBuilder};
 
 pub(crate) use publish::{PublishRx, PublishTx, PublishTxBuilder};
 
-pub(crate) use subscribe::{SubscribeTx, SubscribeTxBuilder};
+pub(crate) use subscribe::{SubscribeTx, SubscribeTxBuilder, SubscriptionOptions};
 pub(crate) use unsubscribe::{UnsubscribeTx, UnsubscribeTxBuilder};
 
 pub(crate) use connack::ConnackRx;
@@ -51,5 +51,5 @@ pub use pubcomp::PubcompReason;
 pub use pubrec::PubrecReason;
 pub use pubrel::PubrelReason;
 pub use suback::SubackReason;
-pub use subscribe::{RetainHandling, SubscriptionOptions};
+pub use subscribe::RetainHandling;
 pub use unsuback::UnsubackReason;

@@ -379,6 +379,54 @@ impl<'a> DisconnectOpts<'a> {
     }
 }
 
+/// Subscription options set for the topic filter.
+///
+#[derive(Copy, Clone, Default)]
+pub struct SubscriptionOpts {
+    opts: SubscriptionOptions,
+}
+
+impl SubscriptionOpts {
+    /// Creates a new [SubscriptionOpts] instance.
+    ///
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Maximum Quality of Service for the topic.
+    ///
+    pub fn maximum_qos(mut self, val: QoS) -> Self {
+        self.opts.maximum_qos = val;
+        self
+    }
+
+    /// No local option.
+    ///
+    pub fn no_local(mut self, val: bool) -> Self {
+        self.opts.no_local = val;
+        self
+    }
+
+    /// Retain as published flag. Setting to `true` keeps the RETAIN flag from
+    /// incoming PUBLISH packets untouched.
+    ///
+    pub fn retain_as_published(mut self, val: bool) -> Self {
+        self.opts.retain_as_published = val;
+        self
+    }
+
+    /// Retain handling options, see [RetainHandling].
+    ///
+    pub fn retain_handling(mut self, val: RetainHandling) -> Self {
+        self.opts.retain_handling = val;
+        self
+    }
+
+    pub(crate) fn build(self) -> SubscriptionOptions {
+        self.opts
+    }
+}
+
 /// Subscription options, represented as a consuming builder.
 /// Used during [subscription request](super::handle::ContextHandle::subscribe), translated to the SUBSCRIBE packet.
 /// Note that multiple topic filters may be supplied.
@@ -398,8 +446,8 @@ impl<'a> SubscribeOpts<'a> {
     /// Sets a new subscription with the given topic filter and options.
     /// Multiple subscriptions may be created.
     ///
-    pub fn subscription(mut self, topic: &'a str, opts: SubscriptionOptions) -> Self {
-        self.builder.payload((UTF8StringRef(topic), opts));
+    pub fn subscription(mut self, topic: &'a str, opts: SubscriptionOpts) -> Self {
+        self.builder.payload((UTF8StringRef(topic), opts.build()));
         self
     }
 

@@ -72,7 +72,7 @@ must be established manually and the library only cares about receving ([AsyncRe
 This pair is usually obtained using some sort of `split` functions on streams/sockets in the networking libraries.
 (See [tokio](https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html#method.into_split), [smol](https://docs.rs/smol/latest/smol/io/fn.split.html))
 
-new factory method gives us ([Context](https://docs.rs/poster/latest/poster/struct.Context.html), [ContextHandle](https://docs.rs/poster/latest/poster/struct.ContextHandle.html)) tuple. [Context](https://docs.rs/poster/latest/poster/struct.Context.html) is responsible for handling the traffic between the client and the server. [ContextHandle](https://docs.rs/poster/latest/poster/struct.ContextHandle.html) however, is a cloneable handle to the [Context](https://docs.rs/poster/latest/poster/struct.Context.html) actor and is used to perform all the MQTT operations.
+`new` factory method gives us ([Context](https://docs.rs/poster/latest/poster/struct.Context.html), [ContextHandle](https://docs.rs/poster/latest/poster/struct.ContextHandle.html)) tuple. [Context](https://docs.rs/poster/latest/poster/struct.Context.html) is responsible for handling the traffic between the client and the server. [ContextHandle](https://docs.rs/poster/latest/poster/struct.ContextHandle.html) however, is a cloneable handle to the [Context](https://docs.rs/poster/latest/poster/struct.Context.html) actor and is used to perform all the MQTT operations.
 
 Method run blocks the task (on .await) until one of the following conditions is met:
 1. Graceful disconnection is performed (using [ContextHandle::disconnect](https://docs.rs/poster/latest/poster/struct.ContextHandle.html#method.disconnect) method). The result is then ().
@@ -103,7 +103,7 @@ See [SubscribeOpts](https://docs.rs/poster/latest/poster/struct.SubscribeOpts.ht
 
 ```rust
 // ...
-let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions::default());
+let opts = SubscribeOpts::default().subscription("topic", SubscriptionOpts::default());
 let rsp = handle.subscribe(opts).await?;
 let mut subscription = rsp.stream();
 
@@ -117,8 +117,8 @@ User may subscribe to multiple topics in one subscription request.
 ```rust
 // ...
 let opts = SubscribeOpts::default()
-    .subscription("topic1", SubscriptionOptions::default())
-    .subscription("topic2", SubscriptionOptions::default());
+    .subscription("topic1", SubscriptionOpts::default())
+    .subscription("topic2", SubscriptionOpts::default());
 
 let mut subscription = handle.subscribe(opts).await?.stream();
 
@@ -127,15 +127,11 @@ while let Some(msg) = subscription.next().await {
 }
 ```
 
-Each subscription may be customized using the [SubscriptionOptions](https://docs.rs/poster/latest/poster/struct.SubscriptionOptions.html).
+Each subscription may be customized using the [SubscriptionOpts](https://docs.rs/poster/latest/poster/struct.SubscriptionOpts.html).
 
 ```rust
-let opts = SubscribeOpts::default().subscription("topic", SubscriptionOptions {
-    maximum_qos: QoS::AtLeastOnce,
-    no_local: false,
-    retain_as_published: true,
-    retain_handling: RetainHandling::SendOnSubscribe,
-});
+let opts = SubscribeOpts::default()
+    .subscription("topic", SubscriptionOpts::new().maximum_qos(QoS::AtLeastOnce));
 ```
 
 [SubscribeRsp](https://docs.rs/poster/latest/poster/struct.SubscribeRsp.html) struct represents the result of the subscription request. In order to access per-topic reason codes, [SubscribeRsp::payload](https://docs.rs/poster/latest/poster/struct.SubscribeRsp.html#method.payload) method is used:

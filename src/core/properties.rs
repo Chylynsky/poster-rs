@@ -834,7 +834,7 @@ mod test {
             let input = Binary(Bytes::from_static(&INPUT_VAL));
 
             binary_test(CorrelationData(input.clone()), &EXPECTED_BUF[..]);
-            binary_test(AuthenticationData(input.clone()), &EXPECTED_BUF[..]);
+            binary_test(AuthenticationData(input), &EXPECTED_BUF[..]);
             binary_test(CorrelationDataRef(BinaryRef(&INPUT_VAL)), &EXPECTED_BUF[..]);
             binary_test(
                 AuthenticationDataRef(BinaryRef(&INPUT_VAL)),
@@ -864,24 +864,24 @@ mod test {
             utf8_string_test(AuthenticationMethod(input_str.clone()), &EXPECTED_BUF);
             utf8_string_test(ResponseInformation(input_str.clone()), &EXPECTED_BUF);
             utf8_string_test(ServerReference(input_str.clone()), &EXPECTED_BUF);
-            utf8_string_test(ReasonString(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ReasonString(input_str), &EXPECTED_BUF);
         }
 
         #[test]
         fn utf8_string_ref() {
             const INPUT_VAL: &str = "val";
             const EXPECTED_BUF: [u8; 5] = [0, 3, b'v', b'a', b'l'];
-            let input_str = UTF8StringRef(&INPUT_VAL);
+            let input_str = UTF8StringRef(INPUT_VAL);
 
-            utf8_string_test(ContentTypeRef(input_str.clone()), &EXPECTED_BUF);
-            utf8_string_test(ResponseTopicRef(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(ContentTypeRef(input_str), &EXPECTED_BUF);
+            utf8_string_test(ResponseTopicRef(input_str), &EXPECTED_BUF);
             utf8_string_test(
-                AssignedClientIdentifierRef(input_str.clone()),
+                AssignedClientIdentifierRef(input_str),
                 &EXPECTED_BUF,
             );
-            utf8_string_test(AuthenticationMethodRef(input_str.clone()), &EXPECTED_BUF);
-            utf8_string_test(ResponseInformationRef(input_str.clone()), &EXPECTED_BUF);
-            utf8_string_test(ServerReferenceRef(input_str.clone()), &EXPECTED_BUF);
+            utf8_string_test(AuthenticationMethodRef(input_str), &EXPECTED_BUF);
+            utf8_string_test(ResponseInformationRef(input_str), &EXPECTED_BUF);
+            utf8_string_test(ServerReferenceRef(input_str), &EXPECTED_BUF);
             utf8_string_test(ReasonStringRef(input_str), &EXPECTED_BUF);
         }
 
@@ -932,7 +932,7 @@ mod test {
                 b'l',
             ];
 
-            let input_pair = UTF8StringPairRef(&INPUT_KEY, &INPUT_VAL);
+            let input_pair = UTF8StringPairRef(INPUT_KEY, INPUT_VAL);
             let mut buf = BytesMut::new();
             let property = UserPropertyRef(input_pair);
             property.encode(&mut buf);

@@ -374,7 +374,7 @@ mod test {
 
     #[test]
     fn from_bytes_1() {
-        const FIXED_HDR: u8 = ((AuthRx::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = AuthRx::PACKET_ID << 4;
         const PACKET: [u8; 2] = [
             FIXED_HDR, 0, // Remaining length
         ];
@@ -385,7 +385,7 @@ mod test {
 
     #[test]
     fn to_bytes_1() {
-        const FIXED_HDR: u8 = ((AuthRx::PACKET_ID as u8) << 4) as u8;
+        const FIXED_HDR: u8 = AuthRx::PACKET_ID << 4;
         const EXPECTED: [u8; 2] = [
             FIXED_HDR, 0, // Remaining length
         ];

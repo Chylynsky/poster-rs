@@ -41,8 +41,8 @@ impl VarSizeInt {
         match self.0 {
             VarSizeIntState::SingleByte(val) => val as u32,
             VarSizeIntState::TwoByte(val) => val as u32,
-            VarSizeIntState::ThreeByte(val) => val as u32,
-            VarSizeIntState::FourByte(val) => val as u32,
+            VarSizeIntState::ThreeByte(val) => val,
+            VarSizeIntState::FourByte(val) => val,
         }
     }
 }
@@ -67,8 +67,8 @@ impl TryFrom<&[u8]> for VarSizeInt {
                 return match idx {
                     0 => Ok(Self(VarSizeIntState::SingleByte(val as u8))),
                     1 => Ok(Self(VarSizeIntState::TwoByte(val as u16))),
-                    2 => Ok(Self(VarSizeIntState::ThreeByte(val as u32))),
-                    3 => Ok(Self(VarSizeIntState::FourByte(val as u32))),
+                    2 => Ok(Self(VarSizeIntState::ThreeByte(val))),
+                    3 => Ok(Self(VarSizeIntState::FourByte(val))),
                     _ => Err(InvalidEncoding.into()),
                 };
             }
@@ -358,7 +358,7 @@ impl TryFrom<VarSizeInt> for u8 {
 
     fn try_from(val: VarSizeInt) -> Result<Self, Self::Error> {
         match val.0 {
-            VarSizeIntState::SingleByte(val) => Ok(val as u8),
+            VarSizeIntState::SingleByte(val) => Ok(val),
             VarSizeIntState::TwoByte(val) => {
                 if val > 0xff {
                     Err(ValueExceedesMaximum.into())
@@ -377,7 +377,7 @@ impl TryFrom<VarSizeInt> for u16 {
     fn try_from(val: VarSizeInt) -> Result<Self, Self::Error> {
         match val.0 {
             VarSizeIntState::SingleByte(val) => Ok(val as u16),
-            VarSizeIntState::TwoByte(val) => Ok(val as u16),
+            VarSizeIntState::TwoByte(val) => Ok(val),
             VarSizeIntState::ThreeByte(val) => {
                 if val > 0xffff {
                     Err(ValueExceedesMaximum.into())
@@ -1381,7 +1381,7 @@ mod test {
                 let result = VarSizeInt::try_from(val).unwrap();
 
                 assert_eq!(expected_len, result.len());
-                assert_eq!(val as u32, result.value());
+                assert_eq!(val, result.value());
             }
         }
 
@@ -1389,7 +1389,7 @@ mod test {
         fn var_size_int_from_usize() {
             const INPUT: [(usize, usize); 6] = [
                 (0, 1),
-                (VarSizeInt::MAX as usize, 4),
+                (VarSizeInt::MAX, 4),
                 (u16::MAX as usize, 3),
                 (u8::MAX as usize, 2),
                 (0b10000000, 2),
@@ -1400,7 +1400,7 @@ mod test {
                 let result = VarSizeInt::try_from(val).unwrap();
 
                 assert_eq!(expected_len, result.len());
-                assert_eq!(val as usize, result.value() as usize);
+                assert_eq!(val, result.value() as usize);
             }
         }
 

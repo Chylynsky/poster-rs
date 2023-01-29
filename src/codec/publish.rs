@@ -87,7 +87,7 @@ impl TryDecode for PublishRx {
             return Err(InvalidPacketHeader.into());
         }
 
-        let qos = QoS::try_from(((fixed_hdr >> 1) & 0x03) as u8)?;
+        let qos = QoS::try_from((fixed_hdr >> 1) & 0x03)?;
         builder
             .dup(fixed_hdr & (1 << 3) != 0)
             .retain(fixed_hdr & 1 != 0)
@@ -357,7 +357,7 @@ impl<'a> Encode for PublishTx<'a> {
 mod test {
     use super::*;
 
-    const FIXED_HDR: u8 = (((PublishRx::PACKET_ID as u8) << 4) | 0x0b) as u8; // DUP: 1, QoS: 1, RETAIN: 1
+    const FIXED_HDR: u8 = (PublishRx::PACKET_ID << 4) | 0x0b; // DUP: 1, QoS: 1, RETAIN: 1
     const PACKET: [u8; 15] = [
         FIXED_HDR, 13, // Remaining length
         0,  // Topic length MSB

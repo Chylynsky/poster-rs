@@ -101,7 +101,7 @@ where
                     }
                 }
 
-                return Poll::Pending;
+                Poll::Pending
             }
             PacketStreamState::ReadPacketLen => {
                 // Omit packet ID, try to read the remaining length.
@@ -113,7 +113,7 @@ where
                         Err(err)
                     });
 
-                if let Err(_) = maybe_remaining_len {
+                if maybe_remaining_len.is_err() {
                     return Poll::Ready(None);
                 }
 
@@ -127,7 +127,7 @@ where
                 }
 
                 *state = PacketStreamState::Idle;
-                return self.poll_next(cx);
+                self.poll_next(cx)
             }
             PacketStreamState::ReadPacketData => {
                 if *size < packet.end {
@@ -142,9 +142,9 @@ where
                     *state = PacketStreamState::Idle;
                 }
 
-                return Poll::Ready(Some(RxPacket::try_decode(
+                Poll::Ready(Some(RxPacket::try_decode(
                     buf.split_to(mem::replace(&mut packet.end, 0)).freeze(),
-                )));
+                )))
             }
         }
     }
