@@ -8,7 +8,7 @@ use bytes::BytesMut;
 use core::mem;
 use derive_builder::Builder;
 
-/// Retain handling for [SubscriptionOptions].
+/// Retain handling for [crate::SubscribeOpts].
 ///
 #[derive(Clone, Copy)]
 pub enum RetainHandling {
