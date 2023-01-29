@@ -5,10 +5,7 @@ use crate::{
     },
     core::{collections::UserProperties, error::CodecError},
 };
-use futures::channel::{
-    mpsc::{SendError, TrySendError},
-    oneshot::Canceled,
-};
+use futures::channel::{mpsc::TrySendError, oneshot::Canceled};
 use std::{
     error::Error,
     fmt::{self, Display},
@@ -49,18 +46,6 @@ impl fmt::Display for HandleClosed {
 
 impl Error for HandleClosed {}
 
-impl From<Canceled> for HandleClosed {
-    fn from(_: Canceled) -> Self {
-        Self
-    }
-}
-
-impl From<SendError> for HandleClosed {
-    fn from(_: SendError) -> Self {
-        Self
-    }
-}
-
 /// Error indicating that client [Context](super::context::Context) has
 /// exited ([run](super::context::Context::run) has returned).
 ///
@@ -77,6 +62,12 @@ impl Error for ContextExited {}
 
 impl<T> From<TrySendError<T>> for ContextExited {
     fn from(_: TrySendError<T>) -> Self {
+        Self
+    }
+}
+
+impl From<Canceled> for ContextExited {
+    fn from(_: Canceled) -> Self {
         Self
     }
 }
@@ -621,13 +612,7 @@ impl From<HandleClosed> for MqttError {
 
 impl From<Canceled> for MqttError {
     fn from(err: Canceled) -> Self {
-        Self::HandleClosed(err.into())
-    }
-}
-
-impl From<SendError> for MqttError {
-    fn from(err: SendError) -> Self {
-        Self::HandleClosed(err.into())
+        Self::ContextExited(err.into())
     }
 }
 
