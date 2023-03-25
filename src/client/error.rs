@@ -131,6 +131,7 @@ impl fmt::Debug for Disconnected {
             .field("session_expiry_interval", &self.session_expiry_interval())
             .field("reason_string", &self.reason_string())
             .field("server_reference", &self.server_reference())
+            .field("user_properties", &self.user_properties())
             .finish()
     }
 }
@@ -265,6 +266,7 @@ impl fmt::Debug for ConnectError {
             .field("reason", &self.reason())
             .field("reason_string", &self.reason_string())
             .field("server_reference", &self.server_reference())
+            .field("user_properties", &self.user_properties())
             .finish()
     }
 }
@@ -334,6 +336,7 @@ impl fmt::Debug for AuthError {
         f.debug_struct("AuthError")
             .field("reason", &self.reason())
             .field("reason_string", &self.reason_string())
+            .field("user_properties", &self.user_properties())
             .finish()
     }
 }
@@ -411,6 +414,7 @@ where
         f.debug_struct("AckError")
             .field("reason", &self.reason())
             .field("reason_string", &self.reason_string())
+            .field("user_properties", &self.user_properties())
             .finish()
     }
 }

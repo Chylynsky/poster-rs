@@ -1,6 +1,5 @@
 use crate::core::{base_types::UTF8StringPair, properties::UserProperty};
 use core::{fmt, str};
-use std::fmt::Display;
 
 /// Map collection for reading user properties as key-value pairs from packets.
 #[derive(Clone, Default)]
