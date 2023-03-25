@@ -1,8 +1,9 @@
 use crate::core::{base_types::UTF8StringPair, properties::UserProperty};
-use core::str;
+use core::{fmt, str};
+use std::fmt::Display;
 
 /// Map collection for reading user properties as key-value pairs from packets.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct UserProperties {
     map: Vec<UTF8StringPair>,
 }
@@ -73,6 +74,18 @@ impl UserProperties {
 
     pub(crate) fn push(&mut self, val: UserProperty) {
         self.map.push(UTF8StringPair::from(val));
+    }
+}
+
+impl fmt::Debug for UserProperties {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_struct("UserProperties");
+
+        for (key, value) in self.iter() {
+            dbg.field(key, &value);
+        }
+
+        dbg.finish()
     }
 }
 
