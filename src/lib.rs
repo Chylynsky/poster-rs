@@ -28,7 +28,7 @@
 //!
 //!         // Pass (ReadHalf, WriteHalf) pair into the context and connect with the broker on
 //!         // the protocol level.
-//!         ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//!         ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //!
 //!         // Awaiting the Context::run invocation will block the current task.
 //!         if let Err(err) = ctx.run().await {
@@ -82,13 +82,13 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
 //!     // ...
-//!     let opts = PublishOpts::default().topic("topic").data("hello there".as_bytes());
+//!     let opts = PublishOpts::new().topic_name("topic").payload("hello there".as_bytes());
 //!     handle.publish(opts).await?;
 //! #
 //! #   ctx_task.await?;
@@ -122,13 +122,13 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
 //!     // ...
-//!     let opts = SubscribeOpts::default().subscription("topic", SubscriptionOpts::default());
+//!     let opts = SubscribeOpts::new().subscription("topic", SubscriptionOpts::new());
 //!     let rsp = handle.subscribe(opts).await?;
 //!     let mut subscription = rsp.stream();
 //!
@@ -154,15 +154,15 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
 //!     // ...
-//!     let opts = SubscribeOpts::default()
-//!         .subscription("topic1", SubscriptionOpts::default())
-//!         .subscription("topic2", SubscriptionOpts::default());
+//!     let opts = SubscribeOpts::new()
+//!         .subscription("topic1", SubscriptionOpts::new())
+//!         .subscription("topic2", SubscriptionOpts::new());
 //!
 //!     let mut subscription = handle.subscribe(opts).await?.stream();
 //!
@@ -188,12 +188,12 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
-//!     let opts = SubscribeOpts::default()
+//!     let opts = SubscribeOpts::new()
 //!         .subscription("topic", SubscriptionOpts::new().maximum_qos(QoS::AtLeastOnce));
 //! #
 //! #   ctx_task.await?;
@@ -215,12 +215,12 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
-//! #   let opts = SubscribeOpts::default();
+//! #   let opts = SubscribeOpts::new();
 //!     // ...
 //!     let rsp = handle.subscribe(opts).await?;
 //!     let all_ok = rsp.payload().iter().copied().all(|reason| reason == SubackReason::GranteedQoS2);
@@ -246,12 +246,12 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //!     // ...
-//!     let opts = UnsubscribeOpts::default().topic("topic");
+//!     let opts = UnsubscribeOpts::new().topic_filter("topic");
 //!     let rsp = handle.unsubscribe(opts).await?;
 //! #
 //! #   ctx_task.await?;
@@ -287,13 +287,13 @@
 //! #   let (mut ctx, mut handle) = Context::new();
 //! #   let ctx_task = tokio::spawn(async move {
 //! #       let (rx, tx) = TcpStream::connect("127.0.0.1:1883").await?.into_split();
-//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::default()).await?;
+//! #       ctx.set_up((rx.compat(), tx.compat_write())).connect(ConnectOpts::new()).await?;
 //! #       ctx.run().await?;
 //! #       Ok::<(), Box<dyn Error + Send + Sync>>(())
 //! #   });
 //! #
 //!     // ...
-//!     handle.disconnect(DisconnectOpts::default()).await?;
+//!     handle.disconnect(DisconnectOpts::new()).await?;
 //! #
 //! #   ctx_task.await?;
 //! #   Ok(())
@@ -306,9 +306,9 @@
 //!
 //! The main library error type is [MqttError](crate::error::MqttError) enum found in [error] module.
 //!
-//! ## TSL/SSL
+//! ## TLS/SSL
 //!
-//! TSL/SSL libraries are available out there with AsyncRead, AsyncWrite TSL/SSL streams. These may be
+//! TLS/SSL libraries are available out there with AsyncRead, AsyncWrite TLS/SSL streams. These may be
 //! supplied to the [set_up](crate::Context::set_up) method. The library does not handle encription on its own.
 //!
 

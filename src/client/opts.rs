@@ -513,7 +513,7 @@ impl<'a> PublishOpts<'a> {
 
     /// Sets topic.
     ///
-    pub fn topic(mut self, val: &'a str) -> Self {
+    pub fn topic_name(mut self, val: &'a str) -> Self {
         self.builder.topic_name(UTF8StringRef(val));
         self
     }
@@ -590,9 +590,9 @@ impl<'a> PublishOpts<'a> {
         self
     }
 
-    /// Sets message data.
+    /// Sets message payload.
     ///
-    pub fn data(mut self, val: &'a [u8]) -> Self {
+    pub fn payload(mut self, val: &'a [u8]) -> Self {
         self.builder.payload(PayloadRef(val));
         self
     }
@@ -624,7 +624,7 @@ impl<'a> UnsubscribeOpts<'a> {
     }
 
     /// Topic filter to unsubscribe from.
-    pub fn topic(mut self, val: &'a str) -> Self {
+    pub fn topic_filter(mut self, val: &'a str) -> Self {
         self.builder.payload(UTF8StringRef(val));
         self
     }
