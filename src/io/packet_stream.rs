@@ -161,18 +161,10 @@ impl<TxStreamT> From<TxStreamT> for TxPacketStream<TxStreamT> {
 }
 
 impl<TxStreamT> TxPacketStream<TxStreamT> {
-    pub(crate) async fn write(&mut self, packet: &[u8]) -> Result<usize, io::Error>
+    pub(crate) async fn write(&mut self, packet: &[u8]) -> Result<(), io::Error>
     where
         TxStreamT: AsyncWrite + Unpin,
     {
-        let mut remaining = packet.len();
-        while remaining != 0 {
-            remaining -= self
-                .stream
-                .write(&packet[(packet.len() - remaining)..])
-                .await?;
-        }
-
-        Ok(packet.len())
+        self.stream.write_all(&packet[0..packet.len()]).await
     }
 }
