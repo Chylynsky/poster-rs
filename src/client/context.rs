@@ -542,7 +542,7 @@ where
         }
 
         let mut pck_fut = rx.next().fuse();
-        let mut msg_fut = message_queue.next().fuse();
+        let mut msg_fut = message_queue.next();
 
         loop {
             futures::select! {
@@ -553,7 +553,7 @@ where
                 },
                 maybe_msg = msg_fut => {
                     Self::handle_message(tx, connection, session, maybe_msg.ok_or(HandleClosed)?).await?;
-                    msg_fut = message_queue.next().fuse();
+                    msg_fut = message_queue.next();
                 }
             }
         }
