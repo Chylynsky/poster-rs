@@ -12,10 +12,14 @@ use crate::{
         base_types::{NonZero, QoS},
         utils::{Encode, SizedPacket},
     },
+    PublishData, SubscriptionOpts,
 };
 use bytes::BytesMut;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
-use futures::channel::{mpsc, oneshot};
+use futures::{
+    channel::{mpsc, oneshot},
+    future, StreamExt,
+};
 use std::sync::Arc;
 
 /// Cloneable handle to the client [Context](crate::Context). The [ContextHandle] object is used to perform MQTT operations.
@@ -283,5 +287,45 @@ impl ContextHandle {
             RxPacket::Unsuback(unsuback) => UnsubscribeRsp { packet: unsuback },
             _ => unreachable!("Unexpected packet type."),
         })
+    }
+
+    /// Shortcut method for performing MQTT request/response.
+    ///
+    #[cfg(feature = "experimental")]
+    pub async fn request(
+        &mut self,
+        topic: &str,
+        response_topic: &str,
+        payload: &[u8],
+    ) -> Result<PublishData, MqttError> {
+        let subscription = self
+            .subscribe(SubscribeOpts::new().subscription(response_topic, SubscriptionOpts::new()))
+            .await?;
+        let stream = subscription.stream();
+
+        let trace = self.packet_id.fetch_add(1, Ordering::Relaxed).to_be_bytes();
+        self.publish(
+            PublishOpts::new()
+                .correlation_data(&trace)
+                .payload(payload)
+                .topic_name(topic)
+                .response_topic(response_topic),
+        )
+        .await?;
+
+        let (rsp, _) = stream
+            .filter(|rsp| {
+                future::ready(
+                    rsp.correlation_data()
+                        .filter(|&corr| corr == trace)
+                        .is_some(),
+                )
+            })
+            .into_future()
+            .await;
+
+        self.unsubscribe(UnsubscribeOpts::new().topic_filter(response_topic))
+            .await?;
+        Ok(rsp.unwrap())
     }
 }
