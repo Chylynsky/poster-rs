@@ -84,7 +84,7 @@ Publishing is performed via the [ContextHandle::publish](https://docs.rs/poster/
 
 ```rust
 // ...
-let opts = PublishOpts::default().topic("topic").data("hello there".as_bytes());
+let opts = PublishOpts::default().topic_name("topic").payload("hello there".as_bytes());
 handle.publish(opts).await?;
 ```
 
@@ -149,7 +149,7 @@ Note that it does NOT close the subscription stream (it could lead to logic erro
 
 ```rust
 // ...
-let opts = UnsubscribeOpts::default().topic("topic");
+let opts = UnsubscribeOpts::default().topic_name("topic");
 let rsp = handle.unsubscribe(opts).await?;
 ```
 
@@ -178,9 +178,9 @@ See [DisconnectOpts](https://docs.rs/poster/latest/poster/struct.DisconnectOpts.
 
 The main library error type is [error::MqttError](https://docs.rs/poster/latest/poster/error/enum.MqttError.html) enum found in [error](https://docs.rs/poster/latest/poster/error/index.html) module.
 
-### TSL/SSL
+### TLS/SSL
 
-TSL/SSL libraries are available out there with AsyncRead, AsyncWrite TSL/SSL streams. These may be
+TLS/SSL libraries are available out there with AsyncRead, AsyncWrite TLS/SSL streams. These may be
 supplied to the [Context::set_up](https://docs.rs/poster/latest/poster/struct.Context.html#method.set_up) method. The library does not handle encription on its own.
 
 ## Dependencies

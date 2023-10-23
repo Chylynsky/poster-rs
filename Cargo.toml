@@ -6,15 +6,12 @@ readme = "README.md"
 description = "MQTTv5 client library written in Rust."
 repository = "https://github.com/Chylynsky/poster-rs"
 authors = ["Chylynsky"]
-keywords = [
-    "mqtt", 
-    "async", 
-    "client", 
-    "runtime-agnostic", 
-    "non-blocking"
-]
+keywords = ["mqtt", "async", "client", "runtime-agnostic", "non-blocking"]
 categories = ["asynchronous", "network-programming"]
 license = "MIT"
+
+[features]
+serde = []
 
 [dependencies]
 either = "1.8"
@@ -25,5 +22,5 @@ derive_builder = "0.11"
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "net", "macros"] }
 tokio-util = { version = "0.7", features = ["compat"] }
-smol = "1"
+smol = "1.2"
 clap = { version = "4", features = ["derive"] }
